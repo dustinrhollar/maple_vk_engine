@@ -1,0 +1,8 @@
+void GameUpdateAndRender()
+{
+    
+}
+
+void GameInit()
+{
+}
