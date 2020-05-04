@@ -20,9 +20,30 @@
 #include "mm/mm.h"
 
 
-//~ Utility Headers
+//~ Utility Macros so that the utility functions use the Memory Manager
+
+// Dynamic Array
+
+#define parray_alloc(s)         palloc(s)
+#define parray_realloc(src, sz) prealloc((src), (sz))
+#define parray_free(p)          pfree(p)
+
+#define tarray_alloc(s)   palloc(s)
+#define tarray_realloc(s) prealloc(s)
+#define tarray_free(p)    pfree(p)
+
+// HashTable
+
+#define ptable_alloc(s)         palloc(s)
+#define ptable_realloc(src, sz) prealloc((src), (sz))
+#define ptable_free(p)          pfree(p)
+
+#define ttable_alloc(s)   palloc(s)
+#define ttable_realloc(s) prealloc(s)
+#define ttable_free(p)    pfree(p)
 
 // jstring definitions
+
 #define pstring_alloc(s)         palloc(s)
 #define pstring_realloc(src, sz) prealloc((src), (sz))
 #define pstring_free(p)          pfree(p)
@@ -30,6 +51,9 @@
 #define tstring_alloc(s)   palloc(s)
 #define tstring_realloc(s) prealloc(s)
 #define tstring_free(p)    pfree(p)
+
+
+//~ Utility Headers
 
 #define MAPLE_HASHTABLE_IMPLEMENTATION
 #define MAPLE_JSTRING_IMPLEMENTATION

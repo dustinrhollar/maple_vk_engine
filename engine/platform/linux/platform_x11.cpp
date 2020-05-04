@@ -2,6 +2,13 @@
 #include <xcb/xcb.h>
 #include <X11/Xlib.h>
 
+#include <libgen.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <linux/limits.h>
+
 file_global u32 ClientWidth;
 file_global u32 ClientHeight;
 file_global bool IsRunning;
@@ -27,7 +34,19 @@ struct XCBInfo
 
 jstring XcbGetExeFilepath()
 {
-    jstring result = InitJString();
+    jstring result;
+    char exe_filename[ PATH_MAX ];
+    ssize_t count = readlink( "/proc/self/exe", exe_filename, PATH_MAX );
+    
+    if (count > 0)
+    {
+        char *exe_path = dirname(exe_filename);
+        
+        printf("EXE path: %s\n", exe_path);
+        
+        result = InitJString(exe_path);
+        result += '/';
+    }
     
     return result;
 }
@@ -44,7 +63,23 @@ void XcbWriteBufferToFile(jstring &file, void *buffer, u32 size)
 
 jstring XcbLoadFile(jstring &directory, jstring &filename)
 {
-    jstring result = InitJString();
+    jstring result = {};
+    
+    jstring fullpath = directory + filename;
+    int fd = open(fullpath.GetCStr(), O_RDONLY);
+    if (fd > 0)
+    {
+        // determine file size
+        struct stat st;
+        fstat(fd, &st);
+        int size = st.st_size;
+        
+        char *buf = talloc<char>(size + 1);
+        ssize_t read_bytes = read(fd, buf, size);
+        assert(read_bytes == size);
+        
+        result = InitJString(buf, size);
+    }
     
     return result;
 }
@@ -109,7 +144,7 @@ const char *XcbGetRequiredInstanceExtensions(bool validation_layers)
 
 void XcbGetClientWindowDimensions(u32 *width, u32 *height)
 {
-    *width = ClientWidth;
+    *width  = ClientWidth;
     *height = ClientHeight;
 }
 
@@ -152,7 +187,7 @@ file_internal void StartupRoutines()
 
 file_internal void ShutdownRoutines()
 {
-    //vk::ShutdownVulkan();
+    vk::ShutdownVulkan();
     ecs::ShutdownECS();
     mm::ShutdownMemoryManager();
 }
@@ -165,9 +200,20 @@ file_internal void XcbHandleEvent(const xcb_generic_event_t *ev)
             const xcb_configure_notify_event_t *notify = reinterpret_cast<const xcb_configure_notify_event_t *>(ev);
             
             // RESIZE EVENT!
-            ClientWidth  = notify->width;
-            ClientHeight = notify->height;
-            //resize_swapchain(notify->width, notify->height);
+            if (notify->width != ClientWidth || notify->height != ClientHeight)
+            {
+                if (notify->width > 0 && notify->height > 0)
+                {
+                    ClientWidth  = notify->width;
+                    ClientHeight = notify->height;
+                    FlagGameResize();
+                }
+                else
+                {
+                    printf("Minimized...going to sleep...\n");
+                    XcbLoopWait();
+                }
+            }
         } break;
         
         case XCB_KEY_PRESS:
@@ -214,13 +260,34 @@ file_internal void XcbHandleEvent(const xcb_generic_event_t *ev)
 
 file_internal void XcbLoopWait()
 {
-    xcb_generic_event_t *ev = xcb_wait_for_event(xcb_info.Connection);
-    
-    // TODO(Dustin): Loop wait occurs when a window is minimized?
-    // wait for an event to appear in the queue - if it is a resize
-    // request see if the user maximized the window
-    
-    free(ev);
+    while (1)
+    {
+        xcb_generic_event_t *ev = xcb_wait_for_event(xcb_info.Connection);
+        
+        // TODO(Dustin): Loop wait occurs when a window is minimized?
+        // wait for an event to appear in the queue - if it is a resize
+        // request see if the user maximized the window
+        switch (ev->response_type & 0x7f) {
+            case XCB_CONFIGURE_NOTIFY:
+            {
+                const xcb_configure_notify_event_t *notify = reinterpret_cast<const xcb_configure_notify_event_t *>(ev);
+                
+                if (notify->width > 0 && notify->height > 0)
+                {
+                    printf("Waking up...\n");
+                    
+                    ClientWidth  = notify->width;
+                    ClientHeight = notify->height;
+                    FlagGameResize();
+                    return;
+                }
+            } break;
+            
+            default: break;
+        }
+        
+        free(ev);
+    }
 }
 
 file_internal xcb_intern_atom_cookie_t intern_atom_cookie(xcb_connection_t *c, const jstring s)
@@ -328,6 +395,9 @@ int main()
         
         // TODO(Dustin): TIMING
     }
+    
+    GameShutdown();
+    ShutdownRoutines();
     
     xcb_destroy_window(xcb_info.Connection, xcb_info.Window);
     xcb_flush(xcb_info.Connection);

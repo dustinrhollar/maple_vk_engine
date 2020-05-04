@@ -1,5 +1,5 @@
 #!/bin/bash
-
+ 
 # External library directories
 VK_COMPILER="~/vulkan/1.2.135.0/x86_64/bin"
 VK_INCLUDE="~/vulkan/1.2.135.0/x86_64/include"

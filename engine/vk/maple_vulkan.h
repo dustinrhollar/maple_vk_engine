@@ -50,7 +50,6 @@ struct BufferParameters
 {
     VkBuffer          Handle;
     
-    
     union {
         VkDeviceMemory DeviceMemory;
         VmaAllocation  Memory;

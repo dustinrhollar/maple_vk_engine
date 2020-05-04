@@ -11,7 +11,9 @@ This is the main unity file for a project.
 // it calls into "GameInit()"
 
 void GameInit();
+void GameShutdown();
 void GameUpdateAndRender();
+void FlagGameResize();
 
 //~ Required C++ Headers
 //~ CLib  Headers
