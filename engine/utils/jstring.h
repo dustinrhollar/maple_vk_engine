@@ -38,18 +38,21 @@ the heap memory is actually being.
 
 */
 
+// NOTE(Dustin): Careful with this implementation...
+// len and heap are only in the first struct, but it
+// should be fine. They are accessible whether or not
+// heap is in use.
 union jstring {
     struct {
         char sptr[12];
+        unsigned len:31;
+        unsigned heap:1; // 0 - heap is not used. 1 - heap is used
     };
     
     struct {
         char *hptr;
         unsigned reserved_heap_size;
     };
-    
-    unsigned len:31;
-    unsigned heap:1; // 0 - heap is not used. 1 - heap is used
     
     inline void Clear();
     const char *GetCStr() const;
@@ -65,10 +68,10 @@ union jstring {
 
 //~ Initializers
 
-void InitJString(jstring *result);
-void InitJString(jstring *result, const char *str);
-void InitJString(jstring *result, const char *str, unsigned size);
-void InitJString(jstring *result, unsigned req_heap_size);
+jstring InitJString();
+jstring InitJString(const char *str);
+jstring InitJString(const char *str, unsigned size);
+jstring InitJString(unsigned req_heap_size);
 
 //~
 // USE WITH CARE - Copy on Write implementation
@@ -103,13 +106,13 @@ inline i32 LastIndexOf(jstring &str, char ch);
 // 1. Backwards compatibility. tstring is used in a lot of places.
 // 2. I might add back in temporary storage strings, so i would like to keep
 //    that function call around just in case.
-inline void pstring(jstring *result) {InitJString(result);}
-inline void pstring(jstring *result, const char *p) {InitJString(result, p);}
-inline void pstring(jstring *result, const char *p, unsigned s) {InitJString(result, p, s);}
+inline jstring pstring() {return InitJString();}
+inline jstring pstring(const char *p) {return InitJString(p);}
+inline jstring pstring(const char *p, unsigned s) {return InitJString(p, s);}
 
-inline void tstring(jstring *result) {InitJString(result);}
-inline void tstring(jstring *result, const char *p) {InitJString(result, p);}
-inline void tstring(jstring *result, const char *p, unsigned s) {InitJString(result, p, s);}
+inline jstring tstring() {return InitJString();}
+inline jstring tstring(const char *p) {return InitJString(p);}
+inline jstring tstring(const char *p, unsigned s) {return InitJString(p, s);}
 
 template<class jstring>
 u128 Hash(const jstring &str)
@@ -140,66 +143,82 @@ u128 Hash(const jstring &str)
 
 #endif
 
-void InitJString(jstring *result)
+jstring InitJString()
 {
-    result->len = 0;
-    result->heap = 0;
+    jstring result;
+    
+    result.len = 0;
+    result.heap = 0;
+    
+    return result;
 }
 
-void InitJString(jstring *result, const char *str)
+jstring InitJString(const char *str)
 {
-    result->len = strlen(str);
-    result->heap = 0;
+    jstring result = {};
     
-    if (result->len > 11)
+    result.len = strlen(str);
+    result.heap = 0;
+    
+    if (result.len > 11)
     {
-        result->heap = 1;
-        result->reserved_heap_size = result->len + 1;
-        result->hptr = (char*)pstring_alloc(result->reserved_heap_size);
+        result.heap = 1;
+        result.reserved_heap_size = result.len + 1;
+        result.hptr = (char*)pstring_alloc(result.reserved_heap_size);
         
-        memcpy(result->hptr, str, result->len);
-        result->hptr[result->len] = 0;
+        memcpy(result.hptr, str, result.len);
+        result.hptr[result.len] = 0;
     }
     else
     {
-        memcpy(result->sptr, str, result->len);
-        result->sptr[result->len] = 0;
+        memcpy(result.sptr, str, result.len);
+        result.sptr[result.len] = 0;
     }
+    
+    return result;
 }
 
-void InitJString(jstring *result, const char *str, unsigned size)
+jstring InitJString(const char *str, unsigned size)
 {
-    result->len = size;
-    result->heap = 0;
+    jstring result = {};
     
-    if (result->len > 11)
+    result.len = size;
+    result.heap = 0;
+    
+    if (result.len > 11)
     {
-        result->heap = 1;
-        result->reserved_heap_size = result->len + 1;
-        result->hptr = (char*)pstring_alloc(result->reserved_heap_size);
+        result.heap = 1;
+        result.reserved_heap_size = result.len + 1;
+        result.hptr = (char*)pstring_alloc(result.reserved_heap_size);
         
-        memcpy(result->hptr, str, size);
-        result->hptr[result->len] = 0;
+        memcpy(result.hptr, str, size);
+        result.hptr[result.len] = 0;
     }
     else
     {
-        memcpy(result->sptr, str, size);
-        result->sptr[result->len] = 0;
+        memcpy(result.sptr, str, size);
+        result.sptr[result.len] = 0;
     }
+    
+    return result;
 }
 
 // if legnth is greater than 11, then space
 // is reserved on the heap length+1
-void InitJString(jstring *result, unsigned req_heap_size)
+jstring InitJString(unsigned req_heap_size)
 {
-    result->len = 0;
-    result->heap = 0;
+    jstring result = {};
+    
+    result.len = 0;
+    result.heap = 0;
     
     if (req_heap_size > 11) {
-        result->heap = 1;
-        result->reserved_heap_size = req_heap_size + 1;
-        result->hptr = (char*)pstring_alloc(result->reserved_heap_size);
+        result.heap = 1;
+        result.reserved_heap_size = req_heap_size + 1;
+        result.hptr = (char*)pstring_alloc(result.reserved_heap_size);
     }
+    
+    return result;
 }
 
 inline void jstring::Clear()
@@ -351,8 +370,7 @@ inline jstring& jstring::operator+=(char ch)
 // USE WITH CARE - Copy on Write implementation
 inline jstring operator+(const jstring &lhs, const jstring &rhs)
 {
-    jstring result;
-    InitJString(&result, lhs.len + rhs.len);
+    jstring result = InitJString(lhs.len + rhs.len);
     result.len = lhs.len + rhs.len;
     
     if (result.heap)
@@ -375,8 +393,7 @@ inline jstring operator+(const jstring &lhs, const char *cstr)
 {
     unsigned str_len = (unsigned)strlen(cstr);
     
-    jstring result;
-    InitJString(&result, lhs.len + str_len);
+    jstring result = InitJString(lhs.len + str_len);
     result.len = lhs.len + str_len;
     
     if (result.heap)
@@ -399,8 +416,7 @@ inline jstring operator+(const char *cstr, const jstring &rhs)
 {
     unsigned str_len = (unsigned)strlen(cstr);
     
-    jstring result;
-    InitJString(&result, rhs.len + str_len);
+    jstring result = InitJString(rhs.len + str_len);
     result.len = rhs.len + str_len;
     
     if (result.heap)
@@ -421,8 +437,7 @@ inline jstring operator+(const char *cstr, const jstring &rhs)
 
 inline jstring operator+(const jstring& lhs, char ch)
 {
-    jstring result;
-    InitJString(&result, lhs.len + 1);
+    jstring result = InitJString(lhs.len + 1);
     result.len = lhs.len + 1;
     
     if (result.heap)
@@ -443,8 +458,7 @@ inline jstring operator+(const jstring& lhs, char ch)
 
 inline jstring operator+(char ch, const jstring& rhs)
 {
-    jstring result;
-    InitJString(&result, rhs.len + 1);
+    jstring result = InitJString(rhs.len + 1);
     result.len = rhs.len + 1;
     
     if (result.heap)

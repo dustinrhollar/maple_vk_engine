@@ -1,7 +1,7 @@
 
 //~ Vulkan includes
 #include <vulkan/vulkan.h>
-#include <GLFW/glfw3.h>
+//#include <GLFW/glfw3.h>
 
 // Unity build file for all engine code
 
@@ -87,7 +87,7 @@ void *VulkanLibrary;
 
 #include "vk/vulkan_functions.h"
 #include <vma/vk_mem_alloc.h>
-#include "vk/splicer_vulkan.h"
+#include "vk/maple_vulkan.h"
 
 //~ File IO Operations (OS Independent)
 #include "io/file.h"
@@ -111,7 +111,7 @@ void *VulkanLibrary;
 
 //~ Vulkan Source Files
 #include "vk/vulkan_functions.cpp"
-#include "vk/splicer_vulkan.cpp"
+#include "vk/maple_vulkan.cpp"
 
 //~ ENTRY POINT
 #include "platform/entry.cpp"

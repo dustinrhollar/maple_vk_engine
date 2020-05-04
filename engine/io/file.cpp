@@ -336,8 +336,7 @@ jstring UInt64ToStr(u64 value)
         *ptr1++ = tmp_char;
     }
     
-    jstring result;
-    InitJString(&result, result_array);
+    jstring result = InitJString(result_array);
     return result;
 }
 
@@ -651,7 +650,7 @@ void ReadJStringFromBinaryBuffer(FileBuffer *buffer, jstring *result)
         
         u32 len = flags>>1;
         
-        InitJString(result, buffer->brkp, len);
+        *result = InitJString(buffer->brkp, len);
         buffer->brkp += len;
     }
 }

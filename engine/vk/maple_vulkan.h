@@ -1,6 +1,15 @@
 #ifndef SPLICER_ENGINE_VULKAN_H
 #define SPLICER_ENGINE_VULKAN_H
 
+#define VK_CHECK_RESULT(f, msg)                 \
+{                                           \
+VkResult res = (f);                     \
+if ((res) != VK_SUCCESS)                \
+{                                       \
+throw std::runtime_error(msg);      \
+}                                       \
+}
+
 struct VulkanCore;
 // defined in: splicer_vulkan.cpp
 

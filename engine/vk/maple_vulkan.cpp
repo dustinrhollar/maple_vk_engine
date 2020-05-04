@@ -22,16 +22,6 @@ namespace vk {
     
     file_global VkDebugUtilsMessengerEXT GlobalDebugMessenger;
     
-#define VK_CHECK_RESULT(f, msg)                 \
-{                                           \
-VkResult res = (f);                     \
-if ((res) != VK_SUCCESS)                \
-{                                       \
-throw std::runtime_error(msg);      \
-}                                       \
-}
-    
-    
     file_internal bool LoadVulkanLibrary()
     {
 #ifdef VK_USE_PLATFORM_WIN32_KHR
@@ -279,67 +269,9 @@ return false;                                           \
         exts.Resize(3);
         
         const char *surface_exts = "VK_KHR_surface";
-        //const char* plat_exts = PlatformGetRequiredInstanceExtensions(GlobalEnabledValidationLayers);
+        const char* plat_exts = PlatformGetRequiredInstanceExtensions(GlobalEnabledValidationLayers);
         exts.PushBack(surface_exts);
-        
-        
-        VkResult err;
-        VkExtensionProperties* ep;
-        u32 count = 0;
-        err = vkEnumerateInstanceExtensionProperties(NULL, &count, NULL);
-        if (err)
-        {
-            printf("Error enumerating Instance extension properties!\n");
-        }
-        
-        ep = palloc<VkExtensionProperties>();
-        err = vkEnumerateInstanceExtensionProperties(NULL, &count, ep);
-        if (err)
-        {
-            printf("Unable to retrieve enumerated extension properties!\n");
-        }
-        
-        bool win32_found = false;
-        bool xlib_found = false;
-        bool xcb_found = false;
-        for (u32 i = 0;  i < count;  i++)
-        {
-            if (strcmp(ep[i].extensionName, "VK_KHR_surface") == 0)
-            {
-                printf("Found regular surface!\n");
-            }
-            else if (strcmp(ep[i].extensionName, "VK_KHR_win32_surface") == 0)
-            {
-                win32_found = true;
-                printf("Found win32 surface!\n");
-            }
-            else if (strcmp(ep[i].extensionName, "VK_KHR_xlib_surface") == 0)
-            {
-                xlib_found = true;
-                printf("Found xlib surface!\n");
-            }
-            else if (strcmp(ep[i].extensionName, "VK_KHR_xcb_surface") == 0)
-            {
-                xcb_found = true;
-                printf("Found xcb surface!\n");
-            }
-        }
-        
-        if (win32_found)
-        {
-            const char *plat_exts = "VK_KHR_win32_surface";
-            exts.PushBack(plat_exts);
-        }
-        else if (xlib_found && xcb_found)
-        {
-            const char *plat_exts = "VK_KHR_xcb_surface";
-            exts.PushBack(plat_exts);
-        }
-        else
-        {
-            const char *plat_exts = "VK_KHR_xlib_surface";
-            exts.PushBack(plat_exts);
-        }
+        exts.PushBack(plat_exts);
         
         if (GlobalValidationLayers)
         {
@@ -848,7 +780,7 @@ bool vk::InitializeVulkan()
     
     GlobalVulkanState.PresentationSurface = VK_NULL_HANDLE;
     PlatformVulkanCreateSurface(&GlobalVulkanState.PresentationSurface, GlobalVulkanState.Instance);
-    assert(GlobalVulkanState.PresentationSurface == VK_NULL_HANDLE);
+    assert(GlobalVulkanState.PresentationSurface != VK_NULL_HANDLE);
     
     PickPhysicalDevice(GlobalVulkanState.Instance);
     CreateLogicalDevice();
