@@ -87,8 +87,6 @@ file_internal void CreateVulkanResizableState()
         subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount    = 1;
         subpass.pColorAttachments       = &colorAttachmentRef;
-        //subpass.pDepthStencilAttachment = &depthAttachmentRef;
-        //subpass.pResolveAttachments     = &colorAttachmentResolveRef;
         
         VkAttachmentDescription attachments[1] = {
             colorAttachment,
@@ -354,8 +352,6 @@ void GameInit()
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    //rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    //rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f; // Optional
@@ -405,10 +401,6 @@ void GameInit()
     // Pipeline Layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
     pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    //pipelineLayoutInfo.setLayoutCount         = descriptor_set_layouts_count; // Optional
-    //pipelineLayoutInfo.pSetLayouts            = descriptor_set_layouts; // Optional
-    //pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-    //pipelineLayoutInfo.pPushConstantRanges    = nullptr; // Optional
     
     PipelineLayout = vk::CreatePipelineLayout(pipelineLayoutInfo);
     
@@ -433,7 +425,6 @@ void GameInit()
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
-    //pipelineInfo.pDepthStencilState = &depthStencil; // Optional
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamic_state_info; // Optional
     pipelineInfo.layout = PipelineLayout;
@@ -446,6 +437,9 @@ void GameInit()
     
     vk::DestroyShaderModule(vshad_module);
     vk::DestroyShaderModule(fshad_module);
+    
+    vert_shader.Clear();
+    frag_shader.Clear();
     
     //~ Create Vertex Buffers...
     VkBufferCreateInfo vertex_buffer_info = {};

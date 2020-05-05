@@ -39,7 +39,7 @@ namespace mm {
     {
         public:
         
-        FreeListAllocator(size_t size, void *start);
+        FreeListAllocator(u64 size, void *start);
         ~FreeListAllocator();
         
         // Quick reset of the free list allocator
@@ -52,16 +52,17 @@ namespace mm {
         FreeListAllocator& operator=(FreeListAllocator & other) = delete;
         FreeListAllocator& operator=(FreeListAllocator && other) = delete;
         
-        virtual void* Allocate(size_t size, size_t alignment)              override;
-        virtual void* Reallocate(void *src, size_t size, size_t alignment) override;
-        virtual void Free(void * ptr)                                      override;
+        virtual void* Allocate(u64 size, u64 alignment)              override;
+        virtual void* Reallocate(void *src, u64 size, u64 alignment) override;
+        virtual void Free(void * ptr)                                override;
         
         private:
         
         // For allocated blocks, { Size, Alignment } is used
         // For free blocks, { Size, Next, Prev } is used
         struct Header {
-            size_t Flags;
+            u64 Size:63;
+            u64 Used:1;
             Header *Next;
             Header *Prev;
         };
@@ -70,19 +71,20 @@ namespace mm {
         inline Header* Mem2Header(void *mem);
         inline void* Header2Mem(Header *header);
         
-        void coalesce(header_t *left_header, header_t *right_header);
-        header_t* split(header_t *header, size_t size);
+        inline u64 HeaderAdjustedSize(u64 n);
+        void Coalesce(header_t *left_header, header_t *right_header);
+        header_t* Split(header_t *header, u64 size);
         
-        inline void free_list_add(header_t *header);
-        inline void free_list_remove(header_t *header);
+        inline void FreeListAdd(header_t *header);
+        inline void FreeListRemove(header_t *header);
         
-        header_t *FindFreeHeader(size_t size);
+        header_t *FindFreeHeader(u64 size);
         
         char *_brkp;
         char *_endp;
         
         Header *FreeList;
-        size_t FreeListSize;
+        u64 FreeListSize;
     };
     
 } // mm

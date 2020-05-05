@@ -10,34 +10,19 @@ namespace mm {
     // Align a size request
 #define ALIGN(n) (((n) + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1))
     
-    // 0 is unused, 1 is used
-#define header_toggle_0(b) ((b)->Flags &= ~1L)
-#define header_toggle_1(b) ((b)->Flags |= 1L)
-#define header_used(b)     (((b)->Flags) & 1L)
-    
-#define data_size(b)        (((b)->Flags & ~1L) >> 1)
-#define data_set_size(b, s) (b)->Flags = (header_used(b) | ((s) << 1))
-    
-    inline size_t link_adjusted_size(size_t s) {
-        size_t result;
-        if (s >= LIST_HEADER)
-            result = s;
+    inline size_t FreeListAllocator::HeaderAdjustedSize(u64 n)
+    {
+        u64 result;
+        if (n >= LIST_HEADER)
+            result = n;
         else
             result = LIST_HEADER;
         
-        return result;
-    }
-    
-    inline size_t header_adjusted_size(size_t n)
-    {
-        size_t result = link_adjusted_size(n);
         return result + MIN_HEADER_SIZE;
     }
     
-    void FreeListAllocator::coalesce(header_t *left_header, header_t *right_header)
+    void FreeListAllocator::Coalesce(header_t *left_header, header_t *right_header)
     {
-        //printf("\tCoalesce occuring between %p and %p\n", left_header, right_header);
-        
         if (!left_header || !right_header)
             return;
         
@@ -65,20 +50,14 @@ namespace mm {
         // Therefore, we can think of the new block size to be something like:
         //     NEW BLOCK SIZE =  H1_SZ + HEADER 2 + H2SZ
         //     NEW BLOCK SIZE =  H1_SZ + header_adjusted_size(header2)
-        
-        size_t h1_size = data_size(left_header);
-        size_t h2_size = header_adjusted_size(data_size(right_header));
-        
-        data_set_size(left_header, h1_size + h2_size);
+        left_header->Size += HeaderAdjustedSize(right_header->Size);
     }
     
-    FreeListAllocator::header_t* FreeListAllocator::split(header_t *header, size_t size)
+    FreeListAllocator::header_t* FreeListAllocator::Split(header_t *header, u64 size)
     {
-        //printf("\tSPLIT operation %p\n", header);
-        
-        // Determine if a header can be split
         /*
-     
+     Determine if a header can be split
+
         Let's consider the minimum scenerio where size is 8bytes.
         The Header Alignment uses 24bytes, so an 8byte request is
         aligned to 24bytes.
@@ -108,44 +87,42 @@ After split:
         */
         
         // size required to form a new block with the requested size
-        size_t req_size         = header_adjusted_size(size);
-        size_t header_data_size = data_size(header);
+        u64 req_size         = HeaderAdjustedSize(size);
+        u64 header_data_size = header->Size;
+        //u64 header_data_size = data_size(header);
         
         // Requested memory is over budget
         if (req_size >= header_data_size) return header;
         
-        size_t leftover  = header_data_size - req_size;
+        u64 leftover  = header_data_size - req_size;
         // not enough leftover space for an allocation
         if (leftover < HEADER_SIZE) {
             return header;
         }
         
-        data_set_size(header, size); // size being requested
+        //data_set_size(header, size); // size being requested
+        header->Size = size;
         
         header_t *split_header = (header_t*)((char*)header + req_size);
         // leftover represents the TOTAL space leftover. Need to account for
         // the reserved flags space, so subtract 8bytes
-        data_set_size(split_header, leftover - BLOCK_SIZE);
-        header_toggle_0(split_header);
-        // Add the split header to the free list for future use
-        free_list_add(split_header);
+        split_header->Size = leftover - BLOCK_SIZE;
+        split_header->Used = 0;
         
-        //UsedMemory -= leftover;
+        // Add the split header to the free list for future use
+        FreeListAdd(split_header);
         
         return header;
     }
     
-    inline void FreeListAllocator::free_list_add(header_t *header)
+    inline void FreeListAllocator::FreeListAdd(header_t *header)
     {
-        //printf("\tFreeList add with %p\n", header);
-        
         header->Next = nullptr;
         header->Prev = nullptr;
         
         // init the list
         if (FreeList == nullptr)
         {
-            //printf("\t\tFreeList header updated from NULL to %p\n", header);
             FreeList = header;
             FreeList->Prev = nullptr;
             FreeList->Next = nullptr;
@@ -158,8 +135,6 @@ After split:
         // add to the front
         if (header < FreeList)
         {
-            //printf("\t\tFreeList header updated from %p to %p\n", FreeList, header);
-            
             header->Next = FreeList;
             FreeList->Prev = header;
             FreeList = header;
@@ -192,31 +167,31 @@ After split:
         
         if (iter->Next)
         {
-            size_t adj = header_adjusted_size(data_size(iter));
+            u64 adj = HeaderAdjustedSize(iter->Size);
             if (((char*)iter + adj) == (char*)iter->Next)
             {
-                coalesce(iter, iter->Next);
+                Coalesce(iter, iter->Next);
             }
         }
         
         if (iter->Prev)
         {
-            size_t adj = header_adjusted_size(data_size(iter->Prev));
+            u64 adj = HeaderAdjustedSize(iter->Prev->Size);
             if (((char*)iter - adj) == (char*)iter->Prev)
             {
-                coalesce(iter->Prev, iter);
+                Coalesce(iter->Prev, iter);
             }
         }
     }
     
-    FreeListAllocator::header_t* FreeListAllocator::FindFreeHeader(size_t size)
+    FreeListAllocator::header_t* FreeListAllocator::FindFreeHeader(u64 size)
     {
         header_t *header = FreeList;
         
         int count = 0;
         while (header != nullptr)
         {
-            if (!header_used(header) && size <= data_size(header))
+            if (!header->Used && size <= header->Size)
             {
                 break;
             }
@@ -226,20 +201,18 @@ After split:
         }
         
         if (header) {
-            free_list_remove(header);
+            FreeListRemove(header);
         }
         
         return header;
     }
     
-    inline void FreeListAllocator::free_list_remove(header_t *header)
+    inline void FreeListAllocator::FreeListRemove(header_t *header)
     {
         if (FreeList == nullptr || header == nullptr) return;
         
         if (FreeList == header)
         {
-            //printf("\t\tFreeList header updated from %p to %p\n", FreeList, header->Next);
-            
             FreeList = header->Next;
             if (FreeList) FreeList->Prev = nullptr;
         }
@@ -261,15 +234,15 @@ After split:
     
     
     inline FreeListAllocator::header_t* FreeListAllocator::Mem2Header(void *mem) {
-        return (header_t*)((char*)mem-MIN_HEADER_SIZE);
+        return (header_t*)((char*)mem - MIN_HEADER_SIZE);
     }
     
     inline void* FreeListAllocator::Header2Mem(header_t *header) {
-        return (void*)((char*)header+MIN_HEADER_SIZE);
+        return (void*)((char*)header + MIN_HEADER_SIZE);
     }
     
     
-    FreeListAllocator::FreeListAllocator(size_t size, void *start)
+    FreeListAllocator::FreeListAllocator(u64 size, void *start)
         : Allocator(size, start)
         , FreeList(nullptr)
     {
@@ -302,17 +275,17 @@ After split:
         _endp = _brkp;
     }
     
-    void *FreeListAllocator::Allocate(size_t size, size_t alignment)
+    void *FreeListAllocator::Allocate(u64 size, u64 alignment)
     {
         size = ALIGN(size);
-        size_t adj_size = header_adjusted_size(size);
+        u64 adj_size = HeaderAdjustedSize(size);
         
         // Search for an available header
         Header *header = nullptr;
         if ((header = FindFreeHeader(size)))
         {
-            split(header, size);
-            header_toggle_1(header);
+            Split(header, size);
+            header->Used = 1;
         }
         else {
             // header was not found, request from OS
@@ -322,8 +295,11 @@ After split:
                 _brkp += adj_size;
                 header = (header_t*)next_addr;
                 
-                data_set_size(header, size);
-                header_toggle_1(header);
+                header->Size = size;
+                header->Used = 1;
+                
+                header->Size = size;
+                header->Used = 1;
                 header->Next = nullptr;
                 header->Prev = nullptr;
             }
@@ -335,13 +311,13 @@ After split:
         if (header)
         {
             NumAllocations++;
-            UsedMemory += data_size(header);;
+            UsedMemory += header->Size;
         }
         
         return (header) ? Header2Mem(header) : nullptr;
     }
     
-    void* FreeListAllocator::Reallocate(void *src, size_t size, size_t alignment)
+    void* FreeListAllocator::Reallocate(void *src, u64 size, u64 alignment)
     {
         /*
 
@@ -362,10 +338,10 @@ After split:
         {
             result = Allocate(size, alignment);
         }
-        else if (data_size(header) == size) {
+        else if (header->Size == size) {
             result = src;
         }
-        else if (size > data_size(header)) {
+        else if (size > header->Size) {
             // Size is greater than the allocation, so we
             // have allocate a new block of memory, copy
             // the old block over, and finally free the old
@@ -379,7 +355,7 @@ After split:
             // we attempt to split the block, adjust
             // size, add new block back to the free list
             // and return adjusted block.
-            split(header, size);
+            Split(header, size);
             
             result = Header2Mem(header);
         }
@@ -394,18 +370,18 @@ After split:
         
         header_t *header = (header_t*)Mem2Header(ptr);
         
-        if (!header_used(header)) {
+        if (!header->Used) {
             return;
         }
         
-        header_toggle_0(header);
+        header->Used = 0;
         
-        if ((i64)UsedMemory - (i64)data_size(header) < 0)
+        if ((i64)UsedMemory - (i64)header->Size < 0)
         {
             printf("Used memory has an underflow!\n");
         }
         
-        UsedMemory -= data_size(header);
+        UsedMemory -= header->Size;
         NumAllocations--;
         
         // When there is an 8 byte allocation, the total allocated size ends up being
@@ -413,9 +389,9 @@ After split:
         // only needed when in the Free List). So if this block were to be allocated again,
         // there are actually 16 bytes that are usable. This will adjust the header data size
         // to reflect this extra usable space.
-        if (data_size(header) < LIST_HEADER)
-            data_set_size(header, LIST_HEADER);
+        if (header->Size < LIST_HEADER)
+            header->Size = LIST_HEADER;
         
-        free_list_add(header);
+        FreeListAdd(header);
     }
 } // mm

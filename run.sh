@@ -33,3 +33,10 @@ if [ "$1" == "build_shad" ];
 then
 	CompileShaders
 fi
+
+if [ "$1" == "" ];
+then
+	pushd $BUILD_DIR
+		./example
+	popd
+fi
