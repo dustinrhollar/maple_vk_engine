@@ -197,7 +197,7 @@ namespace mm {
 void *talloc(size_t size);
 template<class T> T* talloc(size_t num_elements = 1)
 {
-    return mm::jalloc<T>(num_elements, mm::MEMORY_REQUEST_TRANSIENT_STORAGE);
+    return (T*)talloc(sizeof(T) * num_elements);
 }
 
 void *palloc(size_t size);

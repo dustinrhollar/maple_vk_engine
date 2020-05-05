@@ -289,7 +289,6 @@ void GameInit()
     VkShaderModule vshad_module = vk::CreateShaderModule(vert_shader.GetCStr(), vert_shader.len);
     VkShaderModule fshad_module = vk::CreateShaderModule(frag_shader.GetCStr(), frag_shader.len);
     
-    
     // Shader pipeline
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
