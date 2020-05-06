@@ -6,9 +6,12 @@
 // it calls into "GameInit()" and when it is ready to render the next
 // frame "GameUpdateAndRender"
 
+// defined in platform.h
+struct FrameInput;
+
 void GameInit();
 void GameShutdown();
-void GameUpdateAndRender();
+void GameUpdateAndRender(FrameInput input);
 void FlagGameResize();
 
 

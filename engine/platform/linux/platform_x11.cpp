@@ -1,6 +1,8 @@
 
 #include <xcb/xcb.h>
+#include <xcb/xcb_keysyms.h>
 #include <X11/Xlib.h>
+#include <X11/keysym.h>
 
 #include <libgen.h>
 #include <sys/stat.h>
@@ -12,11 +14,12 @@
 file_global u32 ClientWidth;
 file_global u32 ClientHeight;
 file_global bool IsRunning;
+file_global xcb_key_symbols_t *KeySymbols;
 
 file_internal xcb_intern_atom_cookie_t intern_atom_cookie(xcb_connection_t *c, const jstring s);
 file_internal xcb_atom_t intern_atom(xcb_connection_t *c, xcb_intern_atom_cookie_t cookie);
 
-file_internal void XcbHandleEvent(const xcb_generic_event_t *event);
+file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_t *event);
 file_internal void XcbLoopWait();
 file_internal void XcbLoopPoll();
 file_internal void XcbCreateWindow();
@@ -130,15 +133,20 @@ const char *XcbGetRequiredInstanceExtensions(bool validation_layers)
     
     pfree(ep);
     
-    if (xlib_found && xcb_found)
+    if ((xlib_found && xcb_found) || xcb_found)
     {
         const char *plat_exts = "VK_KHR_xcb_surface";
         return plat_exts;
     }
-    else
+    else if (xlib_found)
     {
         const char *plat_exts = "VK_KHR_xlib_surface";
         return plat_exts;
+    }
+    else
+    {
+        printf("ERROR: Could not find a valid KHR Surface!\n");
+        return "";
     }
 }
 
@@ -192,7 +200,7 @@ file_internal void ShutdownRoutines()
     mm::ShutdownMemoryManager();
 }
 
-file_internal void XcbHandleEvent(const xcb_generic_event_t *ev)
+file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_t *ev)
 {
     switch (ev->response_type & 0x7f) {
         case XCB_CONFIGURE_NOTIFY:
@@ -220,27 +228,66 @@ file_internal void XcbHandleEvent(const xcb_generic_event_t *ev)
         {
             const xcb_key_press_event_t *press = reinterpret_cast<const xcb_key_press_event_t *>(ev);
             
-            // TODO translate xcb_keycode_t
-            switch (press->detail) {
-                case 9:
+            
+            xcb_keysym_t keysym = xcb_key_symbols_get_keysym(KeySymbols,
+                                                             press->detail, 0);
+            
+            // Can find the key code translations here:
+            // https://code.woboq.org/qt5/include/X11/keysymdef.h.html#210
+            // or
+            // /usr/include/X11/keysymdef.h
+            
+            //printf("Symbol: %x\n", keysym);
+            
+            switch (keysym) {
+                case XK_Escape:
                 { // escape
                     IsRunning = false;
                 } break;
                 
-                case 111:
+                case XK_Up:
                 { // key up
+                    input->KEY_ARROW_UP = 1;
                 } break;
                 
-                case 116:
+                case XK_Down:
                 { // key down
+                    input->KEY_ARROW_DOWN = 1;
                 } break;
                 
-                case 65:
+                case XK_Left:
+                { // key up
+                    input->KEY_ARROW_LEFT = 1;
+                } break;
+                
+                case XK_Right:
+                { // key down
+                    input->KEY_ARROW_RIGHT = 1;
+                } break;
+                
+                case XK_space:
                 { // key space
+                    printf("Space was pressed!\n");
                 } break;
                 
-                case 41:
+                case XK_w:
                 { // key F
+                    input->KEY_W = 1;
+                } break;
+                
+                case XK_s:
+                {
+                    input->KEY_S = 1;
+                } break;
+                
+                case XK_a:
+                {
+                    input->KEY_A = 1;
+                } break;
+                
+                case XK_d:
+                {
+                    input->KEY_D = 1;
                 } break;
                 
                 default:
@@ -248,6 +295,7 @@ file_internal void XcbHandleEvent(const xcb_generic_event_t *ev)
                 } break;
             }
         } break;
+        
         case XCB_CLIENT_MESSAGE:
         {
             const xcb_client_message_event_t *msg = reinterpret_cast<const xcb_client_message_event_t *>(ev);
@@ -367,6 +415,9 @@ file_internal void XcbInitConnection()
     while (scr-- > 0) xcb_screen_next(&iter);
     
     xcb_info.Screen = iter.data;
+    
+    // Get Key symbols
+    KeySymbols = xcb_key_symbols_alloc(xcb_info.Connection);
 }
 
 int main()
@@ -382,16 +433,18 @@ int main()
     IsRunning = true;
     while (IsRunning)
     {
+        FrameInput frame_input = {0};
+        
         while (true)
         {
             xcb_generic_event_t *ev = xcb_poll_for_event(xcb_info.Connection);
             if (!ev) break;
             
-            XcbHandleEvent(ev);
+            XcbHandleEvent(&frame_input.Keyboard, ev);
             free(ev); // not sure how i feel about this...
         }
         
-        GameUpdateAndRender();
+        GameUpdateAndRender(frame_input);
         
         // TODO(Dustin): TIMING
     }

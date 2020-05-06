@@ -143,6 +143,7 @@ namespace vk {
     
     void Idle();
     
+    ImageParameters* GetSwapChainImages();
     VkExtent2D GetSwapChainExtent();
     u32 GetSwapChainImageCount();
     VkFormat GetSwapChainImageFormat();

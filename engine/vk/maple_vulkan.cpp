@@ -1072,6 +1072,11 @@ VkRenderPass vk::CreateRenderPass(VkAttachmentDescription *attachments, u32 atta
     return render_pass;
 }
 
+ImageParameters* vk::GetSwapChainImages()
+{
+    return GlobalVulkanState.SwapChain.Images;
+}
+
 u32 vk::GetSwapChainImageCount() {
     return GlobalVulkanState.SwapChain.ImagesCount;
 }
@@ -1136,22 +1141,16 @@ void vk::DestroyCommandPool(VkCommandPool command_pool) {
 }
 
 VkFramebuffer vk::CreateFramebuffer(VkImageView *image_views, u32 image_views_count,
-                                    u32 image_index, VkRenderPass render_pass) {
-    
-    VkImageView *images = (VkImageView*)talloc<VkImageView>((image_views_count + 1));
-    
-    for (u32 i = 0; i < image_views_count; ++i)
-        images[i] = image_views[i];
-    images[image_views_count] = GlobalVulkanState.SwapChain.Images[image_index].View;
-    
+                                    u32 image_index, VkRenderPass render_pass)
+{
     VkFramebufferCreateInfo framebufferInfo = {};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = render_pass;
-    framebufferInfo.attachmentCount = image_views_count + 1;
-    framebufferInfo.pAttachments = images;
-    framebufferInfo.width = GlobalVulkanState.SwapChain.Extent.width;
-    framebufferInfo.height = GlobalVulkanState.SwapChain.Extent.height;
-    framebufferInfo.layers = 1;
+    framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass      = render_pass;
+    framebufferInfo.attachmentCount = image_views_count;
+    framebufferInfo.pAttachments    = image_views;
+    framebufferInfo.width           = GlobalVulkanState.SwapChain.Extent.width;
+    framebufferInfo.height          = GlobalVulkanState.SwapChain.Extent.height;
+    framebufferInfo.layers          = 1;
     
     VkFramebuffer framebuffer;
     VK_CHECK_RESULT(vkCreateFramebuffer(GlobalVulkanState.Device, &framebufferInfo, nullptr, &framebuffer),
