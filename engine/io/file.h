@@ -37,7 +37,7 @@ void UInt64ToBinaryBuffer(FileBuffer *buffer, u64 *data, u32 count);
 void CharToBinaryBuffer(FileBuffer *buffer, const char *data, u32 count);
 void BoolToBinaryBuffer(FileBuffer *buffer, bool *data, u32 count);
 void JStringToBinaryBuffer(FileBuffer *buffer, jstring &str);
-void FloatToBinaryBuffer(FileBuffer *buffer, r32 f);
+void FloatToBinaryBuffer(FileBuffer *buffer, r32 *data, u32 count);
 
 void ReadFloatFromBinaryBuffer(FileBuffer *buffer, r32 *result);
 void ReadBoolFromBinaryBuffer(FileBuffer *buffer, bool *result);

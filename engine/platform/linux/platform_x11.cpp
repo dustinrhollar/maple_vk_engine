@@ -62,6 +62,21 @@ DynamicArray<jstring> XcbFindAllFilesInDirectory(jstring &directory, jstring del
 
 void XcbWriteBufferToFile(jstring &file, void *buffer, u32 size)
 {
+    int fd = open(file.GetCStr(), O_WRONLY|O_TRUNC, S_IRWXU);
+    if (fd < 0)
+    {
+        printf("File does not exist, attempting to create it.\n");
+        fd = open(file.GetCStr(), O_WRONLY|O_CREAT, S_IRWXU);
+        
+        if (fd < 0)
+        {
+            printf("Unable to create file! %s\n", file.GetCStr());
+        }
+    }
+    
+    write(fd, buffer, size);
+    
+    close(fd);
 }
 
 jstring XcbLoadFile(jstring &directory, jstring &filename)
@@ -237,8 +252,6 @@ file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_
             // or
             // /usr/include/X11/keysymdef.h
             
-            //printf("Symbol: %x\n", keysym);
-            
             switch (keysym) {
                 case XK_Escape:
                 { // escape
@@ -357,8 +370,8 @@ file_internal xcb_atom_t intern_atom(xcb_connection_t *c, xcb_intern_atom_cookie
 
 file_internal void XcbCreateWindow()
 {
-    ClientWidth = 800;
-    ClientHeight = 600;
+    ClientWidth = 1080;
+    ClientHeight = 720;
     
     xcb_info.Window = xcb_generate_id(xcb_info.Connection);
     

@@ -437,8 +437,30 @@ void Int64ToBinaryBuffer(FileBuffer *buffer, i64 *data, u32 count)
     
     // if, for whatever reason, the system is big endian,
     // reverse the byte order
-    for (u32 i = 0; i < count; ++i)
-        data[i] = ReverseInt64(data[i]);
+    if (is_bigendian())
+    {
+        for (u32 i = 0; i < count; ++i)
+            data[i] = ReverseInt64(data[i]);
+    }
+    
+    memcpy(buffer->brkp, data, req_size);
+    
+    buffer->brkp += req_size;
+}
+
+void FloatToBinaryBuffer(FileBuffer *buffer, r32 *data, u32 count)
+{
+    // assume little endian value
+    u32 req_size = count * sizeof(r32);
+    ResizeIfPossible(buffer, req_size);
+    
+    // if, for whatever reason, the system is big endian,
+    // reverse the byte order
+    if (is_bigendian())
+    {
+        for (u32 i = 0; i < count; ++i)
+            data[i] = ReverseFloat(data[i]);
+    }
     
     memcpy(buffer->brkp, data, req_size);
     
@@ -472,20 +494,6 @@ void JStringToBinaryBuffer(FileBuffer *buffer, jstring &str)
     UInt32ToBinaryBuffer(buffer, &flags, 1);
     
     CharToBinaryBuffer(buffer, str.GetCStr(), str.len);
-}
-
-void FloatToBinaryBuffer(FileBuffer *buffer, r32 f)
-{
-    // assume little endian value
-    u32 req_size = sizeof(r32);
-    ResizeIfPossible(buffer, req_size);
-    
-    char *mem = buffer->brkp;
-    buffer->brkp += req_size;
-    
-    // just in case we are on a big-endian system
-    f = ReverseFloat(f);
-    memcpy(mem, &f, sizeof(r32));
 }
 
 void EntityToBinaryBuffer(FileBuffer *buffer, ecs::Entity entity)

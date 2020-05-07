@@ -539,6 +539,10 @@ inline Vec2 operator*(Vec2 left, float const& scalar);
 inline Vec3 operator*(Vec3 left, float const& scalar);
 inline Vec4 operator*(Vec4 left, float const& scalar);
 
+inline Vec2 operator*(float const& scalar, Vec2 left);
+inline Vec3 operator*(float const& scalar, Vec3 left);
+inline Vec4 operator*(float const& scalar, Vec4 left);
+
 inline Mat3 operator*(Mat3 const& left, Mat3 const& r);
 inline Mat4 operator*(Mat4 const& left, Mat4 const& r);
 
@@ -704,6 +708,25 @@ inline Vec3 operator/(Vec3 left, float const& denominator)
 }
 
 inline Vec3 operator*(Vec3 left, float const& scalar)
+{
+    left *= scalar;
+    return left;
+}
+
+
+inline Vec2 operator*(float const& scalar, Vec2 left)
+{
+    left *= scalar;
+    return left;
+}
+
+inline Vec3 operator*(float const& scalar, Vec3 left)
+{
+    left *= scalar;
+    return left;
+}
+
+inline Vec4 operator*(float const& scalar, Vec4 left)
 {
     left *= scalar;
     return left;
