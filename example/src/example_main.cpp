@@ -101,8 +101,14 @@ file_internal void CreateVulkanResizableState()
     {
         FramebufferCount = swapchain_image_count;
         Framebuffer = palloc<VkFramebuffer>(swapchain_image_count);
+        ImageParameters* swapchain_images = vk::GetSwapChainImages();
         for (u32 i = 0; i < swapchain_image_count; ++i) {
-            VkFramebuffer framebuffer = vk::CreateFramebuffer(nullptr, 0, i, RenderPass);
+            
+            VkImageView attachments[] = {
+                swapchain_images[i].View,
+            };
+            
+            VkFramebuffer framebuffer = vk::CreateFramebuffer(attachments, 1, i, RenderPass);
             Framebuffer[i] = framebuffer;
         }
     }
@@ -125,7 +131,7 @@ void GameResize()
     if (!IsGameInit) return;
     
     u32 width, height;
-    XcbGetClientWindowDimensions(&width, &height);
+    PlatformGetClientWindowDimensions(&width, &height);
     
     // Idle <- wait for last frame to finish rendering
     vk::Idle();
@@ -154,7 +160,7 @@ void FlagGameResize()
     GameNeedsResize = true;
 }
 
-void GameUpdateAndRender()
+void GameUpdateAndRender(FrameInput input)
 {
     mm::ResetTransientMemory();
     
@@ -268,7 +274,7 @@ void GameInit()
 {
     printf("Initializing the game...\n");
     
-    EXE_PATH = XcbGetExeFilepath();
+    EXE_PATH = PlatformGetExeFilepath();
     SHADER_PATH = EXE_PATH + "data/shaders/";
     
     VERT_SHADER = InitJString("shader.vert.spv");
@@ -283,8 +289,8 @@ void GameInit()
     CreateVulkanResizableState();
     
     //~ Create the shader...
-    jstring vert_shader = XcbLoadFile(SHADER_PATH, VERT_SHADER);
-    jstring frag_shader = XcbLoadFile(SHADER_PATH, FRAG_SHADER);
+    jstring vert_shader = PlatformLoadFile(SHADER_PATH, VERT_SHADER);
+    jstring frag_shader = PlatformLoadFile(SHADER_PATH, FRAG_SHADER);
     
     VkShaderModule vshad_module = vk::CreateShaderModule(vert_shader.GetCStr(), vert_shader.len);
     VkShaderModule fshad_module = vk::CreateShaderModule(frag_shader.GetCStr(), frag_shader.len);

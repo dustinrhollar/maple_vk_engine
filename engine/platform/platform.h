@@ -71,6 +71,12 @@ struct FrameInput
     MouseInput    Mouse;
 };
 
+enum ErrorCode
+{
+    ERROR_CODE_NONE,
+    ERROR_CODE_SEG,
+};
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
 
 #define PlatformGetExeFilepath                Win32GetExeFilepath
@@ -84,6 +90,10 @@ struct FrameInput
 #define PlatformGetClientWindowDimensions     Win32GetClientWindowDimensions
 #define PlatformVulkanCreateSurface           Win32VulkanCreateSurface
 
+#define PlatformGetWallClock                  Win32GetWallClock
+#define PlatformGetSecondsElapsed             Win32GetSecondsElapsed
+#define PlatformRaiseError                    Win32RaiseError
+
 DynamicArray<jstring> Win32FindAllFilesInDirectory(jstring &directory, jstring delimiter);
 jstring Win32GetExeFilepath();
 jstring Win32LoadFile(jstring &directory, jstring &filename);
@@ -91,6 +101,9 @@ void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size);
 void Win32DeleteFile(jstring &file);
 void Win32ExecuteCommand(jstring &system_cmd);
 void Win32EnableLogging();
+u64 Win32GetWallClock();
+r32 Win32GetSecondsElapsed(r32 start, u32 end);
+void Win32RaiseError(ErrorCode error, char *fmt, ...);
 
 const char* Win32GetRequiredInstanceExtensions(bool validation_layers);
 void Win32GetClientWindowDimensions(u32 *width, u32 *height);

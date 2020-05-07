@@ -1,11 +1,13 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-SET EXE_NAME=splicer.exe
+SET HOST_DIR=%~dp0
+SET HOST_DIR=%HOST_DIR:~0,-1%
+
+SET EXE_NAME=maple.exe
 
 :: Build Commands
 SET NONE=""
-SET CONFIGURE=conf
 SET BUILD=build
 SET CLEAN=clean
 SET DEBUG=debug
@@ -16,18 +18,8 @@ SET SHAD=shad
 GOTO :MAIN
 EXIT /B %ERRORLEVEL%
 
-:Configure
-    pushd build
-        cmake -G "NMake Makefiles" ..
-    popd
-    EXIT /B 0
-
 :Build
 	call build.bat
-    pushd build
-		::nmake
-        ::xcopy splicer\SplicerLib.dll platform /i /d /y
-    popd
     EXIT /B 0
 
 :Clean
@@ -47,11 +39,18 @@ EXIT /B %ERRORLEVEL%
     EXIT /B 0
 
 :CopyRSRC
-	xcopy resources build\ /i /d /y /s
+
+	pushd %HOST_DIR%\build
+	    IF NOT EXIST data (
+        	1>NUL md data
+    	)
+
+		xcopy %HOST_DIR%\example\data data\ /i /d /y /s
+	popd
 	EXIT /B 0
 
 :BuildShaders
-	pushd build\shaders
+	pushd build\data\shaders
         call build.bat
     popd
     EXIT /B 0
@@ -68,10 +67,6 @@ EXIT /B %ERRORLEVEL%
 		EXIT /B %ERRORLEVEL%
     )
 
-    IF %1 == %CONFIGURE% (
-        CALL :Configure
-		EXIT /B %ERRORLEVEL%
-    )
     IF %1 == %BUILD% (
         CALL :Build
 		EXIT /B %ERRORLEVEL%
