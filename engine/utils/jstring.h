@@ -55,7 +55,7 @@ union jstring {
     };
     
     inline void Clear();
-    const char *GetCStr() const;
+    char *GetCStr() const;
     
     inline jstring& operator+=(const jstring &str);
     inline jstring& operator+=(const char *cstr);
@@ -629,15 +629,11 @@ void AddJString(jstring &result, const char* lhs, const char* rhs)
     }
 }
 
-const char* jstring::GetCStr() const
+char* jstring::GetCStr() const
 {
-    const char *result = nullptr;
-    
     // NOTE(Dustin): Redundant if statement?
-    if (heap) result = hptr;
-    else      result = sptr;
-    
-    return result;
+    if (heap) return hptr;
+    else      return (char*)sptr;
 }
 
 inline char jstring::operator[](int idx)

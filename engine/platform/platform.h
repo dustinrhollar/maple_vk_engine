@@ -69,6 +69,8 @@ struct FrameInput
 {
     KeyboardInput Keyboard;
     MouseInput    Mouse;
+    
+    r32 TimeElapsed;
 };
 
 enum ErrorCode
@@ -77,7 +79,37 @@ enum ErrorCode
     ERROR_CODE_SEG,
 };
 
+enum class EConsoleColor
+{
+    White,
+    DarkGrey,
+    Grey,
+    DarkRed,
+    Red,
+    DarkGreen,
+    Green,
+    DarkBlue,
+    Blue,
+    DarkCyan,
+    Cyan,
+    DarkPurple,
+    Purple,
+    DarkYellow,
+    Yellow,
+};
+
+// Simpler versions of the platform print
+
+#define mformat PlatformFormatString
+inline void mprint(char *fmt, ...);
+inline void mprinte(char *fmt, ...);
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
+
+// Custom I/O
+#define PlatformFormatString                  Win32FormatString
+#define PlatformPrintMesage                   Win32PrintMessage
+#define PlatformPrintError                    Win32PrintError
 
 #define PlatformGetExeFilepath                Win32GetExeFilepath
 #define PlatformFindAllFilesInDirectory       Win32FindAllFilesInDirectory
@@ -85,7 +117,6 @@ enum ErrorCode
 #define PlatformLoadFile                      Win32LoadFile
 #define PlatformDeleteFile                    Win32DeleteFile
 #define PlatformExecuteCommand                Win32ExecuteCommand
-#define PlatformEnableLogging                 Win32EnableLogging
 #define PlatformGetRequiredInstanceExtensions Win32GetRequiredInstanceExtensions
 #define PlatformGetClientWindowDimensions     Win32GetClientWindowDimensions
 #define PlatformVulkanCreateSurface           Win32VulkanCreateSurface
@@ -94,13 +125,16 @@ enum ErrorCode
 #define PlatformGetSecondsElapsed             Win32GetSecondsElapsed
 #define PlatformRaiseError                    Win32RaiseError
 
+jstring Win32FormatString(char* fmt, ...);
+void Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
+void Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
+
 DynamicArray<jstring> Win32FindAllFilesInDirectory(jstring &directory, jstring delimiter);
 jstring Win32GetExeFilepath();
 jstring Win32LoadFile(jstring &directory, jstring &filename);
 void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size);
 void Win32DeleteFile(jstring &file);
 void Win32ExecuteCommand(jstring &system_cmd);
-void Win32EnableLogging();
 u64 Win32GetWallClock();
 r32 Win32GetSecondsElapsed(r32 start, u32 end);
 void Win32RaiseError(ErrorCode error, char *fmt, ...);
@@ -117,7 +151,6 @@ void Win32VulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance)
 #define PlatformLoadFile                      XcbLoadFile
 #define PlatformDeleteFile                    XcbDeleteFile
 #define PlatformExecuteCommand                XcbExecuteCommand
-#define PlatformEnableLogging                 XcbEnableLogging
 #define PlatformGetRequiredInstanceExtensions XcbGetRequiredInstanceExtensions
 #define PlatformGetClientWindowDimensions     XcbGetClientWindowDimensions
 #define PlatformVulkanCreateSurface           XcbVulkanCreateSurface
@@ -128,7 +161,6 @@ void XcbWriteBufferToFile(jstring &file, void *buffer, u32 size);
 jstring XcbLoadFile(jstring &directory, jstring &filename);
 void XcbDeleteFile(jstring &file);
 void XcbExecuteCommand(jstring &system_cmd);
-void XcbEnableLogging();
 
 const char *XcbGetRequiredInstanceExtensions(bool validation_layers);
 void XcbGetClientWindowDimensions(u32 *width, u32 *height);
