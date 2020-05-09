@@ -61,7 +61,7 @@ union jstring {
     inline jstring& operator+=(const char *cstr);
     inline jstring& operator+=(char ch);
     
-    inline char operator[](int idx);
+    inline char& operator[](int idx);
     bool operator==(const jstring &rhs) const;
     bool operator==(const char *rhs) const;
 };
@@ -422,13 +422,13 @@ inline jstring operator+(const char *cstr, const jstring &rhs)
     if (result.heap)
     {
         memcpy(result.hptr, cstr , str_len);
-        memcpy(result.hptr + rhs.len, (rhs.heap) ? rhs.hptr : rhs.sptr, rhs.len);
+        memcpy(result.hptr + str_len, (rhs.heap) ? rhs.hptr : rhs.sptr, rhs.len);
         result.hptr[result.len] = 0;
     }
     else
     {
         memcpy(result.hptr, cstr , str_len);
-        memcpy(result.hptr + rhs.len, rhs.sptr, rhs.len);
+        memcpy(result.hptr + str_len, rhs.sptr, rhs.len);
         result.sptr[result.len] = 0;
     }
     
@@ -636,14 +636,9 @@ char* jstring::GetCStr() const
     else      return (char*)sptr;
 }
 
-inline char jstring::operator[](int idx)
+inline char& jstring::operator[](int idx)
 {
-    char result;
-    
-    if (heap) result = hptr[idx];
-    else      result = sptr[idx];
-    
-    return result;
+    return (heap) ? hptr[idx] : sptr[idx];
 }
 
 bool jstring::operator==(const jstring &rhs) const

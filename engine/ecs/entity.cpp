@@ -33,7 +33,7 @@ namespace ecs {
         FreeIndices.Reset();
     }
     
-    void LoadEntityRegistryFromFile(jstring &dir, jstring &entity_registry)
+    void LoadEntityRegistryFromFile(jstring &entity_registry)
     {
         // File is written in the order of:
         // MaxEntities:     u32
@@ -42,7 +42,7 @@ namespace ecs {
         // FreeIndices:     Linked List of u64
         // EntityComponent: Array of LinkedLists of u64
         
-        jstring file_result = PlatformLoadFile(dir, entity_registry);
+        jstring file_result = PlatformLoadFile(entity_registry);
         
         if (file_result.len > 0)
         {
@@ -108,7 +108,7 @@ error. Good luck fixing it because I have no idea what fixed it in the
 first place.
 
 */
-    void FlushEntityRegistryToFile(jstring &dir, jstring &entity_registry)
+    void FlushEntityRegistryToFile(jstring &entity_registry)
     {
         // File is written in the order of:
         // MaxEntities:     u32
@@ -149,9 +149,8 @@ first place.
                 UInt64ToBinaryBuffer(&buffer, &EntityComponents[i][j], 1);
             }
         }
-        //
-        jstring fullpath = dir + entity_registry;
-        PlatformWriteBufferToFile(fullpath, buffer.start, buffer.brkp - buffer.start);
+        
+        PlatformWriteBufferToFile(entity_registry, buffer.start, buffer.brkp - buffer.start);
     }
     
     file_internal Entity GenerateEntity(u64 index, u64 generation)

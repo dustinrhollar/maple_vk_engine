@@ -369,6 +369,13 @@ inline void ResizeIfPossible(FileBuffer *buffer, u32 req_size)
         ResizeFileBuffer(buffer, (buffer->cap * 2 > req_size) ? buffer->cap * 2 : req_size * 2);
 }
 
+i32 BufferUnusedSize(FileBuffer *buffer)
+{
+    u32 used_space = buffer->brkp - buffer->start;
+    return buffer->cap - used_space;
+}
+
+
 //~ Write Routines
 void Int32ToBinaryBuffer(FileBuffer *buffer, i32 *data, u32 count)
 {
@@ -522,7 +529,7 @@ void ReadFloatFromBinaryBuffer(FileBuffer *buffer, r32 *result)
     
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {
@@ -536,7 +543,7 @@ void ReadBoolFromBinaryBuffer(FileBuffer *buffer, bool *result)
     u32 req_size = sizeof(bool);
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {
@@ -551,7 +558,7 @@ void ReadInt32FromBinaryBuffer(FileBuffer *buffer, i32 *result)
     
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {
@@ -566,7 +573,7 @@ void ReadInt64FromBinaryBuffer(FileBuffer *buffer, i64 *result)
     
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {
@@ -581,7 +588,7 @@ void ReadUInt16FromBinaryBuffer(FileBuffer *buffer, u16 *result)
     
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {
@@ -596,7 +603,7 @@ void ReadUInt32FromBinaryBuffer(FileBuffer *buffer, u32 *result)
     
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {
@@ -611,7 +618,7 @@ void ReadUInt64FromBinaryBuffer(FileBuffer *buffer, u64 *result)
     
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {
@@ -649,7 +656,7 @@ void ReadJStringFromBinaryBuffer(FileBuffer *buffer, jstring *result)
     
     if (NeedsResize(buffer, req_size))
     {
-        printf("Not enough space left to read jstring from buffer!\n");
+        mprinte("Not enough space left to read jstring from buffer!\n");
     }
     else
     {

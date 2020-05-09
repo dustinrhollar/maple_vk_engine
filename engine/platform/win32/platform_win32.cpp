@@ -3,6 +3,7 @@
 
 #include <Tchar.h>
 #include <strsafe.h>
+#include <stdio.h>
 
 #ifndef LOG_BUFFER_SIZE
 #define LOG_BUFFER_SIZE 512
@@ -29,7 +30,7 @@ file_global bool GlobalIsFullscreen = false;
 
 file_global bool ClientIsRunning = false;
 
-file_global KeyboardInput GlobalInput;
+file_global FrameInput GlobalFrameInput;
 
 struct CodeDLL
 {
@@ -44,7 +45,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 // TODO(Dustin): Logging has a bug when printing standard text to a command
 // prompt. Error printing works just fine, but printing to STD_OUTPUT_HANDLE
 // produces no output. This only occurs with command prompt. So far, all other
-// consoles have the expected output.
+// consoles have the expected output. This might be fixed.
 
 // TODO(Dustin): Logging needs to be better handled. The main missing functionality
 // is being able to flush the log console to a file. The two required pieces of
@@ -127,7 +128,7 @@ file_internal void DisplayError(LPTSTR lpszFunction)
                                 dw,
                                 lpMsgBuf)))
     {
-        printf("FATAL ERROR: Unable to output error code.\n");
+        mprinte("FATAL ERROR: Unable to output error code.\n");
     }
     
     _tprintf(TEXT("ERROR: %s\n"), (LPCTSTR)lpDisplayBuf);
@@ -171,14 +172,6 @@ file_internal bool RedirectConsoleIO()
         result = false;
     else
         setvbuf(stderr, NULL, _IONBF, 0);
-    
-    // Clear the error state for each of the C++ standard streams.
-    std::wcout.clear();
-    std::cout.clear();
-    std::wcerr.clear();
-    std::cerr.clear();
-    std::wcin.clear();
-    std::cin.clear();
     
     return result;
 }
@@ -374,17 +367,29 @@ file_internal void Win32PrintToStream(const char* message, Win32StandardStream s
     }
 }
 
-jstring __Win32FormatString(char* fmt, va_list list)
+i32 __Win32FormatString(char *buff, i32 len, char *fmt, va_list list)
 {
-    jstring result = InitJString();
-    
+    // if a caller doesn't actually know the length of the
+    // format list, and is querying for the required size,
+    // attempt to format the string into the buffer first
+    // before copying in the chars.
+    //
+    // This handles the case where the buffer is declared like:
+    //     char *buff = nullptr;
+    char test_buff[12];
     va_list cpy;
     va_copy(cpy, list);
-    
-    // Use the cpy list to determine the required size of the string
-    u32 needed_chars = 1 + vsnprintf(result.sptr, 1, fmt, cpy);
+    u32 needed_chars = vsnprintf(test_buff, 1, fmt, cpy);
     va_end(cpy);
     
+    if (needed_chars < len)
+    {
+        needed_chars = vsnprintf(buff, len, fmt, list);
+    }
+    
+    return needed_chars;
+    
+#if 0
     // since jstring contains a stack allocated buffer, we might not
     // actually need to resize
     if (needed_chars >= sizeof(result.sptr))
@@ -397,60 +402,47 @@ jstring __Win32FormatString(char* fmt, va_list list)
         if ((result.heap) && result.len > result.reserved_heap_size)
         {
             // TODO(Dustin): Use new print methods
-            printf("Failed to format a string!\n");
+            mprinte("Failed to format a string!\n");
             result.Clear();
         }
     }
+#endif
     
-    return result;
+    return needed_chars;
 }
 
 void __Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char *fmt, va_list args)
 {
-    jstring message = __Win32FormatString(fmt, args);
-    
-    // If we are in the debugger, output there.
-    if (IsDebuggerPresent())
-    {
-        // NOTE(Dustin): Not going to output to a debug window right now
-        //OutputDebugStringA(message.GetCStr());
-        //return;
-    }
+    char *message = nullptr;
+    int chars_read = 1 + __Win32FormatString(message, 1, fmt, args);
+    message = talloc<char>(chars_read);
+    __Win32FormatString(message, chars_read, fmt, args);
     
     // Otherwise, output to stdout.
     local_persist Win32StandardStream stream = Win32GetStandardStream(STD_OUTPUT_HANDLE);
-    Win32PrintToStream(message.GetCStr(), stream, text_color, background_color);
-    
-    message.Clear();
+    Win32PrintToStream(message, stream, text_color, background_color);
 }
 
 void __Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, char *fmt, va_list args)
 {
-    jstring message = __Win32FormatString(fmt, args);
-    
-    // If we are in the debugger, output there.
-    if (IsDebuggerPresent())
-    {
-        // NOTE(Dustin): Not going to output to a debug window right now
-        //OutputDebugStringA(message.GetCStr());
-        //return;
-    }
+    char *message = nullptr;
+    int chars_read = 1 + __Win32FormatString(message, 1, fmt, args);
+    message = talloc<char>(chars_read);
+    __Win32FormatString(message, chars_read, fmt, args);
     
     // Otherwise, output to stderr.
     local_persist Win32StandardStream stream = Win32GetStandardStream(STD_ERROR_HANDLE);
-    Win32PrintToStream(message.GetCStr(), stream, text_color, background_color);
-    
-    message.Clear();
+    Win32PrintToStream(message, stream, text_color, background_color);
 }
 
-jstring Win32FormatString(char* fmt, ...)
+i32 Win32FormatString(char *buff, i32 len, char* fmt, ...)
 {
     va_list list;
     va_start(list, fmt);
-    jstring result = __Win32FormatString(fmt, list);
+    int chars_read = __Win32FormatString(buff, len, fmt, list);
     va_end(list);
     
-    return result;
+    return chars_read;
 }
 
 void Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
@@ -485,39 +477,107 @@ inline void mprinte(char *fmt, ...)
     va_end(args);
 }
 
+//~ File I/O
 
-//~
-// NOTE(Dustin): Keep? Depends on how I end up setting up the
-// Engine - Game toolchain
-#if 0
-GameApi LoadGameApi(const char *libname)
+// Takes a path relative to the executable, and normalizes it into a full path.
+// Tries to handle malformed input, but returns an empty string if unsuccessful.
+jstring Win32NormalizePath(const char* path)
 {
-    GameApi gc = {};
+    // If the string is null or has length < 2, just return an empty one.
+    if (!path || !path[0] || !path[1]) return {};
     
-    GlobalCodeDLL.game = LoadLibrary(TEXT(libname));
+    // Start with our relative path appended to the full executable path.
+    jstring result = Win32GetExeFilepath() + path;
     
-    if (GlobalCodeDLL.game != NULL)
+    // Swap any back slashes for forward slashes.
+    for (u32 i = 0; i < (u32)result.len; ++i) if (result[i] == '\\') result[i] = '/';
+    
+    // Strip double separators.
+    for (u32 i = 0; i < (u32)result.len - 1; ++i)
     {
-        gc.Initialize =
-            (game_initialize *)GetProcAddress(GlobalCodeDLL.game, "GameInitialize");
-        gc.Update     = (game_update   *)GetProcAddress(GlobalCodeDLL.game, "GameUpdate");
-        gc.Resize     = (game_resize   *)GetProcAddress(GlobalCodeDLL.game, "GameResize");
-        gc.Shutdown   = (game_shutdown *)GetProcAddress(GlobalCodeDLL.game, "GameShutdown");
-        if (gc.Initialize && gc.Update && gc.Resize && gc.Shutdown)
+        if (result[i] == '/' && result[i + 1] == '/')
         {
-            gc.is_valid = true;
+            for (u32 j = i; j < (u32)result.len; ++j) result[j] = result[j + 1];
+            --result.len;
+            --i;
         }
     }
     
-    return gc;
+    // Evaluate any relative specifiers (./).
+    if (result[0] == '.' && result[1] == '/')
+    {
+        for (u32 i = 0; i < (u32)result.len - 1; ++i) result[i] = result[i + 2];
+        result.len -= 2;
+    }
+    for (u32 i = 0; i < (u32)result.len - 1; ++i)
+    {
+        if (result[i] != '.' && result[i + 1] == '.' && result[i + 2] == '/')
+        {
+            for (u32 j = i + 1; result[j + 1]; ++j) result[j] = result[j + 2];
+            result.len -= 2;
+        }
+    }
+    
+    // Evaluate any parent specifiers (../).
+    u32 last_separator = 0;
+    for (u32 i = 0; (i < (u32)result.len - 1); ++i)
+    {
+        if (result[i] == '.' && result[i + 1] == '.' && result[i + 2] == '/')
+        {
+            u32 base = i + 2;
+            u32 count = result.len - base;
+            
+            for (u32 j = 0; j <= count; ++j)
+            {
+                result[last_separator + j] = result[base + j];
+            }
+            
+            result.len -= base - last_separator;
+            i = last_separator;
+            
+            if (i > 0)
+            {
+                bool has_separator = false;
+                for (i32 j = last_separator - 1; j >= 0; --j)
+                {
+                    if (result[j] == '/')
+                    {
+                        last_separator = j;
+                        has_separator = true;
+                        break;
+                    }
+                }
+                if (!has_separator) return {};
+            }
+        }
+        if (i > 0 && result[i - 1] == '/') last_separator = i - 1;
+    }
+    
+    // Strip any leading or trailing separators.
+    // NOTE(Dustin): Not sure i want this to occur
+    /*
+    if (result[0] == '/')
+    {
+        for (u32 i = 0; i < (u32)result.len; ++i) result[i] = result[i + 1];
+        --result.len;
+    }
+    
+    if (result[result.len - 1] == '/')
+    {
+        result[result.len - 1] = '\0';
+        --result.len;
+    }
+    */
+    
+    return result;
 }
-#endif
 
 DynamicArray<jstring> Win32FindAllFilesInDirectory(jstring &directory, jstring delimiter)
 {
     DynamicArray<jstring> files = DynamicArray<jstring>();
     
-    jstring path = directory + delimiter;
+    jstring abs_path = Win32NormalizePath(directory.GetCStr());
+    jstring path =  abs_path + delimiter;
     
     WIN32_FIND_DATA fd;
     HANDLE hfind = FindFirstFile(path.GetCStr(), &fd);
@@ -538,6 +598,9 @@ DynamicArray<jstring> Win32FindAllFilesInDirectory(jstring &directory, jstring d
         FindClose(hfind);
     }
     
+    abs_path.Clear();
+    path.Clear();
+    
     return files;
 }
 
@@ -550,14 +613,13 @@ jstring Win32GetExeFilepath()
     
     DWORD filepath_size = GetModuleFileNameA(0, exe, filename_size);
     
-    //printf("Filepath %s\n", exe);
-    
     // find last "\"
     char *pos = 0;
     for (char *Scanner = exe; *Scanner; ++Scanner)
     {
         if (*Scanner == '\\')
         {
+            *Scanner = '/'; // normalize the slash to be unix style
             pos = Scanner + 1;
         }
     }
@@ -595,12 +657,11 @@ void Win32DetermineFileEncoding(HANDLE handle)
     }
 }
 
-jstring Win32LoadFile(jstring &directory, jstring &filename)
+jstring Win32LoadFile(jstring &filename)
 {
-    jstring fullpath = InitJString(directory.len + filename.len);
-    AddJString(fullpath, directory, filename);
+    jstring abs_path = Win32NormalizePath(filename.GetCStr());
     
-    HANDLE handle = CreateFileA(fullpath.GetCStr(),
+    HANDLE handle = CreateFileA(abs_path.GetCStr(),
                                 GENERIC_READ,
                                 0,
                                 NULL,
@@ -612,6 +673,8 @@ jstring Win32LoadFile(jstring &directory, jstring &filename)
     {
         DisplayError(TEXT("CreateFile"));
         CloseHandle(handle);
+        
+        abs_path.Clear();
         
         jstring result = {};
         return result;
@@ -626,6 +689,8 @@ jstring Win32LoadFile(jstring &directory, jstring &filename)
     {
         DisplayError(TEXT("GetFileInformationByHandle"));
         CloseHandle(handle);
+        
+        abs_path.Clear();
         
         jstring result = {};
         return result;
@@ -643,8 +708,10 @@ jstring Win32LoadFile(jstring &directory, jstring &filename)
     u64 file_size = (((u64)high_size)<<32) | (((u64)low_size)<<0);
     if (file_size >= ((u64)1<<32))
     {
-        printf("File \"%s\" is too large and should probably be streamed from disc!\n", fullpath.GetCStr());
+        mprinte("File \"%s\" is too large and should probably be streamed from disc!\n", abs_path.GetCStr());
         CloseHandle(handle);
+        
+        abs_path.Clear();
         
         jstring result = {};
         return result;
@@ -666,6 +733,8 @@ jstring Win32LoadFile(jstring &directory, jstring &filename)
         DisplayError(TEXT("ReadFile"));
         CloseHandle(handle);
         
+        abs_path.Clear();
+        
         jstring result = {};
         return result;
     }
@@ -681,12 +750,16 @@ jstring Win32LoadFile(jstring &directory, jstring &filename)
     }
     CloseHandle(handle);
     
+    abs_path.Clear();
+    
     return result;
 }
 
+// TODO(Dustin): Allow for appending to a file
 void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size)
 {
-    HANDLE handle = CreateFileA(file.GetCStr(), GENERIC_WRITE, 0, 0,
+    jstring abs_path = Win32NormalizePath(file.GetCStr());
+    HANDLE handle = CreateFileA(abs_path.GetCStr(), GENERIC_WRITE, 0, 0,
                                 TRUNCATE_EXISTING,
                                 FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
     
@@ -694,53 +767,85 @@ void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size)
     {
         DisplayError(TEXT("CreateFile"));
         
-        handle = CreateFileA(file.GetCStr(), GENERIC_WRITE, 0, 0, CREATE_NEW,
+        handle = CreateFileA(abs_path.GetCStr(), GENERIC_WRITE, 0, 0, CREATE_NEW,
                              FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
     }
     
     if (handle == INVALID_HANDLE_VALUE)
     {
-        CloseHandle(handle);
-        
         DisplayError(TEXT("CreateFile"));
-        _tprintf(TEXT("Terminal failure: Unable to open file \"%s\" for write.\n"), file.GetCStr());
-        return;
-    }
-    
-    DWORD bytes_written = 0;
-    BOOL err = WriteFile(handle,         // open file handle
-                         buffer,         // start of data to write
-                         size,           // number of bytes to write
-                         &bytes_written, // number of bytes that were written
-                         NULL);          // no overlapped structure
-    
-    if (err == FALSE)
-    {
-        DisplayError(TEXT("WriteFile"));
-        printf("Terminal failure: Unable to write to file.\n");
+        _tprintf(TEXT("Terminal failure: Unable to open file \"%s\" for write.\n"), abs_path.GetCStr());
     }
     else
     {
-        if (bytes_written != size)
+        DWORD bytes_written = 0;
+        BOOL err = WriteFile(handle,         // open file handle
+                             buffer,         // start of data to write
+                             size,           // number of bytes to write
+                             &bytes_written, // number of bytes that were written
+                             NULL);          // no overlapped structure
+        
+        if (err == FALSE)
         {
-            // This is an error because a synchronous write that results in
-            // success (WriteFile returns TRUE) should write all data as
-            // requested. This would not necessarily be the case for
-            // asynchronous writes.
-            printf("Error: dwBytesWritten != dwBytesToWrite\n");
+            DisplayError(TEXT("WriteFile"));
+            mprinte("Terminal failure: Unable to write to file.\n");
         }
+        else
+        {
+            if (bytes_written != size)
+            {
+                // This is an error because a synchronous write that results in
+                // success (WriteFile returns TRUE) should write all data as
+                // requested. This would not necessarily be the case for
+                // asynchronous writes.
+                mprinte("Error: dwBytesWritten != dwBytesToWrite\n");
+            }
+        }
+        
     }
     
+    abs_path.Clear();
     CloseHandle(handle);
 }
 
 void Win32DeleteFile(jstring &file)
 {
-    if (!DeleteFile(file.GetCStr()))
+    jstring abs_path = Win32NormalizePath(file.GetCStr());
+    
+    if (!DeleteFile(abs_path.GetCStr()))
     {
         DisplayError(TEXT("DeleteFile"));
     }
+    
+    abs_path.Clear();
 }
+
+//~
+// NOTE(Dustin): Keep? Depends on how I end up setting up the
+// Engine - Game toolchain
+#if 0
+GameApi LoadGameApi(const char *libname)
+{
+    GameApi gc = {};
+    
+    GlobalCodeDLL.game = LoadLibrary(TEXT(libname));
+    
+    if (GlobalCodeDLL.game != NULL)
+    {
+        gc.Initialize =
+            (game_initialize *)GetProcAddress(GlobalCodeDLL.game, "GameInitialize");
+        gc.Update     = (game_update   *)GetProcAddress(GlobalCodeDLL.game, "GameUpdate");
+        gc.Resize     = (game_resize   *)GetProcAddress(GlobalCodeDLL.game, "GameResize");
+        gc.Shutdown   = (game_shutdown *)GetProcAddress(GlobalCodeDLL.game, "GameShutdown");
+        if (gc.Initialize && gc.Update && gc.Resize && gc.Shutdown)
+        {
+            gc.is_valid = true;
+        }
+    }
+    
+    return gc;
+}
+#endif
 
 void Win32ExecuteCommand(jstring &system_cmd)
 {
@@ -797,14 +902,14 @@ const char* Win32GetRequiredInstanceExtensions(bool validation_layers)
     err = vk::vkEnumerateInstanceExtensionProperties(NULL, &count, NULL);
     if (err)
     {
-        printf("Error enumerating Instance extension properties!\n");
+        mprinte("Error enumerating Instance extension properties!\n");
     }
     
     ep = palloc<VkExtensionProperties>();
     err = vk::vkEnumerateInstanceExtensionProperties(NULL, &count, ep);
     if (err)
     {
-        printf("Unable to retrieve enumerated extension properties!\n");
+        mprinte("Unable to retrieve enumerated extension properties!\n");
         count = 0;
     }
     
@@ -817,7 +922,7 @@ const char* Win32GetRequiredInstanceExtensions(bool validation_layers)
         }
     }
     
-    printf("Could not find win32 vulkan surface extension!\n");
+    mprinte("Could not find win32 vulkan surface extension!\n");
     return "";
 };
 
@@ -902,7 +1007,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     // Enable graphics
     if (!vk::InitializeVulkan())
     {
-        printf("Unable to initialize Vulkan!\n");
+        mprinte("Unable to initialize Vulkan!\n");
         //glfwTerminate();
         ecs::ShutdownECS();
         mm::ShutdownMemoryManager();
@@ -910,26 +1015,26 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         exit(1);
     }
     
-    Win32PrintError(EConsoleColor::White, EConsoleColor::DarkGrey, "Testing the regular print!\n");
-    Win32PrintError(EConsoleColor::Blue, EConsoleColor::DarkGrey, "Testing the error print!\n");
-    
     //~ Client Initialization
     GameInit();
     
     //~ App Loop
     ::ShowWindow(ClientWindow, nCmdShow);
     
-    
     u64 last_frame_time = Win32GetWallClock();
     r32 refresh_rate = 60.0f;
     r32 target_seconds_per_frame = 1 / refresh_rate;
     
+    GlobalFrameInput = {0};;
     ClientIsRunning = true;
     MSG msg = {};
     while (ClientIsRunning)
     {
+        bool last_frame_wireframe = GlobalFrameInput.RenderWireframe;
+        GlobalFrameInput = {0};
+        GlobalFrameInput.RenderWireframe = last_frame_wireframe;
+        
         // Message loop
-        GlobalInput = {0};
         while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&msg);
@@ -961,10 +1066,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         last_frame_time = Win32GetWallClock();
         
         // TODO(Dustin): Handle input
-        FrameInput input = {};
-        input.Keyboard    = GlobalInput;
-        input.TimeElapsed = seconds_elapsed_per_frame;
-        GameUpdateAndRender(input);
+        GlobalFrameInput.TimeElapsed = seconds_elapsed_per_frame;
+        GameUpdateAndRender(GlobalFrameInput);
     }
     
     GameShutdown();
@@ -1043,42 +1146,47 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             {
                 case VK_UP:
                 {
-                    GlobalInput.KEY_ARROW_UP = 1;
+                    GlobalFrameInput.Keyboard.KEY_ARROW_UP = 1;
                 } break;
                 
                 case VK_DOWN:
                 {
-                    GlobalInput.KEY_ARROW_DOWN = 1;
+                    GlobalFrameInput.Keyboard.KEY_ARROW_DOWN = 1;
                 } break;
                 
                 case VK_LEFT:
                 {
-                    GlobalInput.KEY_ARROW_LEFT = 1;
+                    GlobalFrameInput.Keyboard.KEY_ARROW_LEFT = 1;
                 } break;
                 
                 case VK_RIGHT:
                 {
-                    GlobalInput.KEY_ARROW_RIGHT = 1;
+                    GlobalFrameInput.Keyboard.KEY_ARROW_RIGHT = 1;
+                } break;
+                
+                case VK_F5:
+                {
+                    GlobalFrameInput.RenderWireframe = !GlobalFrameInput.RenderWireframe;
                 } break;
                 
                 case 'W':
                 {
-                    GlobalInput.KEY_W = 1;
+                    GlobalFrameInput.Keyboard.KEY_W = 1;
                 } break;
                 
                 case 'S':
                 {
-                    GlobalInput.KEY_S = 1;
+                    GlobalFrameInput.Keyboard.KEY_S = 1;
                 } break;
                 
                 case 'A':
                 {
-                    GlobalInput.KEY_A = 1;
+                    GlobalFrameInput.Keyboard.KEY_A = 1;
                 } break;
                 
                 case 'D':
                 {
-                    GlobalInput.KEY_D = 1;
+                    GlobalFrameInput.Keyboard.KEY_D = 1;
                 } break;
                 
                 case VK_ESCAPE:

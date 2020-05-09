@@ -94,8 +94,8 @@ namespace ecs {
     void IntializeEntityRegistry();
     void ShutdownEntityRegistry();
     
-    void LoadEntityRegistryFromFile(jstring &dir, jstring &entity_registry);
-    void FlushEntityRegistryToFile(jstring &dir, jstring &entity_registry);
+    void LoadEntityRegistryFromFile(jstring &entity_registry);
+    void FlushEntityRegistryToFile(jstring &entity_registry);
     
     Entity CreateEntity();
     bool IsValidEntity(Entity entity);

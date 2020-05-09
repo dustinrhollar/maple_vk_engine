@@ -20,7 +20,7 @@ namespace mm {
         // not enough memory for allocation
         if (adj_size + UsedMemory > Size)
         {
-            printf("Not enough memory for allocation in Linear Allocator!\n");
+            mprinte("Not enough memory for allocation in Linear Allocator!\n");
             return nullptr;
         }
         

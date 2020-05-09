@@ -1,6 +1,109 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+/*
+
+//-----------------------------------------------------------------------------------------------------------
+// Input API
+
+
+
+//-----------------------------------------------------------------------------------------------------------
+// Platform API
+
+// LOGGING/PRINTING
+ 
+i32 PlatformFormatString(char *buff, i32 len, char* fmt, ...);
+
+Formats a string with a provided format and a variable set of arguments.
+The format string is written to buf, if there is enough space. The number
+of characters required for the format is returned. It should be noted that
+the return value is independent of the passed length and buffer size. This
+is done so that if a user does not know the needed size, they can first call
+the function to get the required space, allocate a buffer, and then call the
+function a second time to format the string.
+
+void PlatformPrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
+
+Print a message to the console/logger to STD_OUTPUT_HANDLE. A text color and
+back ground color can be specified based on the enum in EConsoleColor. This
+function calls PlatformFormatString under the hood.
+
+void PlatformPrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
+
+Print a message to the console/logger to STD_ERROR_HANDLE. A text color and
+back ground color can be specified based on the enum in EConsoleColor. This
+function calls PlatformFormatString under the hood.
+
+mformat
+
+Macro function that is forwared to PlatformFormatString.
+
+mprint(char *fmt, ...);
+
+ Inline function that is forwarded to PlatformPrintMessage. Text color is set
+to white and back ground color is set to Dark Grey.
+
+mprinte(char *fmt, ...);
+
+ Inline function that is forwarded to PlatformPrintError. Text color is set
+to red and back ground color is set to Dark Grey.
+
+
+// FILE/IO
+
+DynamicArray<jstring> PlatformFindAllFilesInDirectory(jstring &directory, jstring delimiter);
+
+
+
+jstring PlatformGetExeFilepath();
+jstring PlatformLoadFile(jstring &directory, jstring &filename);
+void PlatformWriteBufferToFile(jstring &file, void *buffer, u32 size);
+- void PlatformDeleteFile(jstring &file);
+
+// TIMING
+
+- u64 PlatformGetWallClock();
+
+Get the current time as a uint64_t value..
+
+- r32 PlatformGetSecondsElapsed(r32 start, u32 end);
+
+Given a start and end time, return the seconds elapsed as a float.
+
+// VULKAN
+
+- const char* PlatformGetRequiredInstanceExtensions(bool validation_layers);
+
+Get the platform specific KHR extension. On Windows this will be
+VK_KHR_win32_surface and on Linux it will be VK_KHR_x11_surface
+oor VK_KHR_xcb_surface.
+
+- void PlatformGetClientWindowDimensions(u32 *width, u32 *height);
+
+Get the width and height of the client window.
+
+- void PlatformVulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance);
+
+Creates a VulkanSurfaceKHR based on the platform. On Windows, vkCreateWin32SurfaceKHR
+is called and on Linux vkCreateX11SurfaceKHR or vkCreateXcbSurfaceKHR is called.
+
+// ERROR HANDLING
+
+- void PlatformRaiseError(ErrorCode error, char *fmt, ...);
+
+NOT YET IMPLEMENTED.
+
+// OTHER
+
+- void PlatformExecuteCommand(jstring &system_cmd);
+
+Executes a system command. This calling is blocking,
+so the function will block until the command has
+finished executing.
+
+*/
+
 struct KeyboardInput
 {
     u64 KEY_A:1;
@@ -71,6 +174,8 @@ struct FrameInput
     MouseInput    Mouse;
     
     r32 TimeElapsed;
+    
+    bool RenderWireframe;
 };
 
 enum ErrorCode
@@ -99,7 +204,12 @@ enum class EConsoleColor
 };
 
 // Simpler versions of the platform print
-
+// NOTE(Dustin): Formatting a string returns a
+// jstring, which might be desired since a user cannot
+// control the allocation of the formatted string.
+// might want to change it so that it returns an int
+// similar to snprintf (total that could be read if enough space)
+// and pass a char* buffer as an argument
 #define mformat PlatformFormatString
 inline void mprint(char *fmt, ...);
 inline void mprinte(char *fmt, ...);
@@ -125,13 +235,13 @@ inline void mprinte(char *fmt, ...);
 #define PlatformGetSecondsElapsed             Win32GetSecondsElapsed
 #define PlatformRaiseError                    Win32RaiseError
 
-jstring Win32FormatString(char* fmt, ...);
+i32 Win32FormatString(char *buff, i32 len, char* fmt, ...);
 void Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
 void Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
 
 DynamicArray<jstring> Win32FindAllFilesInDirectory(jstring &directory, jstring delimiter);
 jstring Win32GetExeFilepath();
-jstring Win32LoadFile(jstring &directory, jstring &filename);
+jstring Win32LoadFile(jstring &filename);
 void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size);
 void Win32DeleteFile(jstring &file);
 void Win32ExecuteCommand(jstring &system_cmd);

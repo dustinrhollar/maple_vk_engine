@@ -10,7 +10,7 @@ struct FileBuffer
 
 void CreateFileBuffer(FileBuffer *buffer, size_t size = 128);
 void ResizeFileBuffer(FileBuffer *buffer, u32 new_cap);
-void JStringToBinaryBuffer(FileBuffer *buffer, jstring &str);
+i32 BufferUnusedSize(FileBuffer *buffer);
 
 i16 ReverseInt16(i16 s);
 i32 ReverseInt32(i32 i);

@@ -172,7 +172,7 @@ void GameUpdateAndRender(FrameInput input)
         return;
     } else if (khr_result != VK_SUCCESS &&
                khr_result != VK_SUBOPTIMAL_KHR) {
-        printf("Failed to acquire swap chain image!");
+        mprinte("Failed to acquire swap chain image!");
     }
     
     // Command buffer to present
@@ -189,7 +189,7 @@ void GameUpdateAndRender(FrameInput input)
             GameNeedsResize = false;
         }
         else if (khr_result != VK_SUCCESS) {
-            printf("Something went wrong acquiring the swapchain image!\n");
+            mprinte("Something went wrong acquiring the swapchain image!\n");
         }
     }
 }
@@ -272,13 +272,10 @@ void GameShutdown()
 
 void GameInit()
 {
-    printf("Initializing the game...\n");
+    mprint("Initializing the game...\n");
     
-    EXE_PATH = PlatformGetExeFilepath();
-    SHADER_PATH = EXE_PATH + "data/shaders/";
-    
-    VERT_SHADER = InitJString("shader.vert.spv");
-    FRAG_SHADER = InitJString("shader.frag.spv");
+    VERT_SHADER = InitJString("data/shaders/shader.vert.spv");
+    FRAG_SHADER = InitJString("data/shaders/shader.frag.spv");
     
     //~ Vulkan Init State
     // Create the CommandPool

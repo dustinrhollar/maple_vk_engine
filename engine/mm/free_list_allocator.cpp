@@ -304,7 +304,7 @@ After split:
                 header->Prev = nullptr;
             }
             else {
-                printf("Requesting more memory than is available!\n");
+                mprinte("Requesting more memory than is available!\n");
             }
         }
         
@@ -378,7 +378,7 @@ After split:
         
         if ((i64)UsedMemory - (i64)header->Size < 0)
         {
-            printf("Used memory has an underflow!\n");
+            mprinte("Used memory has an underflow!\n");
         }
         
         UsedMemory -= header->Size;
