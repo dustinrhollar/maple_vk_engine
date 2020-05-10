@@ -286,8 +286,8 @@ void GameInit()
     CreateVulkanResizableState();
     
     //~ Create the shader...
-    jstring vert_shader = PlatformLoadFile(SHADER_PATH, VERT_SHADER);
-    jstring frag_shader = PlatformLoadFile(SHADER_PATH, FRAG_SHADER);
+    jstring vert_shader = PlatformLoadFile(VERT_SHADER);
+    jstring frag_shader = PlatformLoadFile(FRAG_SHADER);
     
     VkShaderModule vshad_module = vk::CreateShaderModule(vert_shader.GetCStr(), vert_shader.len);
     VkShaderModule fshad_module = vk::CreateShaderModule(frag_shader.GetCStr(), frag_shader.len);

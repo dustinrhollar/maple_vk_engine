@@ -52,14 +52,33 @@ to red and back ground color is set to Dark Grey.
 
 // FILE/IO
 
-DynamicArray<jstring> PlatformFindAllFilesInDirectory(jstring &directory, jstring delimiter);
+NOTE(Dustin): File I/O related functions taken in directories/files
+relatively to the executable unless otherwise specified.
 
+- DynamicArray<jstring> PlatformFindAllFilesInDirectory(jstring &directory, jstring delimiter);
 
+Retrieves all files in in a directory based a delimiteer. The delimiter can
+be a file name or just an extension. Directories are ignored.
 
-jstring PlatformGetExeFilepath();
-jstring PlatformLoadFile(jstring &directory, jstring &filename);
-void PlatformWriteBufferToFile(jstring &file, void *buffer, u32 size);
+- jstring PlatformGetExeFilepath();
+
+Gets the executable filepath. One Windows,  "\\" characters are changed to "/". The
+filepath ends with "/".
+
+- jstring PlatformLoadFile(jstring &filename);
+
+Load a file into a jstring. If the file fails to load, then an error it output
+and an empty string is returned.
+
+- void PlatformWriteBufferToFile(jstring &file, void *buffer, u32 size);
+
+Given a buffer, write it to a file. The file first checks if it it exists, and
+if it does, the file if truncated. If the file is not found, then a new file is
+created.
+
 - void PlatformDeleteFile(jstring &file);
+
+Delete the file passed as the parameter.
 
 // TIMING
 
@@ -277,7 +296,5 @@ void XcbGetClientWindowDimensions(u32 *width, u32 *height);
 void XcbVulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance);
 
 #endif
-
-
 
 #endif //PLATFORM_H
