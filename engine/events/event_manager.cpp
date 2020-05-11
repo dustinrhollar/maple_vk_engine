@@ -1,83 +1,79 @@
 
-// Subtract Event_Type_Cutom and Key_Unknown
-file_global const i32 EVENT_LIST_SIZE = EVENT_TYPE_COUNT + KEY_Count - 2;
-file_global DynamicArray<EventSubscriber> EventSubscriberList[EVENT_LIST_SIZE];
-
-// TODO(Dustin): Hashtable of Custom Events
-
-void InitEventManager()
+namespace event
 {
-    for (int i = 0; i < EVENT_LIST_SIZE; ++i)
-    {
-        EventSubscriberList[i] = DynamicArray<EventSubscriber>();
-    }
-}
-
-void ShutdownEventManager()
-{
-    for (int i = 0; i < EVENT_LIST_SIZE; ++i)
-    {
-        EventSubscriberList[i].Reset();
-    }
-}
-
-void SubscribeToEvent(Event event, void (*subscriber)(void *instance, Event event), void *inst)
-{
-    EventSubscriber subs = {};
-    subs.inst            = inst;
-    subs.subscriber_fn   = subscriber;
+    u64 STATIC_EVENT_ID = 0;
     
-    if (event.Type == EVENT_TYPE_CUSTOM)
-    { // NOTE(Dustin): Not yet implemented
-    }
-    else
-    {
-        i32 event_idx = event.Type;
-        
-        if (event.Type == EVENT_TYPE_ON_KEY_TYPE_PRESS)
-        {
-            // 0..6 are Event_Type indices (Count == 8)
-            EventSubscriberList[EVENT_TYPE_COUNT - 2 + event.OnKeyTypePressEvent.Key].PushBack(subs);
-        }
-        else
-        {
-            // events should not have a value >= EVENT_TYPE_CUSTOM
-            assert(event.Type < EVENT_TYPE_COUNT - 1);
-            EventSubscriberList[event.Type].PushBack(subs);
-        }
-    }
-}
-
-void DispatchEvent(Event event)
-{
+    file_internal DynamicArray<SubscriberList> EventSubscribers;
     
-    int event_idx = -1;
-    int event_key_idx = -1;
-    if (event.Type == EVENT_TYPE_CUSTOM)
-    { // NOTE(Dustin): Not yet implemented
-    }
-    else
+    file_internal void SubscriberListInit(SubscriberList *list, u32 cap = 0);
+    file_internal void SubscriberListFree(SubscriberList *list);
+    file_internal void SubscriberListPushBack(SubscriberList *list, EventSubscriber subscriber);
+    
+    file_internal void SubscriberListInit(SubscriberList *list, u32 cap)
     {
-        event_idx = event.Type;
-        
-        // Dispatch to general Event Press/Release Events
-        u32 sub_count = EventSubscriberList[event.Type].size;
-        for (int subscriber_idx = 0; subscriber_idx < sub_count; ++subscriber_idx)
-        {
-            EventSubscriber subscriber = EventSubscriberList[event.Type][subscriber_idx];
-            subscriber.subscriber_fn(subscriber.inst, event);
+        list->Size = 0;
+        list->Cap  = cap;
+        list->Ptr = palloc<EventSubscriber>(cap);
+    }
+    
+    file_internal void SubscriberListFree(SubscriberList *list)
+    {
+        list->Size = 0;
+        list->Cap  = 0;
+        if (list->Ptr) pfree(list->Ptr);
+        list->Ptr = nullptr;
+    }
+    
+    file_internal void SubscriberListPushBack(SubscriberList *list, EventSubscriber subscriber)
+    {
+        if (list->Size + 1 >= list->Cap)
+        { // resize
+            list->Cap = (list->Cap == 0) ? 10 : list->Cap * 2;
+            list->Ptr = prealloc<EventSubscriber>(list->Ptr, list->Cap);
         }
         
-        // Dispatch to key-specific press/release events
-        if (event.Type == EVENT_TYPE_ON_KEY_TYPE_PRESS)
+        list->Ptr[list->Size++] = subscriber;
+    }
+    
+    void ManagerInit()
+    {
+        u32 initial_cap = 10;
+        
+        EventSubscribers.Resize(initial_cap);
+        
+        for (int i = 0; i < EventSubscribers.cap; ++i)
         {
-            sub_count = EventSubscriberList[EVENT_TYPE_COUNT - 2 + event.OnKeyTypePressEvent.Key].size;
-            for (int subscriber_idx = 0; subscriber_idx < sub_count; ++subscriber_idx)
-            {
-                EventSubscriber subscriber =
-                    EventSubscriberList[EVENT_TYPE_COUNT - 2 + event.OnKeyTypePressEvent.Key][subscriber_idx];
-                subscriber.subscriber_fn(subscriber.inst, event);
-            }
+            SubscriberListInit(&EventSubscribers[i], 5);
         }
     }
-}
+    
+    void ManagerShutdown()
+    {
+        for (int i = 0; i < EventSubscribers.cap; ++i)
+        {
+            SubscriberListFree(&EventSubscribers[i]);
+        }
+        
+        EventSubscribers.Reset();
+    }
+    
+    void Subscribe(u64 event_id, void *callback, void *inst)
+    {
+        EventSubscriber subs = {};
+        subs.inst            = inst;
+        subs.FnCallback      = callback;
+        
+        if (event_id >= EventSubscribers.cap)
+        {
+            EventSubscribers.Resize(EventSubscribers.cap * 2);
+        }
+        
+        SubscriberListPushBack(&EventSubscribers[event_id], subs);
+    }
+    
+    void RetrieveSubscribers(u64 event_id, SubscriberList **subscribers)
+    {
+        *subscribers = &EventSubscribers[event_id];
+    }
+    
+};

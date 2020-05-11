@@ -61,7 +61,7 @@ static bool                 g_HasGamepad = false;
 static bool                 g_WantUpdateHasGamepad = true;
 
 // Resize Event
-static void ImGui_ImplWin32_OnResize(void *instance, Event event);
+static void ImGui_ImplWin32_OnResize(void *instance, ResizeEvent event);
 
 // Functions
 bool    ImGui_ImplWin32_Init(void* hwnd)
@@ -104,9 +104,7 @@ bool    ImGui_ImplWin32_Init(void* hwnd)
     io.KeyMap[ImGuiKey_Z] = 'Z';
     
     // Register for WindowResize
-    Event event;
-    event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
-    SubscribeToEvent(event, &ImGui_ImplWin32_OnResize, nullptr);
+    event::Subscribe<ResizeEvent>(&ImGui_ImplWin32_OnResize, nullptr);
     
     // Setup display size
     RECT rect;
@@ -121,7 +119,7 @@ void    ImGui_ImplWin32_Shutdown()
     g_hWnd = (HWND)0;
 }
 
-static void ImGui_ImplWin32_OnResize(void *instance, Event event)
+static void ImGui_ImplWin32_OnResize(void *instance, ResizeEvent event)
 {
     ImGuiIO& io = ImGui::GetIO();
     

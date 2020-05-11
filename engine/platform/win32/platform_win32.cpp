@@ -967,13 +967,19 @@ file_internal void Win32ShutdownRoutines()
 {
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
-    ShutdownEventManager();
+    event::ManagerShutdown();
     vk::ShutdownVulkan();
     ecs::ShutdownECS();
     mm::ShutdownMemoryManager();
 }
 
-file_internal void TestFnctPtr(void *instance, Event event)
+struct TestEvent
+{
+    int y = 0;
+    int x = 10;
+};
+
+file_internal void TestFnctPtr(void *instance, TestEvent event)
 {
     mprinte("Function pointer was called!\n");
 }
@@ -984,11 +990,33 @@ struct TestEventCallback
     int b = 1;
 } test_callback;
 
-file_internal void TestFnctPtrWithInstance(void *instance, Event event)
+file_internal void TestFnctPtrWithInstance(void *instance, TestEvent event)
 {
     TestEventCallback *callback_instance = (TestEventCallback*)instance;
     
     mprinte("Function pointer with callback was called! a: %d, b: %d\n", callback_instance->a, callback_instance->b);
+}
+
+file_internal void WindowResizeEventCallback(void *instance, WindowResizeEvent event)
+{
+    CoreVulkanResizeEvent cv_event;
+    cv_event.Width  = event.Width;
+    cv_event.Height = event.Height;
+    
+    event::Dispatch<CoreVulkanResizeEvent>(cv_event);
+}
+
+file_internal void CoreVulkanResizeEventCallback(void *instance, CoreVulkanResizeEvent event)
+{
+    // Idle <- wait for last frame to finish rendering
+    vk::Idle();
+    vk::Resize();
+    
+    ResizeEvent r_event;
+    r_event.Width  = event.Width;
+    r_event.Height = event.Height;
+    
+    event::Dispatch<ResizeEvent>(r_event);
 }
 
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -1053,6 +1081,12 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         exit(1);
     }
     
+    //~ Event Initialization
+    event::ManagerInit();
+    
+    event::Subscribe<WindowResizeEvent>(&WindowResizeEventCallback, nullptr);
+    event::Subscribe<CoreVulkanResizeEvent>(&CoreVulkanResizeEventCallback, nullptr);
+    
     //~ Initialize ImGui information
     
     ImGuiContext *ctx = ImGui::CreateContext();
@@ -1065,21 +1099,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         exit(1);
     }
-    
-    //~ Event Initialization
-    InitEventManager();
-    
-    //TestFnctPtr
-    //TestFnctPtrWithInstance , test_callback
-    Event event;
-    event.Type = EVENT_TYPE_ON_MOUSE_MOVE;
-    event.OnMouseMoveEvent.x = 0;
-    event.OnMouseMoveEvent.y = 50;
-    
-    SubscribeToEvent(event, &TestFnctPtr, nullptr);
-    SubscribeToEvent(event, &TestFnctPtrWithInstance, &test_callback);
-    
-    DispatchEvent(event);
     
     //~ Client Initialization
     GameInit();
@@ -1304,12 +1323,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             int width = ClientWindowRect.right - ClientWindowRect.left;
             int height = ClientWindowRect.bottom - ClientWindowRect.top;
             
-            Event event;
-            event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
-            event.OnWindowResize.Width  = (width >= 1) ? width : 1;
-            event.OnWindowResize.Height = (height >= 1) ? height : 1;
+            WindowResizeEvent event;
+            event.Width  = (width >= 1) ? width : 1;
+            event.Height = (height >= 1) ? height : 1;
             
-            DispatchEvent(event);
+            event::Dispatch<WindowResizeEvent>(event);
         } break;
         
         default: break;

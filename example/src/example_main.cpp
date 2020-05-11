@@ -165,14 +165,9 @@ file_internal void CreateVulkanResizableState()
     }
 }
 
-void GameResize(void *instance, Event event)
+void GameResize(void *instance, ResizeEvent event)
 {
     if (!IsGameInit) return;
-    
-    u32 width = event.OnWindowResize.Width, height = event.OnWindowResize.Height;
-    
-    // Idle <- wait for last frame to finish rendering
-    vk::Idle();
     
     ImGui_ImplVulkan_Shutdown();
     
@@ -190,8 +185,6 @@ void GameResize(void *instance, Event event)
     pfree(Framebuffer);
     
     vk::DestroyRenderPass(RenderPass);
-    
-    vk::Resize();
     
     CreateVulkanResizableState();
 }
@@ -213,12 +206,11 @@ void GameUpdateAndRender(FrameInput input)
         u32 width, height;
         PlatformGetClientWindowDimensions(&width, &height);
         
-        Event event;
-        event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
-        event.OnWindowResize.Width  = width;
-        event.OnWindowResize.Height = height;
+        WindowResizeEvent event;
+        event.Width  = width;
+        event.Height = height;
         
-        DispatchEvent(event);
+        event::Dispatch<WindowResizeEvent>(event);
         return;
     }
     else if (khr_result != VK_SUCCESS &&
@@ -241,12 +233,11 @@ void GameUpdateAndRender(FrameInput input)
             u32 width, height;
             PlatformGetClientWindowDimensions(&width, &height);
             
-            Event event;
-            event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
-            event.OnWindowResize.Width  = width;
-            event.OnWindowResize.Height = height;
+            WindowResizeEvent event;
+            event.Width  = width;
+            event.Height = height;
             
-            DispatchEvent(event);
+            event::Dispatch<WindowResizeEvent>(event);
         }
         else if (khr_result != VK_SUCCESS) {
             mprinte("Something went wrong acquiring the swapchain image!\n");
@@ -538,9 +529,7 @@ void GameInit()
                                    vertex_buffer_info.size);
     
     // Register for WindowResize
-    Event event;
-    event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
-    SubscribeToEvent(event, &GameResize, nullptr);
+    event::Subscribe<ResizeEvent>(&GameResize, nullptr);
     
     IsGameInit = true;
 }

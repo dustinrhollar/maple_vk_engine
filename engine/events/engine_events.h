@@ -148,22 +148,16 @@ struct WindowResizeEvent
     u32 Height;
 };
 
-struct Event
+struct CoreVulkanResizeEvent
 {
-    EventType Type;
-    
-    union
-    {
-        MouseMoveEvent          OnMouseMoveEvent;
-        MouseButtonPressEvent   OnMouseButtonPressEvent;
-        MouseButtonReleaseEvent OnMouseButtonReleaseEvent;
-        KeyPressEvent           OnKeyPressEvent;
-        KeyReleaseEvent         OnKeyReleaseEvent;
-        KeyTypePressEvent       OnKeyTypePressEvent;
-        WindowResizeEvent       OnWindowResize;
-        
-        // TODO(Dustin): Custom Event
-    };
+    u32 Width;
+    u32 Height;
+};
+
+struct ResizeEvent
+{
+    u32 Width;
+    u32 Height;
 };
 
 #endif //ENGINE_EVENTS_H
