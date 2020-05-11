@@ -504,7 +504,8 @@ jstring Win32NormalizePath(const char* path)
     if (!path || !path[0] || !path[1]) return {};
     
     // Start with our relative path appended to the full executable path.
-    jstring result = Win32GetExeFilepath() + path;
+    jstring exe_path = Win32GetExeFilepath();
+    jstring result = exe_path + path;
     
     // Swap any back slashes for forward slashes.
     for (u32 i = 0; i < (u32)result.len; ++i) if (result[i] == '\\') result[i] = '/';
@@ -586,6 +587,7 @@ jstring Win32NormalizePath(const char* path)
     }
     */
     
+    exe_path.Clear();
     return result;
 }
 
@@ -935,11 +937,16 @@ const char* Win32GetRequiredInstanceExtensions(bool validation_layers)
         if (strcmp(ep[i].extensionName, "VK_KHR_win32_surface") == 0)
         {
             const char *plat_exts = "VK_KHR_win32_surface";
+            
+            pfree(ep);
+            
             return plat_exts;
         }
     }
     
+    pfree(ep);
     mprinte("Could not find win32 vulkan surface extension!\n");
+    
     return "";
 };
 

@@ -301,7 +301,8 @@ namespace vk {
     
     VkDescriptorPool CreateDescriptorPool(VkDescriptorPoolSize *pool_sizes,
                                           u32 pool_size_count,
-                                          u32 swapchain_count);
+                                          u32 swapchain_count,
+                                          VkDescriptorPoolCreateFlags flags = 0);
     void DestroyDescriptorPool(VkDescriptorPool descriptor_pool);
     
     void ResetDescriptorPool(VkDescriptorPool descriptor_pool);

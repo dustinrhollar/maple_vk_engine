@@ -349,6 +349,15 @@ void CreateFileBuffer(FileBuffer *buffer, size_t size)
     buffer->cap   = size;
 }
 
+void DestroyFileBuffer(FileBuffer *buffer)
+{
+    pfree(buffer->start);
+    
+    buffer->start = nullptr;
+    buffer->brkp  = nullptr;
+    buffer->cap   = 0;
+}
+
 void ResizeFileBuffer(FileBuffer *buffer, u32 new_cap)
 {
     u32 offset = buffer->brkp - buffer->start;

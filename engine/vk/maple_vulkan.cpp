@@ -1535,12 +1535,14 @@ void vk::DestroyDescriptorSetLayout(VkDescriptorSetLayout layout) {
 
 VkDescriptorPool vk::CreateDescriptorPool(VkDescriptorPoolSize *pool_sizes,
                                           u32 pool_size_count,
-                                          u32 swapchain_count) {
+                                          u32 swapchain_count,
+                                          VkDescriptorPoolCreateFlags flags) {
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = pool_size_count;
     poolInfo.pPoolSizes    = pool_sizes;
     poolInfo.maxSets       = swapchain_count;
+    poolInfo.flags         = flags;
     
     VkDescriptorPool descriptor_pool;
     VK_CHECK_RESULT(vkCreateDescriptorPool(GlobalVulkanState.Device, &poolInfo, nullptr, &descriptor_pool),

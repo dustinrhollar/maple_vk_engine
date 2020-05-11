@@ -9,6 +9,7 @@ struct FileBuffer
 };
 
 void CreateFileBuffer(FileBuffer *buffer, size_t size = 128);
+void DestroyFileBuffer(FileBuffer *buffer);
 void ResizeFileBuffer(FileBuffer *buffer, u32 new_cap);
 i32 BufferUnusedSize(FileBuffer *buffer);
 
