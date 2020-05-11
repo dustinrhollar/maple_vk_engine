@@ -5,6 +5,9 @@
 #include <strsafe.h>
 #include <stdio.h>
 
+#include "imgui/imgui_impl_win32.h"
+#include "imgui/imgui_impl_win32.cpp"
+
 #ifndef LOG_BUFFER_SIZE
 #define LOG_BUFFER_SIZE 512
 #endif
@@ -75,6 +78,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 // TODO(Dustin): Allow for mouse capture. This will allow for third/first person camera to
 // be implemented in the client layer.
+
 
 //~ Error Handling
 
@@ -379,7 +383,7 @@ i32 __Win32FormatString(char *buff, i32 len, char *fmt, va_list list)
     char test_buff[12];
     va_list cpy;
     va_copy(cpy, list);
-    u32 needed_chars = vsnprintf(test_buff, 1, fmt, cpy);
+    u32 needed_chars = vsnprintf(NULL, 0, fmt, cpy);
     va_end(cpy);
     
     if (needed_chars < len)
@@ -407,8 +411,6 @@ i32 __Win32FormatString(char *buff, i32 len, char *fmt, va_list list)
         }
     }
 #endif
-    
-    return needed_chars;
 }
 
 void __Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char *fmt, va_list args)
@@ -418,9 +420,17 @@ void __Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_colo
     message = talloc<char>(chars_read);
     __Win32FormatString(message, chars_read, fmt, args);
     
-    // Otherwise, output to stdout.
-    local_persist Win32StandardStream stream = Win32GetStandardStream(STD_OUTPUT_HANDLE);
-    Win32PrintToStream(message, stream, text_color, background_color);
+    // If we are in the debugger, output there.
+    if (IsDebuggerPresent())
+    {
+        OutputDebugStringA(message);
+    }
+    else
+    {
+        // Otherwise, output to stdout.
+        local_persist Win32StandardStream stream = Win32GetStandardStream(STD_OUTPUT_HANDLE);
+        Win32PrintToStream(message, stream, text_color, background_color);
+    }
 }
 
 void __Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, char *fmt, va_list args)
@@ -430,9 +440,16 @@ void __Win32PrintError(EConsoleColor text_color, EConsoleColor background_color,
     message = talloc<char>(chars_read);
     __Win32FormatString(message, chars_read, fmt, args);
     
-    // Otherwise, output to stderr.
-    local_persist Win32StandardStream stream = Win32GetStandardStream(STD_ERROR_HANDLE);
-    Win32PrintToStream(message, stream, text_color, background_color);
+    if (IsDebuggerPresent())
+    {
+        OutputDebugStringA(message);
+    }
+    else
+    {
+        // Otherwise, output to stderr.
+        local_persist Win32StandardStream stream = Win32GetStandardStream(STD_ERROR_HANDLE);
+        Win32PrintToStream(message, stream, text_color, background_color);
+    }
 }
 
 i32 Win32FormatString(char *buff, i32 len, char* fmt, ...)
@@ -948,9 +965,29 @@ void Win32GetClientWindowDimensions(u32 *width, u32 *height)
 
 file_internal void Win32ShutdownRoutines()
 {
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
     vk::ShutdownVulkan();
     ecs::ShutdownECS();
     mm::ShutdownMemoryManager();
+}
+
+file_internal void TestFnctPtr(void *instance, Event event)
+{
+    mprinte("Function pointer was called!\n");
+}
+
+struct TestEventCallback
+{
+    int a = 2;
+    int b = 1;
+} test_callback;
+
+file_internal void TestFnctPtrWithInstance(void *instance, Event event)
+{
+    TestEventCallback *callback_instance = (TestEventCallback*)instance;
+    
+    mprinte("Function pointer with callback was called! a: %d, b: %d\n", callback_instance->a, callback_instance->b);
 }
 
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -1014,6 +1051,36 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         exit(1);
     }
+    
+    //~ Initialize ImGui information
+    
+    ImGuiContext *ctx = ImGui::CreateContext();
+    if (!ImGui_ImplWin32_Init(ClientWindow))
+    {
+        mprinte("Unable to initialize Win32 ImGui!\n");
+        vk::ShutdownVulkan();
+        ecs::ShutdownECS();
+        mm::ShutdownMemoryManager();
+        
+        exit(1);
+    }
+    
+    //~ Event Initialization
+    InitEventManager();
+    
+    //TestFnctPtr
+    //TestFnctPtrWithInstance , test_callback
+    Event event;
+    event.Type = EVENT_TYPE_ON_MOUSE_MOVE;
+    event.OnMouseMoveEvent.x = 0;
+    event.OnMouseMoveEvent.y = 50;
+    
+    SubscribeToEvent(event, &TestFnctPtr, nullptr);
+    SubscribeToEvent(event, &TestFnctPtrWithInstance, &test_callback);
+    
+    DispatchEvent(event);
+    
+    ShutdownEventManager();
     
     //~ Client Initialization
     GameInit();
@@ -1124,8 +1191,17 @@ file_internal void SetFullscreen(bool fullscreen)
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+    //if (ImGui::GetCurrentContext() == NULL)
+    //return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    
+    //ImGuiIO& io = ImGui::GetIO();
+    
+    // Update ImGui
+    ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
+    
     switch (uMsg)
     {
+        case WM_CLOSE:
         case WM_DESTROY:
         {
             ClientIsRunning = false;
@@ -1138,75 +1214,86 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             EndPaint(ClientWindow, &Paint);
         } break;
         
-        case WM_SYSKEYDOWN:
-        case WM_KEYDOWN:
+        case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK:
+        case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK:
+        case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK:
+        case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK:
         {
-            bool alt = (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-            switch (wParam)
-            {
-                case VK_UP:
-                {
-                    GlobalFrameInput.Keyboard.KEY_ARROW_UP = 1;
-                } break;
-                
-                case VK_DOWN:
-                {
-                    GlobalFrameInput.Keyboard.KEY_ARROW_DOWN = 1;
-                } break;
-                
-                case VK_LEFT:
-                {
-                    GlobalFrameInput.Keyboard.KEY_ARROW_LEFT = 1;
-                } break;
-                
-                case VK_RIGHT:
-                {
-                    GlobalFrameInput.Keyboard.KEY_ARROW_RIGHT = 1;
-                } break;
-                
-                case VK_F5:
-                {
-                    GlobalFrameInput.RenderWireframe = !GlobalFrameInput.RenderWireframe;
-                } break;
-                
-                case 'W':
-                {
-                    GlobalFrameInput.Keyboard.KEY_W = 1;
-                } break;
-                
-                case 'S':
-                {
-                    GlobalFrameInput.Keyboard.KEY_S = 1;
-                } break;
-                
-                case 'A':
-                {
-                    GlobalFrameInput.Keyboard.KEY_A = 1;
-                } break;
-                
-                case 'D':
-                {
-                    GlobalFrameInput.Keyboard.KEY_D = 1;
-                } break;
-                
-                case VK_ESCAPE:
-                {
-                    ClientIsRunning = false;
-                } break;
-                case VK_RETURN:
-                {
-                    if (alt)
-                    {
-                        case VK_F11:
-                        {
-                            SetFullscreen(!GlobalIsFullscreen);
-                        } break;
-                    }
-                } break;
-                
-                default: break;
-            }
+            //printf("Mouse button pressed in main win32!\n");
         } break;
+        
+        //if (!io.WantCaptureKeyboard)
+        {
+            case WM_SYSKEYDOWN:
+            case WM_KEYDOWN:
+            {
+                bool alt = (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+                switch (wParam)
+                {
+                    case VK_UP:
+                    {
+                        GlobalFrameInput.Keyboard.KEY_ARROW_UP = 1;
+                    } break;
+                    
+                    case VK_DOWN:
+                    {
+                        GlobalFrameInput.Keyboard.KEY_ARROW_DOWN = 1;
+                    } break;
+                    
+                    case VK_LEFT:
+                    {
+                        GlobalFrameInput.Keyboard.KEY_ARROW_LEFT = 1;
+                    } break;
+                    
+                    case VK_RIGHT:
+                    {
+                        GlobalFrameInput.Keyboard.KEY_ARROW_RIGHT = 1;
+                    } break;
+                    
+                    case VK_F5:
+                    {
+                        GlobalFrameInput.RenderWireframe = !GlobalFrameInput.RenderWireframe;
+                    } break;
+                    
+                    case 'W':
+                    {
+                        GlobalFrameInput.Keyboard.KEY_W = 1;
+                    } break;
+                    
+                    case 'S':
+                    {
+                        GlobalFrameInput.Keyboard.KEY_S = 1;
+                    } break;
+                    
+                    case 'A':
+                    {
+                        GlobalFrameInput.Keyboard.KEY_A = 1;
+                    } break;
+                    
+                    case 'D':
+                    {
+                        GlobalFrameInput.Keyboard.KEY_D = 1;
+                    } break;
+                    
+                    case VK_ESCAPE:
+                    {
+                        ClientIsRunning = false;
+                    } break;
+                    case VK_RETURN:
+                    {
+                        if (alt)
+                        {
+                            case VK_F11:
+                            {
+                                SetFullscreen(!GlobalIsFullscreen);
+                            } break;
+                        }
+                    } break;
+                    
+                    default: break;
+                }
+            } break;
+        }
         
         case WM_SYSCHAR: break;
         

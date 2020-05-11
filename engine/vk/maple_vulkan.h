@@ -3,11 +3,11 @@
 
 #define VK_CHECK_RESULT(f, msg)                 \
 {                                           \
-VkResult res = (f);                     \
-if ((res) != VK_SUCCESS)                \
-{                                       \
-throw std::runtime_error(msg);      \
-}                                       \
+    VkResult res = (f);                     \
+    if ((res) != VK_SUCCESS)                \
+    {                                       \
+        throw std::runtime_error(msg);      \
+    }                                       \
 }
 
 struct VulkanCore;
@@ -150,6 +150,9 @@ namespace vk {
     VkFormat FindDepthFormat();
     VkSampleCountFlagBits GetMaxMsaaSamples();
     
+    VkCommandBuffer BeginSingleTimeCommands(VkCommandPool command_pool);
+    void EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkCommandPool command_pool);
+    
     VkImageView CreateImageView(VkImageViewCreateInfo create_Info);
     void DestroyImageView(VkImageView image_view);
     
@@ -210,9 +213,9 @@ namespace vk {
     //                             be noted that this value is modified to represent the next frame
     //                             upon completion of this function.
     // @return true if the swapchain was out of date and a resize occured. False otherwise
-    void EndFrame(u32           current_image_index,
-                  VkCommandBuffer command_buffer // used for the wait stage - buffer we wait for to complete
-                  );
+    void EndFrame(u32             current_image_index,
+                  VkCommandBuffer *command_buffers, /* used for the wait stage - buffer we wait for to complete */
+                  u32             command_buffer_count);
     
     void SetViewport(VkCommandBuffer command_buffer,
                      u32             first_viewport,

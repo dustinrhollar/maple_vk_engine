@@ -37,6 +37,12 @@ void FlagGameResize();
 // NOTE(Dustin): Is this still necessary?
 #include <optional>
 
+//~ External Libraries
+
+// TODO(Dustin): Compile ImGui as a static lib
+#define IMGUI_IMPLEMENTATION
+#include <imgui/misc/single_file/imgui_single_file.h>
+
 //~ Type System and Configuration
 #include "utils/maple_types.h"
 #include "engine_config.h"
@@ -48,7 +54,7 @@ void FlagGameResize();
 #include "mm/free_list_allocator.h"
 //#include "mm/pool_allocator.h"
 #include "mm/proxy_allocator.h"
-//#include "mm/vulkan_allocator.h"
+#include "mm/vulkan_allocator.h"
 #include "mm/mm.h"
 
 
@@ -110,6 +116,13 @@ void FlagGameResize();
 #include "ecs/system.h"
 #include "ecs/ecs.h"
 
+//~ Events
+
+#include "events/engine_events.h"
+#include "events/event_manager.h"
+
+#include "events/event_manager.cpp"
+
 
 //~ Vulkan Headers
 // TODO(Dustin): Find a better solution to this.
@@ -145,6 +158,11 @@ void *VulkanLibrary;
 #include <vma/vk_mem_alloc.h>
 #include "vk/maple_vulkan.h"
 
+//~ ImGui Vulkan Implementation
+
+#include "ui/imgui_impl_vulkan.h"
+#include "ui/imgui_impl_vulkan.cpp"
+
 //~ File IO Operations (OS Independent)
 #include "io/file.h"
 #include "io/file.cpp"
@@ -155,7 +173,7 @@ void *VulkanLibrary;
 #include "mm/free_list_allocator.cpp"
 //#include "mm/pool_allocator.cpp"
 #include "mm/proxy_allocator.cpp"
-//#include "mm/vulkan_allocator.cpp"
+#include "mm/vulkan_allocator.cpp"
 #include "mm/mm.cpp"
 
 //~ ECS Source Files

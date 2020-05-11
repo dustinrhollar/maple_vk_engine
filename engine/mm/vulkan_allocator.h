@@ -10,18 +10,14 @@ namespace mm {
         VulkanProxyAllocator(Allocator &proxy);
         ~VulkanProxyAllocator() = default;
         
-        inline VkAllocationCallbacks GetVkAllocationCallbacks() const
+        inline void GetVkAllocationCallbacks(VkAllocationCallbacks *result) const
         {
-            VkAllocationCallbacks result;
-            
-            result.pUserData             = (void*)this;
-            result.pfnAllocation         = Allocation;
-            result.pfnReallocation       = Reallocation;
-            result.pfnFree               = Free;
-            result.pfnInternalAllocation = nullptr;
-            result.pfnInternalFree       = nullptr;
-            
-            return result;
+            result->pUserData             = (void*)this;
+            result->pfnAllocation         = Allocation;
+            result->pfnReallocation       = Reallocation;
+            result->pfnFree               = Free;
+            result->pfnInternalAllocation = nullptr;
+            result->pfnInternalFree       = nullptr;
         }
         
         private:

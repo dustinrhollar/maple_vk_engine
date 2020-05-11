@@ -3,9 +3,10 @@ namespace vk {
     
     VulkanCore GlobalVulkanState = {};
     
-    file_global u32 GlobalValidationCount = 1;
+    file_global u32 GlobalValidationCount = 2;
     file_global const char *GlobalValidationLayers[] = {
-        "VK_LAYER_KHRONOS_validation"
+        "VK_LAYER_KHRONOS_validation",
+        "VK_LAYER_NV_optimus",
     };
     
     file_global u32 GlobalDeviceExtensionsCount = 1;
@@ -704,7 +705,8 @@ file_internal void CreateSyncObjects(SyncObjectParameters &sync_objects)
     }
 }
 
-file_internal VkCommandBuffer BeginSingleTimeCommands(VkCommandPool command_pool) {
+VkCommandBuffer BeginSingleTimeCommands(VkCommandPool command_pool)
+{
     
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -724,7 +726,7 @@ file_internal VkCommandBuffer BeginSingleTimeCommands(VkCommandPool command_pool
     return commandBuffer;
 }
 
-file_internal void EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkCommandPool command_pool)
+void EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkCommandPool command_pool)
 {
     vkEndCommandBuffer(commandBuffer);
     
@@ -1215,7 +1217,9 @@ VkResult vk::BeginFrame(u32          &next_image_idx) {
 //                             upon completion of this function.
 // @return true if the swapchain was out of date and a resize occured. False otherwise
 void vk::EndFrame(u32             current_image_index,
-                  VkCommandBuffer command_buffer /* used for the wait stage - buffer we wait for to complete */) {
+                  VkCommandBuffer *command_buffers, /* used for the wait stage - buffer we wait for to complete */
+                  u32             command_buffer_count)
+{
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     
@@ -1226,8 +1230,8 @@ void vk::EndFrame(u32             current_image_index,
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &command_buffer;
+    submitInfo.commandBufferCount = command_buffer_count;
+    submitInfo.pCommandBuffers = command_buffers;
     
     VkSemaphore signalSemaphores[] = {
         GlobalVulkanState.SyncObjects.RenderFinished[GlobalVulkanState.SyncObjects.CurrentFrame]

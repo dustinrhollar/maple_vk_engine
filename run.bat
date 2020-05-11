@@ -62,7 +62,7 @@ EXIT /B %ERRORLEVEL%
 
     IF "%1" == %NONE% (
         pushd build\
-            .\%EXE_NAME% > log.txt
+            .\%EXE_NAME%
         popd
 		EXIT /B %ERRORLEVEL%
     )

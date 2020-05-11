@@ -41,6 +41,9 @@ file_global VkCommandPool    CommandPool;
 file_global VkFramebuffer   *Framebuffer;
 file_global u32              FramebufferCount;
 
+file_global VkDescriptorPoolSize DescriptorSizes[2];
+file_global VkDescriptorPool     DescriptorPool;
+
 file_global VkCommandBuffer *CommandBuffers;
 file_global u32              CommandBuffersCount;
 
@@ -58,7 +61,7 @@ file_global jstring SHADER_PATH;
 file_global jstring VERT_SHADER;
 file_global jstring FRAG_SHADER;
 
-file_internal void RecordStaticCommandBuffers();
+file_internal void RecordCommandBuffer(u32 idx);
 file_internal void CreateVulkanResizableState();
 
 file_internal void CreateVulkanResizableState()
@@ -113,6 +116,16 @@ file_internal void CreateVulkanResizableState()
         }
     }
     
+    // Descriptor Pool
+    {
+        DescriptorSizes[0].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        DescriptorSizes[0].descriptorCount = swapchain_image_count;
+        
+        DescriptorSizes[1].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        DescriptorSizes[1].descriptorCount = swapchain_image_count;
+        
+        DescriptorPool = vk::CreateDescriptorPool(DescriptorSizes, 2, 10 * swapchain_image_count);
+    }
     
     // Create Command buffers
     {
@@ -136,6 +149,8 @@ void GameResize()
     // Idle <- wait for last frame to finish rendering
     vk::Idle();
     
+    vk::DestroyDescriptorPool(DescriptorPool);
+    
     vk::DestroyCommandBuffers(CommandPool, CommandBuffersCount,
                               CommandBuffers);
     pfree(CommandBuffers);
@@ -152,7 +167,6 @@ void GameResize()
     vk::Resize();
     
     CreateVulkanResizableState();
-    RecordStaticCommandBuffers();
 }
 
 void FlagGameResize()
@@ -176,11 +190,12 @@ void GameUpdateAndRender(FrameInput input)
     }
     
     // Command buffer to present
+    RecordCommandBuffer(image_index);
     VkCommandBuffer command_buffer = CommandBuffers[image_index];
     
     // End the frame
     {
-        vk::EndFrame(image_index, command_buffer);
+        vk::EndFrame(image_index, &command_buffer, 1);
         
         if (khr_result == VK_ERROR_OUT_OF_DATE_KHR ||
             khr_result == VK_SUBOPTIMAL_KHR || GameNeedsResize ) {
@@ -194,54 +209,69 @@ void GameUpdateAndRender(FrameInput input)
     }
 }
 
-file_internal void RecordStaticCommandBuffers()
+file_internal void RecordCommandBuffer(u32 idx)
 {
-    for (u32 i = 0; i < CommandBuffersCount; ++i)
+    VkCommandBuffer command_buffer = CommandBuffers[idx];
+    VkFramebuffer framebuffer = Framebuffer[idx];
+    
+    vk::BeginCommandBuffer(command_buffer);
+    
+    VkExtent2D extent = vk::GetSwapChainExtent();
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width  = (float) extent.width;
+    viewport.height = (float) extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    
+    vk::SetViewport(command_buffer, 0, 1, &viewport);
+    vk::SetScissor(command_buffer, 0, 1, &scissor);
+    
+    VkClearValue clear_values[1] = {};
+    clear_values[0].color = {0.67f, 0.85f, 0.90f, 1.0f};
+    
+    vk::BeginRenderPass(command_buffer, clear_values, 2, framebuffer, RenderPass);
     {
-        VkCommandBuffer command_buffer = CommandBuffers[i];
-        VkFramebuffer framebuffer = Framebuffer[i];
+        // Issue draw commands...
+        vk::BindPipeline(command_buffer, Pipeline);
         
-        vk::BeginCommandBuffer(command_buffer);
+        VkBuffer vertex_buffers[] = {VertexBuffer.Handle};
+        VkDeviceSize offsets[] = {0};
+        vk::BindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
         
-        VkExtent2D extent = vk::GetSwapChainExtent();
-        VkViewport viewport = {};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width  = (float) extent.width;
-        viewport.height = (float) extent.height;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
+        vk::Draw(command_buffer, 3, 1, 0, 0);
         
-        VkRect2D scissor = {};
-        scissor.offset = {0, 0};
-        scissor.extent = extent;
+        // Render ImGui Window
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+        ImGui::ShowDemoWindow();
         
-        vk::SetViewport(command_buffer, 0, 1, &viewport);
-        vk::SetScissor(command_buffer, 0, 1, &scissor);
+        ImGui::Render();
         
-        VkClearValue clear_values[1] = {};
-        clear_values[0].color = {0.67f, 0.85f, 0.90f, 1.0f};
+        // Render draw data into a single time command buffer -
+        // not the best idea
+        // NOTE(Dustin): DONT DO THAT, but for now I am testing this...
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
         
-        vk::BeginRenderPass(command_buffer, clear_values, 2, framebuffer, RenderPass);
-        {
-            // Issue draw commands...
-            vk::BindPipeline(command_buffer, Pipeline);
-            
-            VkBuffer vertex_buffers[] = {VertexBuffer.Handle};
-            VkDeviceSize offsets[] = {0};
-            vk::BindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-            
-            vk::Draw(command_buffer, 3, 1, 0, 0);
-        }
-        vk::EndRenderPass(command_buffer);
-        
-        vk::EndCommandBuffer(command_buffer);
+        ImGui::EndFrame();
     }
+    vk::EndRenderPass(command_buffer);
+    
+    vk::EndCommandBuffer(command_buffer);
 }
 
 void GameShutdown()
 {
     vk::Idle();
+    
+    ImGui_ImplVulkan_Shutdown();
+    
+    vk::DestroyDescriptorPool(DescriptorPool);
     
     vk::DestroyVmaBuffer(VertexBuffer.Handle, VertexBuffer.Memory);
     
@@ -280,10 +310,44 @@ void GameInit()
     //~ Vulkan Init State
     // Create the CommandPool
     {
-        CommandPool = vk::CreateCommandPool(0);
+        CommandPool = vk::CreateCommandPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
+                                            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     }
     
     CreateVulkanResizableState();
+    
+    //~ ImGui
+    
+    // NOTE(Dustin): Is QueueFamily supposed to be the graphics or present queue?
+    ImGui_ImplVulkan_InitInfo impl_vk_info = {};
+    impl_vk_info.Instance       = vk::GlobalVulkanState.Instance;
+    impl_vk_info.PhysicalDevice = vk::GlobalVulkanState.PhysicalDevice;
+    impl_vk_info.Device         = vk::GlobalVulkanState.Device;
+    impl_vk_info.QueueFamily    = vk::GlobalVulkanState.GraphicsQueue.FamilyIndex;
+    impl_vk_info.Queue          = vk::GlobalVulkanState.GraphicsQueue.Handle;
+    impl_vk_info.DescriptorPool = DescriptorPool;
+    impl_vk_info.MinImageCount  = vk::GetSwapChainImageCount();
+    impl_vk_info.ImageCount     = vk::GetSwapChainImageCount();
+    impl_vk_info.MSAASamples    = VK_SAMPLE_COUNT_1_BIT;
+    
+    ImGui_ImplVulkan_Init(&impl_vk_info, RenderPass);
+    
+    VkCommandBuffer command_buffer = vk::BeginSingleTimeCommands(CommandPool);
+    {
+        ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
+        
+        /*
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+        {
+            ImGui::ShowDemoWindow();
+            ImGui::Render();
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+        }
+        ImGui::EndFrame();
+        */
+    }
+    vk::EndSingleTimeCommands(command_buffer, CommandPool);
     
     //~ Create the shader...
     jstring vert_shader = PlatformLoadFile(VERT_SHADER);
@@ -461,7 +525,7 @@ void GameInit()
                                    vertices,
                                    vertex_buffer_info.size);
     
-    RecordStaticCommandBuffers();
+    //RecordCommandBuffer();
     
     IsGameInit = true;
 }
