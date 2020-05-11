@@ -1,21 +1,5 @@
 
-// stuff here eventually
-
-// Something that listens to this event
-struct EventSubscriber
-{
-    // callback function
-    // Optional arguments: void *instance - instance of a class, struct, etc.
-    void (*subscriber_fn)(void *instance, Event event);
-    
-    // instance point
-    void *inst;
-};
-
-file_global DynamicArray<EventSubscriber> SubscriberQueue;
-file_global DynamicArray<Event> EventQueue;
-
-// Subtract Event_Type_Custom and Key_Unknown
+// Subtract Event_Type_Cutom and Key_Unknown
 file_global const i32 EVENT_LIST_SIZE = EVENT_TYPE_COUNT + KEY_Count - 2;
 file_global DynamicArray<EventSubscriber> EventSubscriberList[EVENT_LIST_SIZE];
 

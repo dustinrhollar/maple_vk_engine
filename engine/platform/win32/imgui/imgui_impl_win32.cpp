@@ -60,6 +60,9 @@ static ImGuiMouseCursor     g_LastMouseCursor = ImGuiMouseCursor_COUNT;
 static bool                 g_HasGamepad = false;
 static bool                 g_WantUpdateHasGamepad = true;
 
+// Resize Event
+static void ImGui_ImplWin32_OnResize(void *instance, Event event);
+
 // Functions
 bool    ImGui_ImplWin32_Init(void* hwnd)
 {
@@ -100,12 +103,32 @@ bool    ImGui_ImplWin32_Init(void* hwnd)
     io.KeyMap[ImGuiKey_Y] = 'Y';
     io.KeyMap[ImGuiKey_Z] = 'Z';
     
+    // Register for WindowResize
+    Event event;
+    event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
+    SubscribeToEvent(event, &ImGui_ImplWin32_OnResize, nullptr);
+    
+    // Setup display size
+    RECT rect;
+    ::GetClientRect(g_hWnd, &rect);
+    io.DisplaySize = ImVec2((float)(rect.right - rect.left), (float)(rect.bottom - rect.top));
+    
     return true;
 }
 
 void    ImGui_ImplWin32_Shutdown()
 {
     g_hWnd = (HWND)0;
+}
+
+static void ImGui_ImplWin32_OnResize(void *instance, Event event)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    
+    // Setup display size (every frame to accommodate for window resizing)
+    RECT rect;
+    ::GetClientRect(g_hWnd, &rect);
+    io.DisplaySize = ImVec2((float)(rect.right - rect.left), (float)(rect.bottom - rect.top));
 }
 
 static bool ImGui_ImplWin32_UpdateMouseCursor()
@@ -215,11 +238,6 @@ void    ImGui_ImplWin32_NewFrame()
 {
     ImGuiIO& io = ImGui::GetIO();
     IM_ASSERT(io.Fonts->IsBuilt() && "Font atlas not built! It is generally built by the renderer back-end. Missing call to renderer _NewFrame() function? e.g. ImGui_ImplOpenGL3_NewFrame().");
-    
-    // Setup display size (every frame to accommodate for window resizing)
-    RECT rect;
-    ::GetClientRect(g_hWnd, &rect);
-    io.DisplaySize = ImVec2((float)(rect.right - rect.left), (float)(rect.bottom - rect.top));
     
     // Setup time step
     INT64 current_time;

@@ -967,6 +967,7 @@ file_internal void Win32ShutdownRoutines()
 {
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
+    ShutdownEventManager();
     vk::ShutdownVulkan();
     ecs::ShutdownECS();
     mm::ShutdownMemoryManager();
@@ -1080,8 +1081,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     
     DispatchEvent(event);
     
-    ShutdownEventManager();
-    
     //~ Client Initialization
     GameInit();
     
@@ -1191,10 +1190,10 @@ file_internal void SetFullscreen(bool fullscreen)
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    //if (ImGui::GetCurrentContext() == NULL)
-    //return DefWindowProc(hwnd, uMsg, wParam, lParam);
-    
-    //ImGuiIO& io = ImGui::GetIO();
+    // messages can get sent before window has finished initialize and after WM_Close
+    // has be sent...
+    if (!ClientIsRunning)
+        return DefWindowProc(hwnd, uMsg, wParam, lParam);
     
     // Update ImGui
     ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
@@ -1305,9 +1304,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             int width = ClientWindowRect.right - ClientWindowRect.left;
             int height = ClientWindowRect.bottom - ClientWindowRect.top;
             
-            // TODO(Dustin): Resize
-            //GlobalGameCode.Resize(width, height);
+            Event event;
+            event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
+            event.OnWindowResize.Width  = (width >= 1) ? width : 1;
+            event.OnWindowResize.Height = (height >= 1) ? height : 1;
             
+            DispatchEvent(event);
         } break;
         
         default: break;

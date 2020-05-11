@@ -101,6 +101,7 @@ enum EventType
     EVENT_TYPE_ON_KEY_PRESS,
     EVENT_TYPE_ON_KEY_RELEASE,
     EVENT_TYPE_ON_KEY_TYPE_PRESS,
+    EVENT_TYPE_ON_WINDOW_RESIZE,
     
     EVENT_TYPE_CUSTOM,
     
@@ -141,6 +142,12 @@ struct KeyTypeReleaseEvent
     EventKey Key;
 };
 
+struct WindowResizeEvent
+{
+    u32 Width;
+    u32 Height;
+};
+
 struct Event
 {
     EventType Type;
@@ -153,6 +160,7 @@ struct Event
         KeyPressEvent           OnKeyPressEvent;
         KeyReleaseEvent         OnKeyReleaseEvent;
         KeyTypePressEvent       OnKeyTypePressEvent;
+        WindowResizeEvent       OnWindowResize;
         
         // TODO(Dustin): Custom Event
     };

@@ -127,6 +127,32 @@ file_internal void CreateVulkanResizableState()
         DescriptorPool = vk::CreateDescriptorPool(DescriptorSizes, 2, 10 * swapchain_image_count);
     }
     
+    // Create ImGui State
+    {
+        
+        //~ ImGui
+        
+        // NOTE(Dustin): Is QueueFamily supposed to be the graphics or present queue?
+        ImGui_ImplVulkan_InitInfo impl_vk_info = {};
+        impl_vk_info.Instance       = vk::GlobalVulkanState.Instance;
+        impl_vk_info.PhysicalDevice = vk::GlobalVulkanState.PhysicalDevice;
+        impl_vk_info.Device         = vk::GlobalVulkanState.Device;
+        impl_vk_info.QueueFamily    = vk::GlobalVulkanState.GraphicsQueue.FamilyIndex;
+        impl_vk_info.Queue          = vk::GlobalVulkanState.GraphicsQueue.Handle;
+        impl_vk_info.DescriptorPool = DescriptorPool;
+        impl_vk_info.MinImageCount  = vk::GetSwapChainImageCount();
+        impl_vk_info.ImageCount     = vk::GetSwapChainImageCount();
+        impl_vk_info.MSAASamples    = VK_SAMPLE_COUNT_1_BIT;
+        
+        ImGui_ImplVulkan_Init(&impl_vk_info, RenderPass);
+        
+        VkCommandBuffer command_buffer = vk::BeginSingleTimeCommands(CommandPool);
+        {
+            ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
+        }
+        vk::EndSingleTimeCommands(command_buffer, CommandPool);
+    }
+    
     // Create Command buffers
     {
         CommandBuffers = palloc<VkCommandBuffer>(swapchain_image_count);
@@ -139,15 +165,16 @@ file_internal void CreateVulkanResizableState()
     }
 }
 
-void GameResize()
+void GameResize(void *instance, Event event)
 {
     if (!IsGameInit) return;
     
-    u32 width, height;
-    PlatformGetClientWindowDimensions(&width, &height);
+    u32 width = event.OnWindowResize.Width, height = event.OnWindowResize.Height;
     
     // Idle <- wait for last frame to finish rendering
     vk::Idle();
+    
+    ImGui_ImplVulkan_Shutdown();
     
     vk::DestroyDescriptorPool(DescriptorPool);
     
@@ -181,11 +208,22 @@ void GameUpdateAndRender(FrameInput input)
     u32 image_index;
     
     VkResult khr_result = vk::BeginFrame(image_index);
-    if (khr_result == VK_ERROR_OUT_OF_DATE_KHR) {
-        GameResize();
+    if (khr_result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        u32 width, height;
+        PlatformGetClientWindowDimensions(&width, &height);
+        
+        Event event;
+        event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
+        event.OnWindowResize.Width  = width;
+        event.OnWindowResize.Height = height;
+        
+        DispatchEvent(event);
         return;
-    } else if (khr_result != VK_SUCCESS &&
-               khr_result != VK_SUBOPTIMAL_KHR) {
+    }
+    else if (khr_result != VK_SUCCESS &&
+             khr_result != VK_SUBOPTIMAL_KHR)
+    {
         mprinte("Failed to acquire swap chain image!");
     }
     
@@ -198,10 +236,17 @@ void GameUpdateAndRender(FrameInput input)
         vk::EndFrame(image_index, &command_buffer, 1);
         
         if (khr_result == VK_ERROR_OUT_OF_DATE_KHR ||
-            khr_result == VK_SUBOPTIMAL_KHR || GameNeedsResize ) {
+            khr_result == VK_SUBOPTIMAL_KHR || GameNeedsResize )
+        {
+            u32 width, height;
+            PlatformGetClientWindowDimensions(&width, &height);
             
-            GameResize();
-            GameNeedsResize = false;
+            Event event;
+            event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
+            event.OnWindowResize.Width  = width;
+            event.OnWindowResize.Height = height;
+            
+            DispatchEvent(event);
         }
         else if (khr_result != VK_SUCCESS) {
             mprinte("Something went wrong acquiring the swapchain image!\n");
@@ -315,39 +360,6 @@ void GameInit()
     }
     
     CreateVulkanResizableState();
-    
-    //~ ImGui
-    
-    // NOTE(Dustin): Is QueueFamily supposed to be the graphics or present queue?
-    ImGui_ImplVulkan_InitInfo impl_vk_info = {};
-    impl_vk_info.Instance       = vk::GlobalVulkanState.Instance;
-    impl_vk_info.PhysicalDevice = vk::GlobalVulkanState.PhysicalDevice;
-    impl_vk_info.Device         = vk::GlobalVulkanState.Device;
-    impl_vk_info.QueueFamily    = vk::GlobalVulkanState.GraphicsQueue.FamilyIndex;
-    impl_vk_info.Queue          = vk::GlobalVulkanState.GraphicsQueue.Handle;
-    impl_vk_info.DescriptorPool = DescriptorPool;
-    impl_vk_info.MinImageCount  = vk::GetSwapChainImageCount();
-    impl_vk_info.ImageCount     = vk::GetSwapChainImageCount();
-    impl_vk_info.MSAASamples    = VK_SAMPLE_COUNT_1_BIT;
-    
-    ImGui_ImplVulkan_Init(&impl_vk_info, RenderPass);
-    
-    VkCommandBuffer command_buffer = vk::BeginSingleTimeCommands(CommandPool);
-    {
-        ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
-        
-        /*
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        {
-            ImGui::ShowDemoWindow();
-            ImGui::Render();
-            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
-        }
-        ImGui::EndFrame();
-        */
-    }
-    vk::EndSingleTimeCommands(command_buffer, CommandPool);
     
     //~ Create the shader...
     jstring vert_shader = PlatformLoadFile(VERT_SHADER);
@@ -525,7 +537,10 @@ void GameInit()
                                    vertices,
                                    vertex_buffer_info.size);
     
-    //RecordCommandBuffer();
+    // Register for WindowResize
+    Event event;
+    event.Type = EVENT_TYPE_ON_WINDOW_RESIZE;
+    SubscribeToEvent(event, &GameResize, nullptr);
     
     IsGameInit = true;
 }
