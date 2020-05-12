@@ -88,6 +88,13 @@ enum EventKey
     KEY_F11,
     KEY_F12,
     
+    KEY_Space,
+    
+    KEY_Up,
+    KEY_Down,
+    KEY_Left,
+    KEY_Right,
+    
     KEY_Unknown,
     
     KEY_Count,
@@ -124,20 +131,30 @@ struct MouseButtonReleaseEvent
 
 struct KeyPressEvent
 {
+    EventKey Key;
 };
 
 struct KeyReleaseEvent
 {
+    EventKey Key;
 };
 
-// KeyTypePress/Release allow a user to specify a particular button
-// to press
-struct KeyTypePressEvent
+struct KeySpacePressEvent
 {
     EventKey Key;
 };
 
-struct KeyTypeReleaseEvent
+struct KeySpaceReleaseEvent
+{
+    EventKey Key;
+};
+
+struct KeyF5PressEvent
+{
+    EventKey Key;
+};
+
+struct KeyF5ReleaseEvent
 {
     EventKey Key;
 };

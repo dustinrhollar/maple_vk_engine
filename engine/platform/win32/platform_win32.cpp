@@ -1214,6 +1214,80 @@ file_internal void SetFullscreen(bool fullscreen)
     }
 }
 
+file_internal EventKey Win32KeyToEventKey(WPARAM wParam)
+{
+    EventKey result;
+    
+    bool ctrl  = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool alt   = (::GetKeyState(VK_MENU) & 0x8000) != 0;
+    
+    switch (wParam)
+    {
+        case 'A': (shift) ? result = KEY_A : result = KEY_a; break;
+        case 'B': (shift) ? result = KEY_B : result = KEY_b; break;
+        case 'C': (shift) ? result = KEY_C : result = KEY_c; break;
+        case 'D': (shift) ? result = KEY_D : result = KEY_d; break;
+        case 'E': (shift) ? result = KEY_E : result = KEY_e; break;
+        case 'F': (shift) ? result = KEY_F : result = KEY_f; break;
+        case 'G': (shift) ? result = KEY_G : result = KEY_g; break;
+        case 'H': (shift) ? result = KEY_H : result = KEY_h; break;
+        case 'I': (shift) ? result = KEY_I : result = KEY_i; break;
+        case 'J': (shift) ? result = KEY_J : result = KEY_j; break;
+        case 'K': (shift) ? result = KEY_K : result = KEY_k; break;
+        case 'L': (shift) ? result = KEY_K : result = KEY_l; break;
+        case 'M': (shift) ? result = KEY_M : result = KEY_m; break;
+        case 'N': (shift) ? result = KEY_N : result = KEY_n; break;
+        case 'O': (shift) ? result = KEY_O : result = KEY_o; break;
+        case 'P': (shift) ? result = KEY_P : result = KEY_p; break;
+        case 'Q': (shift) ? result = KEY_Q : result = KEY_q; break;
+        case 'R': (shift) ? result = KEY_R : result = KEY_r; break;
+        case 'S': (shift) ? result = KEY_S : result = KEY_s; break;
+        case 'T': (shift) ? result = KEY_T : result = KEY_t; break;
+        case 'U': (shift) ? result = KEY_U : result = KEY_u; break;
+        case 'V': (shift) ? result = KEY_V : result = KEY_v; break;
+        case 'W': (shift) ? result = KEY_W : result = KEY_w; break;
+        case 'X': (shift) ? result = KEY_X : result = KEY_x; break;
+        case 'Y': (shift) ? result = KEY_Y : result = KEY_y; break;
+        case 'Z': (shift) ? result = KEY_Z : result = KEY_z; break;
+        
+        case '0': result = KEY_0; break;
+        case '1': result = KEY_1; break;
+        case '2': result = KEY_2; break;
+        case '3': result = KEY_3; break;
+        case '4': result = KEY_4; break;
+        case '5': result = KEY_5; break;
+        case '6': result = KEY_6; break;
+        case '7': result = KEY_7; break;
+        case '8': result = KEY_8; break;
+        case '9': result = KEY_9; break;
+        
+        case VK_F1:  result = KEY_F1;  break;
+        case VK_F2:  result = KEY_F2;  break;
+        case VK_F3:  result = KEY_F3;  break;
+        case VK_F4:  result = KEY_F4;  break;
+        case VK_F5:  result = KEY_F5;  break;
+        case VK_F6:  result = KEY_F6;  break;
+        case VK_F7:  result = KEY_F7;  break;
+        case VK_F8:  result = KEY_F8;  break;
+        case VK_F9:  result = KEY_F9;  break;
+        case VK_F10: result = KEY_F10; break;
+        case VK_F11: result = KEY_F11; break;
+        case VK_F12: result = KEY_F12; break;
+        
+        case VK_SPACE: result = KEY_Space; break;
+        
+        case VK_UP:    result = KEY_Up;    break;
+        case VK_DOWN:  result = KEY_Down;  break;
+        case VK_LEFT:  result = KEY_Left;  break;
+        case VK_RIGHT: result = KEY_Right; break;
+        
+        default: result = KEY_Unknown;
+    }
+    
+    return result;
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     // messages can get sent before window has finished initialize and after WM_Close
@@ -1255,49 +1329,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 bool alt = (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
                 switch (wParam)
                 {
-                    case VK_UP:
-                    {
-                        GlobalFrameInput.Keyboard.KEY_ARROW_UP = 1;
-                    } break;
-                    
-                    case VK_DOWN:
-                    {
-                        GlobalFrameInput.Keyboard.KEY_ARROW_DOWN = 1;
-                    } break;
-                    
-                    case VK_LEFT:
-                    {
-                        GlobalFrameInput.Keyboard.KEY_ARROW_LEFT = 1;
-                    } break;
-                    
-                    case VK_RIGHT:
-                    {
-                        GlobalFrameInput.Keyboard.KEY_ARROW_RIGHT = 1;
-                    } break;
-                    
                     case VK_F5:
                     {
-                        GlobalFrameInput.RenderWireframe = !GlobalFrameInput.RenderWireframe;
+                        KeyF5PressEvent event;
+                        event.Key = KEY_F5;
+                        event::Dispatch<KeyF5PressEvent>(event);
                     } break;
                     
-                    case 'W':
+                    case VK_SPACE:
                     {
-                        GlobalFrameInput.Keyboard.KEY_W = 1;
-                    } break;
-                    
-                    case 'S':
-                    {
-                        GlobalFrameInput.Keyboard.KEY_S = 1;
-                    } break;
-                    
-                    case 'A':
-                    {
-                        GlobalFrameInput.Keyboard.KEY_A = 1;
-                    } break;
-                    
-                    case 'D':
-                    {
-                        GlobalFrameInput.Keyboard.KEY_D = 1;
+                        
+                        KeySpacePressEvent event;
+                        event.Key = KEY_Space;
+                        event::Dispatch<KeySpacePressEvent>(event);
                     } break;
                     
                     case VK_ESCAPE:
@@ -1310,6 +1354,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         {
                             case VK_F11:
                             {
+                                // NOTE(Dustin): Disabling fullscreen fails to restore the
+                                // previous window's position and defaults to the top left
+                                // corner
+                                if (!GlobalIsFullscreen)
+                                    GetClientRect(hwnd, &ClientWindowRectOld);
+                                
                                 SetFullscreen(!GlobalIsFullscreen);
                             } break;
                         }
@@ -1317,6 +1367,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     
                     default: break;
                 }
+                
+                KeyPressEvent event = {};
+                event.Key = Win32KeyToEventKey(wParam);
+                event::Dispatch<KeyPressEvent>(event);
             } break;
         }
         
@@ -1324,7 +1378,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         
         case WM_SIZE:
         {
-            ClientWindowRectOld = ClientWindowRect;
+            //ClientWindowRectOld = ClientWindowRect;
             GetClientRect(hwnd, &ClientWindowRect);
             
             int width = ClientWindowRect.right - ClientWindowRect.left;

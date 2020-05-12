@@ -71,9 +71,25 @@ namespace event
         SubscriberListPushBack(&EventSubscribers[event_id], subs);
     }
     
+    void Unsubscribe(u64 event_id, void *callback, void *inst)
+    {
+        SubscriberList *subscribers = &EventSubscribers[event_id];
+        
+        for (u32 i = 0; i < subscribers->Size; ++i)
+        {
+            if (subscribers->Ptr[i].FnCallback == callback && subscribers->Ptr[i].inst == inst)
+            {
+                // swap the element to be removed with the last element in the list
+                // when responding to events, the order the events are called is
+                // irrelevelant
+                subscribers->Ptr[i] = subscribers->Ptr[subscribers->Size - 1];
+                --subscribers->Size;
+            }
+        }
+    }
+    
     void RetrieveSubscribers(u64 event_id, SubscriberList **subscribers)
     {
         *subscribers = &EventSubscribers[event_id];
     }
-    
 };

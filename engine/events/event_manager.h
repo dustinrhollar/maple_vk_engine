@@ -54,6 +54,13 @@ namespace event
         Subscribe(EventIdManager<T>::STATIC_EVENT_ID, fn_callback, inst);
     }
     
+    void Unsubscribe(u64 event_id, void *callback, void *inst);
+    template<class T>
+        void Unsubscribe(void (*fn_callback)(void *instance, T event), void *inst)
+    {
+        Unsubscribe(EventIdManager<T>::STATIC_EVENT_ID, fn_callback, inst);
+    }
+    
     void RetrieveSubscribers(u64 event_id, SubscriberList **subscribers);
     template<class T>
         void Dispatch(T event)
