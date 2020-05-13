@@ -1298,6 +1298,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     // Update ImGui
     ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
     
+    ImGuiIO& io = ImGui::GetIO();
+    
     switch (uMsg)
     {
         case WM_CLOSE:
@@ -1321,10 +1323,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             //printf("Mouse button pressed in main win32!\n");
         } break;
         
-        //if (!io.WantCaptureKeyboard)
+        case WM_SYSKEYDOWN:
+        case WM_KEYDOWN:
         {
-            case WM_SYSKEYDOWN:
-            case WM_KEYDOWN:
+            if (!io.WantCaptureKeyboard)
             {
                 bool alt = (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
                 switch (wParam)
@@ -1371,8 +1373,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 KeyPressEvent event = {};
                 event.Key = Win32KeyToEventKey(wParam);
                 event::Dispatch<KeyPressEvent>(event);
-            } break;
-        }
+            }
+        } break;
         
         case WM_SYSCHAR: break;
         
