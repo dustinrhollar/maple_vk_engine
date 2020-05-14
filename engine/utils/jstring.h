@@ -98,6 +98,9 @@ void AddJString(jstring &result, const char* lhs,    const char* rhs);
 inline void ToLowerCase(jstring &str);
 inline i32 LastIndexOf(jstring &str, char ch);
 
+//~ Copy a jstring.
+jstring CopyJString(jstring Src);
+
 //~
 // Useful macros for creating jstrings
 //------------------------------------------------
@@ -709,6 +712,11 @@ inline i32 LastIndexOf(jstring &str, char ch)
     return idx;
 }
 
+jstring CopyJString(jstring Src)
+{
+    jstring Result = InitJString(Src.GetCStr());
+    return Result;
+}
 
 
 #endif

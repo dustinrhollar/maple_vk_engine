@@ -228,7 +228,6 @@ struct syntax_tree_list
     u32 Cap;
 };
 
-
 //~ Functions
 
 void InitConfigMemberTable(config_member_table *Table);
@@ -261,11 +260,13 @@ vec4 GetConfigVec4(config_obj *Obj, jstring VarName);
 jstring GetConfigStr(config_obj *Obj, jstring VarName);
 config_obj GetConfigObj(config_obj_table *Table, jstring ObjName);
 
+// size is needed for when the Data Type is a string. Need to know the length
+// of the string.
 void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
-                   config_primitive_type Type, const char *Data);
+                   config_primitive_type Type, const char *Data, u32 size = 0);
 void FreeConfigVar(config_var *Var);
 
-void LoadConfigFile(jstring filename);
+config_obj_table LoadConfigFile(jstring filename);
 void SaveConfigFile();
 
 #endif //CONFIG_PARSER_H

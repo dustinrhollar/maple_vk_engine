@@ -1014,6 +1014,51 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     UINT desired_scheduler_ms = 1;
     bool sleep_is_granular = (timeBeginPeriod(desired_scheduler_ms) == TIMERR_NOERROR);
     
+    
+    //~ Get the engine settings from the config file.
+    char AppName[256];
+    
+    // Temporarily Create a Memory Manager with a small footprint
+    mm::InitializeMemoryManager(_KB(10), _KB(1));
+    
+    jstring EngineConf = InitJString("data/configs/engine.conf");
+    
+    jstring EngineSetttingsName = InitJString("Engine Settings");
+    jstring ClientSetttingsName = InitJString("Client Settings");
+    
+    jstring MemoryUsageName     = InitJString("MemoryUsage");
+    jstring TransientMemoryName = InitJString("TransientMemory");
+    jstring AppNameName         = InitJString("AppName");
+    
+    config_obj_table Table = LoadConfigFile(EngineConf);
+    
+    config_obj EngineSettingsObj = GetConfigObj(&Table, EngineSetttingsName);
+    
+    mprint("Object: %s\n", EngineSettingsObj.Name.GetCStr());
+    mprint("\tHas %d members\n", EngineSettingsObj.ObjMembers.Count);
+    
+    u64 MemoryUsage     = GetConfigU64(&EngineSettingsObj, MemoryUsageName);
+    u64 TransientMemory = GetConfigU64(&EngineSettingsObj, TransientMemoryName);
+    
+    mprint("\tMemory Usage is %d\n", MemoryUsage);
+    mprint("\tTransient Memory is %d\n", TransientMemory);
+    
+    config_obj ClientSettingsObj = GetConfigObj(&Table, ClientSetttingsName);
+    jstring JAppName = GetConfigStr(&ClientSettingsObj, AppNameName);
+    strncpy(AppName, JAppName.GetCStr(), JAppName.len);
+    AppName[JAppName.len] = 0;
+    mprint("Application name is %s\n", AppName);
+    
+    FreeConfigObjTable(&Table);
+    JAppName.Clear();
+    MemoryUsageName.Clear();
+    TransientMemoryName.Clear();
+    EngineSetttingsName.Clear();
+    ClientSetttingsName.Clear();
+    EngineConf.Clear();
+    
+    mm::ShutdownMemoryManager();
+    
     //~ Create Client Window
     
     ClientWindowWidth = 1080;
@@ -1030,7 +1075,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     
     ClientWindow = CreateWindowEx(0,
                                   CLASS_NAME,
-                                  APP_NAME,
+                                  AppName,
                                   WS_OVERLAPPEDWINDOW,
                                   CW_USEDEFAULT,
                                   CW_USEDEFAULT,
@@ -1049,8 +1094,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     //~ Initialize routines
     
     // Initialize Management Routines
-    // NOTE(Dustin): Macros ar defined in engine_config.h
-    mm::InitializeMemoryManager(MEMORY_USAGE, TRANSIENT_MEMORY);
+    mm::InitializeMemoryManager(MemoryUsage, TransientMemory);
     ecs::InitializeECS();
     
     // Enable graphics
@@ -1082,12 +1126,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         exit(1);
     }
-    
-    //~ Test Config Parser
-    
-    jstring engine_conf = InitJString("data/configs/engine.conf");
-    LoadConfigFile(engine_conf);
-    engine_conf.Clear();
     
     //~ Client Initialization
     GameInit();

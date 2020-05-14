@@ -3,8 +3,8 @@
 void InitConfigMemberTable(config_member_table *Table)
 {
     Table->LoadFactor = 0.70;
-    Table->Count = 0;
-    Table->Cap = 5;
+    Table->Count      = 0;
+    Table->Cap        = 5;
     
     Table->Entries = palloc<config_member_table_entry>(Table->Cap);
     for (u32 entry = 0; entry < Table->Cap; ++entry)
@@ -13,6 +13,14 @@ void InitConfigMemberTable(config_member_table *Table)
 
 void FreeConfigMemberTable(config_member_table *Table)
 {
+    for (u32 EntryIdx = 0; EntryIdx < Table->Cap; EntryIdx++)
+    {
+        if (!Table->Entries[EntryIdx].IsEmpty)
+        {
+            FreeConfigVar(&Table->Entries[EntryIdx].Value);
+        }
+    }
+    
     Table->LoadFactor = 0.0f;
     Table->Count      = 0;
     Table->Cap        = 0;
@@ -29,16 +37,21 @@ file_internal config_member_table_entry* ConfigMemberTableFindEntry(config_membe
     for (;;)
     {
         Entry = &Table->Entries[Index];
-        u128 EntryHash = Hash<jstring>(Entry->Key);
         
-        
-        if (Entry->IsEmpty || // index is not occupies
-            (EntryHash.upper == HashedKey.upper && // index is occupied, but
-             EntryHash.lower == HashedKey.lower))  // elements contain same hash
+        if (Entry->IsEmpty) // index is not occupies
         {
             return Entry;
         }
-        
+        else
+        {
+            u128 EntryHash = Hash<jstring>(Entry->Key);
+            
+            if (EntryHash.upper == HashedKey.upper && // index is occupied, but
+                EntryHash.lower == HashedKey.lower)  // elements contain same hash
+            {
+                return Entry;
+            }
+        }
         Index = (Index + 1) % Table->Cap;
     }
 }
@@ -122,6 +135,14 @@ void InitConfigObjTable(config_obj_table *Table)
 
 void FreeConfigObjTable(config_obj_table *Table)
 {
+    for (u32 EntryIdx = 0; EntryIdx < Table->Cap; EntryIdx++)
+    {
+        if (!Table->Entries[EntryIdx].IsEmpty)
+        {
+            FreeConfigObj(&Table->Entries[EntryIdx].Value);
+        }
+    }
+    
     Table->LoadFactor = 0.0f;
     Table->Count      = 0;
     Table->Cap        = 0;
@@ -138,16 +159,21 @@ file_internal config_obj_table_entry* ConfigObjTableFindEntry(config_obj_table *
     for (;;)
     {
         Entry = &Table->Entries[Index];
-        u128 EntryHash = Hash<jstring>(Entry->Key);
         
-        
-        if (Entry->IsEmpty || // index is not occupies
-            (EntryHash.upper == HashedKey.upper && // index is occupied, but
-             EntryHash.lower == HashedKey.lower))  // elements contain same hash
+        if (Entry->IsEmpty) // index is not occupies
         {
             return Entry;
         }
-        
+        else
+        {
+            u128 EntryHash = Hash<jstring>(Entry->Key);
+            
+            if (EntryHash.upper == HashedKey.upper && // index is occupied, but
+                EntryHash.lower == HashedKey.lower)  // elements contain same hash
+            {
+                return Entry;
+            }
+        }
         Index = (Index + 1) % Table->Cap;
     }
 }
@@ -191,6 +217,7 @@ config_obj ConfigObjTableGet(config_obj_table *Table, jstring Key)
     }
     else
     {
+        result.Name = InitJString(); // return an empty name
         mprinte("Key \"%s\" does not exist in the table!\n", Key.GetCStr());
     }
     
@@ -233,31 +260,30 @@ void FreeConfigObj(config_obj *Obj)
 //~ Config Variable Implementation
 
 void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
-                   config_primitive_type Type, const char *Data)
+                   config_primitive_type Type, const char *Data, u32 Size)
 {
     Var->Name = InitJString(Name, NameLen);
     Var->Type = Type;
-    // TODO(Dustin): Fill out the data portion
     switch (Var->Type)
     {
-        case Config_I32:
-        case Config_I64:
-        case Config_U32:
-        case Config_U64:
-        case Config_R32:
-        case Config_IVec2:
-        case Config_IVec3:
-        case Config_IVec4:
-        case Config_Vec2:
-        case Config_Vec3:
-        case Config_Vec4:
-        case Config_Str:
+        case Config_I32:   Var->Int32  = *((i32*)Data);           break;
+        case Config_I64:   Var->Int64  = *((i64*)Data);           break;
+        case Config_U32:   Var->UInt32 = *((u32*)Data);           break;
+        case Config_U64:   Var->UInt64 = *((u64*)Data);           break;
+        case Config_R32:   Var->R32    = *((r32*)Data);           break;
+        case Config_IVec2: Var->IVec2  = *((ivec2*)Data);         break;
+        case Config_IVec3: Var->IVec3  = *((ivec3*)Data);         break;
+        case Config_IVec4: Var->IVec4  = *((ivec4*)Data);         break;
+        case Config_Vec2:  Var->Vec2   = *((vec2*)Data);          break;
+        case Config_Vec3:  Var->Vec3   = *((vec3*)Data);          break;
+        case Config_Vec4:  Var->Vec4   = *((vec4*)Data);          break;
+        case Config_Str:   Var->Str    = InitJString(Data, Size); break;
         
         // NOTE(Dustin): These will require some special handling...
         case Config_Obj:
         case Config_Unknown:
         default:
-        {
+        { // by special handling, I mean send an error log
             mprinte("Unknown config primitive type!\n");
         } break;
     }
@@ -265,6 +291,9 @@ void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
 
 void FreeConfigVar(config_var *Var)
 {
+    if (Var->Type == Config_Str)
+        Var->Str.Clear();
+    
     Var->Name.Clear();
     Var->Type = Config_Unknown;
     Var->Object = {0};
@@ -316,6 +345,7 @@ file_internal token ConsumeNextToken(mscanner *Scanner)
         while (IsChar(Token.Start[Token.Len-1]) ||
                IsDigit(Token.Start[Token.Len-1]) ||
                Token.Start[Token.Len-1] == '_') Token.Len++;
+        Token.Len--;
         
         Scanner->Current = Token.Start + Token.Len;
     }
@@ -499,6 +529,20 @@ file_internal token_list Tokenizer(mscanner *Scanner)
     }
     
     return Tokens;
+}
+
+file_internal void FreeTokenList(token_list *List)
+{
+    token_node *Iter = List->Head;
+    while (Iter)
+    {
+        token_node *tmp = Iter->Next;
+        pfree(Iter);
+        Iter = tmp;
+    }
+    
+    List->Head = nullptr;
+    List->Tail = nullptr;
 }
 
 //~ Parse Tree Gen
@@ -721,7 +765,35 @@ file_internal void BuildParseTrees(token_list *Tokens, syntax_tree_list *SyntaxT
     }
 }
 
-config_primitive_type TokenToPrimitiveType(token Token)
+file_internal void FreeSyntaxNode(syntax_node *Node)
+{
+    if (Node->Left)
+    {
+        FreeSyntaxNode(Node->Left);
+    }
+    
+    if (Node->Right)
+    {
+        FreeSyntaxNode(Node->Right);
+    }
+    
+    pfree(Node);
+}
+
+file_internal void FreeParseTree(syntax_tree_list *SyntaxTrees)
+{
+    for (u32 RootIdx = 0; RootIdx < SyntaxTrees->Size; ++RootIdx)
+    {
+        FreeSyntaxNode(SyntaxTrees->Head[RootIdx]);
+    }
+    
+    pfree(SyntaxTrees->Head);
+    SyntaxTrees->Head = nullptr;
+    SyntaxTrees->Size = 0;
+    SyntaxTrees->Cap  = 0;
+}
+
+file_internal config_primitive_type TokenToPrimitiveType(token Token)
 {
     config_primitive_type Result;
     jstring Type = InitJString(Token.Start, Token.Len);
@@ -856,7 +928,7 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
         syntax_node *VarNameNode = LeftRootNode->Left;
         syntax_node *VarTypeNode = LeftRootNode->Right;
         
-        jstring MemberName = InitJString(VarNameNode->Token.Start, VarNameNode->Token.Len);
+        //jstring MemberName = InitJString(VarNameNode->Token.Start, VarNameNode->Token.Len);
         config_primitive_type VarType = TokenToPrimitiveType(VarTypeNode->Token);
         
         if (VarType == Config_Unknown)
@@ -868,34 +940,44 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
         config_var Var = {};
         if (VarType == Config_I32)
         {
-            i32 Data = StrToInt(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+            i32 Data = StrToInt(RightRootNode->Token.Start,
+                                RightRootNode->Token.Start + RightRootNode->Token.Len);
             
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, (char*)&Data);
         }
         else if (VarType == Config_I64)
         {
-            i64 Data = StrToInt64(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+            i64 Data = StrToInt64(RightRootNode->Token.Start,
+                                  RightRootNode->Token.Start + RightRootNode->Token.Len);
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, (char*)&Data);
         }
         else if (VarType == Config_U32)
         {
-            u32 Data = StrToUInt(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+            u32 Data = StrToUInt(RightRootNode->Token.Start,
+                                 RightRootNode->Token.Start + RightRootNode->Token.Len);
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, (char*)&Data);
         }
         else if (VarType == Config_U64)
         {
-            u64 Data = StrToUInt64(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+            u64 Data = StrToUInt64(RightRootNode->Token.Start,
+                                   RightRootNode->Token.Start + RightRootNode->Token.Len);
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, (char*)&Data);
         }
         else if (VarType == Config_R32)
         {
-            u64 Data = StrToR32(Root->Token.Start);
+            u64 Data = StrToR32(RightRootNode->Token.Start);
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, (char*)&Data);
+        }
+        else if (VarType == Config_Str)
+        {
+            char *Data = RightRootNode->Token.Start;
+            InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                          VarType, Data, RightRootNode->Token.Len);
         }
         else if (VarType > Config_R32 && VarType < Config_Str)
         { // type is an array type
@@ -950,7 +1032,8 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
             
         }
         
-        ConfigMemberTableInsert(&Obj->ObjMembers, MemberName, Var);
+        (*TreeIdx)++;
+        ConfigMemberTableInsert(&Obj->ObjMembers, Var.Name, Var);
     }
 }
 
@@ -976,12 +1059,22 @@ file_internal void BuildObjTable(config_obj_table *ObjTable, syntax_tree_list *S
         // Build the Member Table
         ++TreeIdx;
         BuildObjMemberTable(&Obj, SyntaxTrees, &TreeIdx);
+        
+        ConfigObjTableInsert(ObjTable, Obj.Name, Obj);
+        
+        // if we are still within the syntax tree list, and if the current
+        // tree is an object node, then need to decrement the indx because
+        // the above build increments one too mant times.
+        if (TreeIdx < SyntaxTrees->Size && SyntaxTrees->Head[TreeIdx]->Token.Type == Token_Object)
+        {
+            TreeIdx--;
+        }
     }
 }
 
 //~ User Calls
 
-void LoadConfigFile(jstring filename)
+config_obj_table LoadConfigFile(jstring filename)
 {
     jstring FileData = PlatformLoadFile(filename);
     
@@ -994,7 +1087,7 @@ void LoadConfigFile(jstring filename)
     // Pass 1 Tokenize the resource File
     token_list Tokens = Tokenizer(&Scanner);
     
-#if 1
+#if 0
     // print the tokens
     token_node *Iter = Tokens.Head;
     while (Iter)
@@ -1021,13 +1114,252 @@ void LoadConfigFile(jstring filename)
     
     BuildParseTrees(&Tokens, &SyntaxTrees);
     
-    // Pass 3 Build Table Data Struct to rturn to the user
     config_obj_table ObjTable;
     InitConfigObjTable(&ObjTable);
     
+    // Pass 3 Build Table Data Struct to rturn to the user
     BuildObjTable(&ObjTable, &SyntaxTrees);
+    
+    // Pass 4 Free Resources
+    FreeParseTree(&SyntaxTrees);
+    FreeTokenList(&Tokens);
+    FileData.Clear();
+    
+    return ObjTable;
 }
 
 void SaveConfigFile()
 {
 }
+
+//~ Getters for a config obj
+
+i32 GetConfigI32(config_obj *Obj, jstring VarName)
+{
+    i32 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_I32)
+    {
+        mprinte("Requested i32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.Int32;
+    }
+    
+    return Result;
+}
+
+i64 GetConfigI64(config_obj *Obj, jstring VarName)
+{
+    i64 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_I64)
+    {
+        mprinte("Requested i64 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.Int64;
+    }
+    
+    return Result;
+}
+
+u32 GetConfigU32(config_obj *Obj, jstring VarName)
+{
+    u32 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_U32)
+    {
+        mprinte("Requested u32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.UInt64;
+    }
+    
+    return Result;
+}
+
+u64 GetConfigU64(config_obj *Obj, jstring VarName)
+{
+    u64 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_U64)
+    {
+        mprinte("Requested u64 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.UInt64;
+    }
+    
+    return Result;
+}
+
+r32 GetConfigR32(config_obj *Obj, jstring VarName)
+{
+    r32 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_R32)
+    {
+        mprinte("Requested r32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.R32;
+    }
+    
+    return Result;
+}
+
+ivec2 GetConfigIVec2(config_obj *Obj, jstring VarName)
+{
+    ivec2 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_IVec2)
+    {
+        mprinte("Requested ivec2 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.IVec2;
+    }
+    
+    return Result;
+}
+
+ivec3 GetConfigIVec3(config_obj *Obj, jstring VarName)
+{
+    ivec3 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_IVec3)
+    {
+        mprinte("Requested ivec3 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.IVec3;
+    }
+    
+    return Result;
+}
+
+ivec4 GetConfigIVec4(config_obj *Obj, jstring VarName)
+{
+    ivec4 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_IVec4)
+    {
+        mprinte("Requested ivec4 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.IVec4;
+    }
+    
+    return Result;
+}
+
+vec2 GetConfigVec2(config_obj *Obj, jstring VarName)
+{
+    vec2 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Vec2)
+    {
+        mprinte("Requested vec2 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.Vec2;
+    }
+    
+    return Result;
+}
+
+vec3 GetConfigVec3(config_obj *Obj, jstring VarName)
+{
+    vec3 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Vec3)
+    {
+        mprinte("Requested vec3 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.Vec3;
+    }
+    
+    return Result;
+}
+
+vec4 GetConfigVec4(config_obj *Obj, jstring VarName)
+{
+    vec4 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Vec4)
+    {
+        mprinte("Requested vec4 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = Var.Vec4;
+    }
+    
+    return Result;
+}
+
+// Returns a COPY of the string
+jstring GetConfigStr(config_obj *Obj, jstring VarName)
+{
+    jstring Result;
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Str)
+    {
+        mprinte("Requested string variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName.GetCStr());
+    }
+    else
+    {
+        Result = CopyJString(Var.Str);
+    }
+    
+    return Result;
+}
+
+config_obj GetConfigObj(config_obj_table *Table, jstring ObjName)
+{
+    config_obj Result = ConfigObjTableGet(Table, ObjName);
+    
+    if (Result.Name.len == 0)
+    {
+        mprinte("Could not find an Object with the name \"%s\"\n", ObjName.GetCStr());
+    }
+    
+    return Result;
+}
+
