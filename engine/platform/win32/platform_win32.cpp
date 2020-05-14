@@ -980,30 +980,6 @@ file_internal void Win32ShutdownRoutines()
     mm::ShutdownMemoryManager();
 }
 
-struct TestEvent
-{
-    int y = 0;
-    int x = 10;
-};
-
-file_internal void TestFnctPtr(void *instance, TestEvent event)
-{
-    mprinte("Function pointer was called!\n");
-}
-
-struct TestEventCallback
-{
-    int a = 2;
-    int b = 1;
-} test_callback;
-
-file_internal void TestFnctPtrWithInstance(void *instance, TestEvent event)
-{
-    TestEventCallback *callback_instance = (TestEventCallback*)instance;
-    
-    mprinte("Function pointer with callback was called! a: %d, b: %d\n", callback_instance->a, callback_instance->b);
-}
-
 file_internal void WindowResizeEventCallback(void *instance, WindowResizeEvent event)
 {
     CoreVulkanResizeEvent cv_event;
@@ -1106,6 +1082,12 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         exit(1);
     }
+    
+    //~ Test Config Parser
+    
+    jstring engine_conf = InitJString("data/configs/engine.conf");
+    LoadConfigFile(engine_conf);
+    engine_conf.Clear();
     
     //~ Client Initialization
     GameInit();

@@ -28,8 +28,9 @@ u64 ReadUInt64(char *buffer);
 r32 ReadFloat(char *buffer);
 i32 StrToInt(char *str, char *stop);
 i64 StrToInt64(char *str, char *stop);
+u32 StrToUInt(char *str, char *stop);
 u64 StrToUInt64(char *str, char *stop);
-r32 ReadFloatFromString(char *buffer);
+r32 StrToR32(char *buffer);
 jstring UInt64ToStr(u64 data);
 
 void UInt16ToBinaryBuffer(FileBuffer *buffer, u16 *data, u32 count);

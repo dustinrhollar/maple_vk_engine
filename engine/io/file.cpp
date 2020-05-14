@@ -269,18 +269,48 @@ float ReadFloat(char *buffer)
 int StrToInt(char *str, char *stop)
 {
     int result = 0;
-    for (char *c = str; c < stop; ++c)
+    int multiplier = 1;
+    
+    char *c = str;
+    if (str[0] == '-')
+    {
+        multiplier = -1;
+        ++c;
+    }
+    
+    for (; c < stop; ++c)
     {
         result = result * 10 + c[0] - '0';
     }
     
-    return result;
+    return result * multiplier;
 }
 
 // does not contain the sign
 i64 StrToInt64(char *str, char *stop)
 {
     i64 result = 0;
+    i64 multiplier = 1;
+    
+    char *c = str;
+    if (str[0] == '-')
+    {
+        multiplier = -1;
+        ++c;
+    }
+    
+    for (; c < stop; ++c)
+    {
+        result = result * 10 + c[0] - '0';
+    }
+    
+    return result * multiplier;
+}
+
+// does not contain the sign
+u32 StrToUInt(char *str, char *stop)
+{
+    u32 result = 0;
     for (char *c = str; c < stop; ++c)
     {
         result = result * 10 + c[0] - '0';
@@ -302,7 +332,7 @@ u64 StrToUInt64(char *str, char *stop)
 
 // Takes in a string like: "127.8"
 // and converts it to a floating point number
-r32 ReadFloatFromString(char *buffer)
+r32 StrToR32(char *buffer)
 {
     return (r32)strtod(buffer, NULL);
 }

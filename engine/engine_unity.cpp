@@ -123,7 +123,6 @@ void FlagGameResize();
 
 #include "events/event_manager.cpp"
 
-
 //~ Vulkan Headers
 // TODO(Dustin): Find a better solution to this.
 // Lines 15271-15305 have been turned off in order to compile
@@ -186,6 +185,10 @@ void *VulkanLibrary;
 //~ Vulkan Source Files
 #include "vk/vulkan_functions.cpp"
 #include "vk/maple_vulkan.cpp"
+
+//~ Config Source
+#include "config/config_parser.h"
+#include "config/config_parser.cpp"
 
 //~ ENTRY POINT
 #include "platform/entry.cpp"

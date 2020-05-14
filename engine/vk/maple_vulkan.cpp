@@ -176,7 +176,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
                                                     void* pUserData)
 {
     
-    PlatformPrintMesage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "%s\n", pCallbackData->pMessage);
+    PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "%s\n", pCallbackData->pMessage);
     return VK_FALSE;
 }
 

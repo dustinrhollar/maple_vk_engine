@@ -9,20 +9,20 @@ User API:
 
 
 inline Vec2 MakeVec2(float *ptr);
-inline Vec3 MakeVec3(float *ptr);
+inline vec3 MakeVec3(float *ptr);
 inline Vec4 MakeVec4(float *ptr);
 
 
 // Calculates the dot product of two vectors
 inline float dot(Vec2 const& left, Vec2 const& right);
-inline float dot(Vec3 const& left, Vec3 const& right);
+inline float dot(vec3 const& left, vec3 const& right);
 inline float dot(Vec4 const& left, Vec4 const& right);
 
 // Calculates the cross product of two vectors
 // cross pruduct of a vect2 is the same as calculating the
 // determinate of 2x2 matrix
 inline float cross(Vec2 const& left, Vec2 const& right);
-inline Vec3 cross(Vec3 const& left, Vec3 const& right);
+inline vec3 cross(vec3 const& left, vec3 const& right);
 // NOTE(Dustin), there really isn't an actual representation
 // of a vec4 cross product. Therefore, the cross product of the
 // xyz components are computed instead, where the w component is
@@ -31,17 +31,17 @@ inline Vec4 cross(Vec4 const& left, Vec4 const& right);
 
 // Finds the magnitude of a vector
 inline float mag(Vec2 const& vector);
-inline float mag(Vec3 const& vector);
+inline float mag(vec3 const& vector);
 inline float mag(Vec4 const& vector);
 
 // Finds the squared magnitude of a vector
 inline float mag_sq(Vec2 const& vector);
-inline float mag_sq(Vec3 const& vector);
+inline float mag_sq(vec3 const& vector);
 inline float mag_sq(Vec4 const& vector);
 
 // Normalizs a vector so that its magnitude == 1
 inline Vec2 norm(Vec2 vector);
-inline Vec3 norm(Vec3 vector);
+inline vec3 norm(vec3 vector);
 inline Vec4 norm(Vec4 vector);
 
 // MATRICES
@@ -52,36 +52,36 @@ inline float DegreesToRadians(float theta);
 inline Mat3 RotateX(float theta);
 inline Mat3 RotateY(float theta);
 inline Mat3 RotateZ(float theta);
-inline Mat3 Rotate(float theta, Vec3 axis);
-inline Mat3 Reflect(Vec3 vec3);
+inline Mat3 Rotate(float theta, vec3 axis);
+inline Mat3 Reflect(vec3 vec3);
 inline Mat3 Scale(float sx, float sy, float sz);
-inline Mat3 Scale(float s, Vec3 scale);
+inline Mat3 Scale(float s, vec3 scale);
 // skew is the vector representing the direction along which the skew ocurs
 // perp is the vector perpendicular to skew along which vectors are measured to
 // to determine how to skew.
-inline Mat3 Skew(float theta, Vec3 skew, Vec3 perp);
-inline Mat4 Translate(Vec3 trans);
+inline Mat3 Skew(float theta, vec3 skew, vec3 perp);
+inline Mat4 Translate(vec3 trans);
 
 // QUATERNIONS
 
-Vec3 GetQuaternionVector(Quaternion const& quat);
+vec3 GetQuaternionVector(Quaternion const& quat);
 Mat3 GetQuaternionRotationMatrix(Quaternion const& q);
 // Creates a quaternion from a rotation matrix
 Quaternion CreateQuaternionFromRotationMatrix(const Mat3& m);
 Quaternion QuaternionMul(Quaternion const& left, Quaternion const& right);
 // rotates the vector around the quaternion using the sandwich product
-Vec3 Transform(const Vec3& v, const Quaternion& q);
+vec3 Transform(const vec3& v, const Quaternion& q);
 Quaternion norm(const Quaternion& q);
 
 // OTHER USEFUL GRAPHICS FUNCTIONS
-Mat4 LookAt(Vec3 right, Vec3 up, Vec3 forward, Vec3 position)
+Mat4 LookAt(vec3 right, vec3 up, vec3 forward, vec3 position)
 Mat4 PerspectiveProjection(float fov, float aspect_ratio, float near, float far);
 
 */
 
 inline float DegreesToRadians(float theta);
 
-struct Vec2
+struct vec2
 {
     union
     {
@@ -96,7 +96,7 @@ struct Vec2
         return data[i];
     }
     
-    Vec2& operator+=(Vec2 const& other)
+    vec2& operator+=(vec2 const& other)
     {
         x += other.x;
         y += other.y;
@@ -104,7 +104,7 @@ struct Vec2
         return *this;
     }
     
-    Vec2& operator-=(Vec2 const& other)
+    vec2& operator-=(vec2 const& other)
     {
         x -= other.x;
         y -= other.y;
@@ -112,7 +112,7 @@ struct Vec2
         return *this;
     }
     
-    Vec2& operator*=(Vec2 const& other)
+    vec2& operator*=(vec2 const& other)
     {
         x *= other.x;
         y *= other.y;
@@ -120,7 +120,7 @@ struct Vec2
         return *this;
     }
     
-    Vec2& operator/=(Vec2 const& other)
+    vec2& operator/=(vec2 const& other)
     {
         x = (other.x == 0) ? 0 : x / other.x;
         y = (other.y == 0) ? 0 : y / other.y;
@@ -128,7 +128,7 @@ struct Vec2
         return *this;
     }
     
-    Vec2& operator/=(float const& other)
+    vec2& operator/=(float const& other)
     {
         if (other != 0)
         {
@@ -139,7 +139,7 @@ struct Vec2
         return *this;
     }
     
-    Vec2& operator*=(float const& other)
+    vec2& operator*=(float const& other)
     {
         x *= other;
         y *= other;
@@ -148,17 +148,17 @@ struct Vec2
     }
 };
 
-struct Vec3
+struct vec3
 {
     union
     {
         struct { float x, y, z;     };
-        struct { Vec2 xy; float p0; };
-        struct { float p1; Vec2 yz; };
+        struct { vec2 xy; float p0; };
+        struct { float p1; vec2 yz; };
         
         struct { float r, g, b;     };
-        struct { Vec2 rg; float p2; };
-        struct { float p3; Vec2 gb; };
+        struct { vec2 rg; float p2; };
+        struct { float p3; vec2 gb; };
         
         float data[3];
     };
@@ -168,7 +168,7 @@ struct Vec3
         return data[i];
     }
     
-    Vec3& operator+=(Vec3 const& other)
+    vec3& operator+=(vec3 const& other)
     {
         x += other.x;
         y += other.y;
@@ -177,7 +177,7 @@ struct Vec3
         return *this;
     }
     
-    Vec3& operator-=(Vec3 const& other)
+    vec3& operator-=(vec3 const& other)
     {
         x -= other.x;
         y -= other.y;
@@ -186,7 +186,7 @@ struct Vec3
         return *this;
     }
     
-    Vec3& operator*=(Vec3 const& other)
+    vec3& operator*=(vec3 const& other)
     {
         x *= other.x;
         y *= other.y;
@@ -195,7 +195,7 @@ struct Vec3
         return *this;
     }
     
-    Vec3& operator/=(Vec3 const& other)
+    vec3& operator/=(vec3 const& other)
     {
         x = (other.x == 0) ? 0 : x / other.x;
         y = (other.y == 0) ? 0 : y / other.y;
@@ -204,7 +204,7 @@ struct Vec3
         return *this;
     }
     
-    Vec3& operator/=(float const& other)
+    vec3& operator/=(float const& other)
     {
         if (other != 0)
         {
@@ -216,7 +216,7 @@ struct Vec3
         return *this;
     }
     
-    Vec3& operator*=(float const& other)
+    vec3& operator*=(float const& other)
     {
         x *= other;
         y *= other;
@@ -226,21 +226,21 @@ struct Vec3
     }
 };
 
-struct Vec4
+struct vec4
 {
     union
     {
         struct { float x, y, z, w;            };
-        struct { Vec2 xy, zw;                 };
-        struct { float p0; Vec2 yz; float p1; };
-        struct { Vec3 xyz; float p2;          };
-        struct { float p3; Vec3 yzw;          };
+        struct { vec2 xy, zw;                 };
+        struct { float p0; vec2 yz; float p1; };
+        struct { vec3 xyz; float p2;          };
+        struct { float p3; vec3 yzw;          };
         
         struct { float r, g, b, a;            };
-        struct { Vec2 rg, ba;                 };
-        struct { Vec3 rgb; float p4;          };
-        struct { float p5; Vec2 gb; float p6; };
-        struct { float p7; Vec3 gba;          };
+        struct { vec2 rg, ba;                 };
+        struct { vec3 rgb; float p4;          };
+        struct { float p5; vec2 gb; float p6; };
+        struct { float p7; vec3 gba;          };
         
         float data[4];
     };
@@ -250,7 +250,7 @@ struct Vec4
         return data[i];
     }
     
-    Vec4& operator+=(Vec4 const& other)
+    vec4& operator+=(vec4 const& other)
     {
         x += other.x;
         y += other.y;
@@ -260,7 +260,7 @@ struct Vec4
         return *this;
     }
     
-    Vec4& operator-=(Vec4 const& other)
+    vec4& operator-=(vec4 const& other)
     {
         x -= other.x;
         y -= other.y;
@@ -270,7 +270,7 @@ struct Vec4
         return *this;
     }
     
-    Vec4& operator*=(Vec4 const& other)
+    vec4& operator*=(vec4 const& other)
     {
         x *= other.x;
         y *= other.y;
@@ -280,7 +280,7 @@ struct Vec4
         return *this;
     }
     
-    Vec4& operator/=(Vec4 const& other)
+    vec4& operator/=(vec4 const& other)
     {
         x = (other.x == 0) ? 0 : x / other.x;
         y = (other.y == 0) ? 0 : y / other.y;
@@ -290,7 +290,7 @@ struct Vec4
         return *this;
     }
     
-    Vec4& operator/=(float const& other)
+    vec4& operator/=(float const& other)
     {
         if (other != 0)
         {
@@ -303,7 +303,7 @@ struct Vec4
         return *this;
     }
     
-    Vec4& operator*=(float const& other)
+    vec4& operator*=(float const& other)
     {
         x *= other;
         y *= other;
@@ -323,9 +323,9 @@ struct Mat3
         
         struct
         {
-            Vec3 col0;
-            Vec3 col1;
-            Vec3 col2;
+            vec3 col0;
+            vec3 col1;
+            vec3 col2;
         };
     };
     
@@ -397,10 +397,10 @@ struct Mat4
         
         struct
         { // useful for matrix math?
-            Vec4 col0;
-            Vec4 col1;
-            Vec4 col2;
-            Vec4 col3;
+            vec4 col0;
+            vec4 col1;
+            vec4 col2;
+            vec4 col3;
         };
     };
     
@@ -495,7 +495,7 @@ struct Quaternion
     union
     {
         struct { float x, y, z, w;  };
-        struct { Vec3 xyz; float p0; };
+        struct { vec3 xyz; float p0; };
     };
     
     /*
@@ -515,33 +515,33 @@ struct Quaternion
 //----------------------------------------------------------------------------------------//
 
 // Operator overloads
-inline Vec2 operator+(Vec2 left, Vec2 const& right);
-inline Vec3 operator+(Vec3 left, Vec3 const& right);
-inline Vec4 operator+(Vec4 left, Vec4 const& right);
+inline vec2 operator+(vec2 left, vec2 const& right);
+inline vec3 operator+(vec3 left, vec3 const& right);
+inline vec4 operator+(vec4 left, vec4 const& right);
 
-inline Vec2 operator-(Vec2 left, Vec2 const& right);
-inline Vec3 operator-(Vec3 left, Vec3 const& right);
-inline Vec4 operator-(Vec4 left, Vec4 const& right);
+inline vec2 operator-(vec2 left, vec2 const& right);
+inline vec3 operator-(vec3 left, vec3 const& right);
+inline vec4 operator-(vec4 left, vec4 const& right);
 
-inline Vec2 operator*(Vec2 left, Vec2 const& right);
-inline Vec3 operator*(Vec3 left, Vec3 const& right);
-inline Vec4 operator*(Vec4 left, Vec4 const& right);
+inline vec2 operator*(vec2 left, vec2 const& right);
+inline vec3 operator*(vec3 left, vec3 const& right);
+inline vec4 operator*(vec4 left, vec4 const& right);
 
-inline Vec2 operator/(Vec2 left, Vec2 const& right);
-inline Vec3 operator/(Vec3 left, Vec3 const& right);
-inline Vec4 operator/(Vec4 left, Vec4 const& right);
+inline vec2 operator/(vec2 left, vec2 const& right);
+inline vec3 operator/(vec3 left, vec3 const& right);
+inline vec4 operator/(vec4 left, vec4 const& right);
 
-inline Vec2 operator/(Vec2 left, float const& denominator);
-inline Vec3 operator/(Vec3 left, float const& denominator);
-inline Vec4 operator/(Vec4 left, float const& denominator);
+inline vec2 operator/(vec2 left, float const& denominator);
+inline vec3 operator/(vec3 left, float const& denominator);
+inline vec4 operator/(vec4 left, float const& denominator);
 
-inline Vec2 operator*(Vec2 left, float const& scalar);
-inline Vec3 operator*(Vec3 left, float const& scalar);
-inline Vec4 operator*(Vec4 left, float const& scalar);
+inline vec2 operator*(vec2 left, float const& scalar);
+inline vec3 operator*(vec3 left, float const& scalar);
+inline vec4 operator*(vec4 left, float const& scalar);
 
-inline Vec2 operator*(float const& scalar, Vec2 left);
-inline Vec3 operator*(float const& scalar, Vec3 left);
-inline Vec4 operator*(float const& scalar, Vec4 left);
+inline vec2 operator*(float const& scalar, vec2 left);
+inline vec3 operator*(float const& scalar, vec3 left);
+inline vec4 operator*(float const& scalar, vec4 left);
 
 inline Mat3 operator*(Mat3 const& left, Mat3 const& r);
 inline Mat4 operator*(Mat4 const& left, Mat4 const& r);
@@ -550,40 +550,40 @@ Quaternion operator*(const Quaternion& l, const Quaternion& r);
 
 // VECTORS
 
-Vec2 MakeVec2(float *ptr);
-Vec3 MakeVec3(float *ptr);
-Vec4 MakeVec4(float *ptr);
+vec2 MakeVec2(float *ptr);
+vec3 MakeVec3(float *ptr);
+vec4 MakeVec4(float *ptr);
 
 // Calculates the dot product of two vectors
-inline float dot(Vec2 const& left, Vec2 const& right);
-inline float dot(Vec3 const& left, Vec3 const& right);
-inline float dot(Vec4 const& left, Vec4 const& right);
+inline float dot(vec2 const& left, vec2 const& right);
+inline float dot(vec3 const& left, vec3 const& right);
+inline float dot(vec4 const& left, vec4 const& right);
 
 // Calculates the cross product of two vectors
 // cross pruduct of a vect2 is the same as calculating the
 // determinate of 2x2 matrix
-inline float cross(Vec2 const& left, Vec2 const& right);
-inline Vec3 cross(Vec3 const& left, Vec3 const& right);
+inline float cross(vec2 const& left, vec2 const& right);
+inline vec3 cross(vec3 const& left, vec3 const& right);
 // NOTE(Dustin), there really isn't an actual representation
 // of a vec4 cross product. Therefore, the cross product of the
 // xyz components are computed instead, where the w component is
 // set to 1.
-inline Vec4 cross(Vec4 const& left, Vec4 const& right);
+inline vec4 cross(vec4 const& left, vec4 const& right);
 
 // Finds the magnitude of a vector
-inline float mag(Vec2 const& vector);
-inline float mag(Vec3 const& vector);
-inline float mag(Vec4 const& vector);
+inline float mag(vec2 const& vector);
+inline float mag(vec3 const& vector);
+inline float mag(vec4 const& vector);
 
 // Finds the squared magnitude of a vector
-inline float mag_sq(Vec2 const& vector);
-inline float mag_sq(Vec3 const& vector);
-inline float mag_sq(Vec4 const& vector);
+inline float mag_sq(vec2 const& vector);
+inline float mag_sq(vec3 const& vector);
+inline float mag_sq(vec4 const& vector);
 
 // Normalizs a vector so that its magnitude == 1
-inline Vec2 norm(Vec2 vector);
-inline Vec3 norm(Vec3 vector);
-inline Vec4 norm(Vec4 vector);
+inline vec2 norm(vec2 vector);
+inline vec3 norm(vec3 vector);
+inline vec4 norm(vec4 vector);
 
 // MATRICES
 
@@ -595,34 +595,34 @@ Mat4 Mul(Mat4 const& left, Mat4 const& right);
 inline Mat3 RotateX(float theta);
 inline Mat3 RotateY(float theta);
 inline Mat3 RotateZ(float theta);
-inline Mat3 Rotate(float theta, Vec3 axis);
-inline Mat3 Reflect(Vec3 vec3);
+inline Mat3 Rotate(float theta, vec3 axis);
+inline Mat3 Reflect(vec3 vec3);
 Mat4 Scale(float sx, float sy, float sz);
-inline Mat4 Scale(float s, Vec3 scale);
+inline Mat4 Scale(float s, vec3 scale);
 // skew is the vector representing the direction along which the skew ocurs
 // perp is the vector perpendicular to skew along which vectors are measured to
 // to determine how to skew.
-inline Mat3 Skew(float theta, Vec3 skew, Vec3 perp);
+inline Mat3 Skew(float theta, vec3 skew, vec3 perp);
 
-Mat4 Translate(Vec3 trans);
+Mat4 Translate(vec3 trans);
 
 // QUATERNIONS
 
 Quaternion MakeQuaternion(float x, float y, float z, float w);
-Quaternion CreateQuaternion(Vec3 axis, float theta);
-Vec3 GetQuaternionVector(Quaternion const& quat);
+Quaternion CreateQuaternion(vec3 axis, float theta);
+vec3 GetQuaternionVector(Quaternion const& quat);
 Mat3 GetQuaternionRotationMatrix(Quaternion const& q);
 // Creates a quaternion from a rotation matrix
 Quaternion CreateQuaternionFromRotationMatrix(const Mat3& m);
 Quaternion QuaternionMul(Quaternion const& left, Quaternion const& right);
 // rotates the vector around the quaternion using the sandwich product
-Vec3 Transform(const Vec3& v, const Quaternion& q);
+vec3 Transform(const vec3& v, const Quaternion& q);
 Quaternion norm(const Quaternion& q);
 
 Quaternion conjugate(const Quaternion& q);
 
 // OTHER USEFUL GRAPHICS FUNCTIONS
-Mat4 LookAt(Vec3 eye, Vec3 center, Vec3 up);
+Mat4 LookAt(vec3 eye, vec3 center, vec3 up);
 Mat4 PerspectiveProjection(float fov, float aspect_ratio, float near, float far);
 
 
@@ -640,139 +640,139 @@ Mat4 PerspectiveProjection(float fov, float aspect_ratio, float near, float far)
 //----------------------------------------------------------------------------------------//
 
 // Vec2 operator overloads
-inline Vec2 operator+(Vec2 left, Vec2 const& right)
+inline vec2 operator+(vec2 left, vec2 const& right)
 {
     left += right;
     return left;
 }
 
-inline Vec2 operator-(Vec2 left, Vec2 const& right)
+inline vec2 operator-(vec2 left, vec2 const& right)
 {
     left -= right;
     return left;
 }
 
-inline Vec2 operator*(Vec2 left, Vec2 const& right)
+inline vec2 operator*(vec2 left, vec2 const& right)
 {
     left -= right;
     return left;
 }
 
-inline Vec2 operator/(Vec2 left, Vec2 const& right)
+inline vec2 operator/(vec2 left, vec2 const& right)
 {
     left += right;
     return left;
 }
 
-inline Vec2 operator/(Vec2 left, float const& denominator)
+inline vec2 operator/(vec2 left, float const& denominator)
 {
     left /= denominator;
     return left;
 }
 
-inline Vec2 operator*(Vec2 left, float const& scalar)
+inline vec2 operator*(vec2 left, float const& scalar)
 {
     left *= scalar;
     return left;
 }
 
-// Vec3 operator overloads
-inline Vec3 operator+(Vec3 left, Vec3 const& right)
+// vec3 operator overloads
+inline vec3 operator+(vec3 left, vec3 const& right)
 {
     left += right;
     return left;
 }
 
-inline Vec3 operator-(Vec3 left, Vec3 const& right)
+inline vec3 operator-(vec3 left, vec3 const& right)
 {
     left -= right;
     return left;
 }
 
-inline Vec3 operator*(Vec3 left, Vec3 const& right)
+inline vec3 operator*(vec3 left, vec3 const& right)
 {
     left -= right;
     return left;
 }
 
-inline Vec3 operator/(Vec3 left, Vec3 const& right)
+inline vec3 operator/(vec3 left, vec3 const& right)
 {
     left += right;
     return left;
 }
 
-inline Vec3 operator/(Vec3 left, float const& denominator)
+inline vec3 operator/(vec3 left, float const& denominator)
 {
     left /= denominator;
     return left;
 }
 
-inline Vec3 operator*(Vec3 left, float const& scalar)
+inline vec3 operator*(vec3 left, float const& scalar)
 {
     left *= scalar;
     return left;
 }
 
 
-inline Vec2 operator*(float const& scalar, Vec2 left)
+inline vec2 operator*(float const& scalar, vec2 left)
 {
     left *= scalar;
     return left;
 }
 
-inline Vec3 operator*(float const& scalar, Vec3 left)
+inline vec3 operator*(float const& scalar, vec3 left)
 {
     left *= scalar;
     return left;
 }
 
-inline Vec4 operator*(float const& scalar, Vec4 left)
+inline vec4 operator*(float const& scalar, vec4 left)
 {
     left *= scalar;
     return left;
 }
 
-// Vec4 operator overloads
-inline Vec4 operator+(Vec4 left, Vec4 const& right)
+// vec4 operator overloads
+inline vec4 operator+(vec4 left, vec4 const& right)
 {
     left += right;
     return left;
 }
 
-inline Vec4 operator-(Vec4 left, Vec4 const& right)
+inline vec4 operator-(vec4 left, vec4 const& right)
 {
     left -= right;
     return left;
 }
 
-inline Vec4 operator*(Vec4 left, Vec4 const& right)
+inline vec4 operator*(vec4 left, vec4 const& right)
 {
     left -= right;
     return left;
 }
 
-inline Vec4 operator/(Vec4 left, Vec4 const& right)
+inline vec4 operator/(vec4 left, vec4 const& right)
 {
     left += right;
     return left;
 }
 
-inline Vec4 operator/(Vec4 left, float const& denominator)
+inline vec4 operator/(vec4 left, float const& denominator)
 {
     left /= denominator;
     return left;
 }
 
-inline Vec4 operator*(Vec4 left, float const& scalar)
+inline vec4 operator*(vec4 left, float const& scalar)
 {
     left *= scalar;
     return left;
 }
 
 
-Vec2 MakeVec2(float *ptr)
+vec2 MakeVec2(float *ptr)
 {
-    Vec2 result;
+    vec2 result;
     
     result.x = ptr[0];
     result.y = ptr[1];
@@ -780,9 +780,9 @@ Vec2 MakeVec2(float *ptr)
     return result;
 }
 
-Vec3 MakeVec3(float *ptr)
+vec3 MakeVec3(float *ptr)
 {
-    Vec3 result;
+    vec3 result;
     
     result.x = ptr[0];
     result.y = ptr[1];
@@ -791,9 +791,9 @@ Vec3 MakeVec3(float *ptr)
     return result;
 }
 
-Vec4 MakeVec4(float *ptr)
+vec4 MakeVec4(float *ptr)
 {
-    Vec4 result;
+    vec4 result;
     
     result.x = ptr[0];
     result.y = ptr[1];
@@ -805,20 +805,20 @@ Vec4 MakeVec4(float *ptr)
 
 
 // Calculates the dot product of two vectors
-inline float dot(Vec2 const& left, Vec2 const& right)
+inline float dot(vec2 const& left, vec2 const& right)
 {
     return (left.x * right.x)
         + (left.y * right.y);
 }
 
-inline float dot(Vec3 const& left, Vec3 const& right)
+inline float dot(vec3 const& left, vec3 const& right)
 {
     return (left.x * right.x)
         + (left.y * right.y)
         + (left.z * right.z);
 }
 
-inline float dot(Vec4 const& left, Vec4 const& right)
+inline float dot(vec4 const& left, vec4 const& right)
 {
     return (left.x * right.x)
         + (left.y * right.y)
@@ -827,14 +827,14 @@ inline float dot(Vec4 const& left, Vec4 const& right)
 }
 
 // Calculates the cross product of two vectors
-inline float cross(Vec2 const& left, Vec2 const& right)
+inline float cross(vec2 const& left, vec2 const& right)
 {
     return (left.x * right.y) - (left.y * right.x);
 }
 
-inline Vec3 cross(Vec3 const& left, Vec3 const& right)
+inline vec3 cross(vec3 const& left, vec3 const& right)
 {
-    Vec3 result = {};
+    vec3 result = {};
     
     result.x = (left.y * right.z) - (left.z * right.y);
     result.y = (left.z * right.x) - (left.x * right.z);
@@ -843,9 +843,9 @@ inline Vec3 cross(Vec3 const& left, Vec3 const& right)
     return result;
 }
 
-inline Vec4 cross(Vec4 const& left, Vec4 const& right)
+inline vec4 cross(vec4 const& left, vec4 const& right)
 {
-    Vec4 result = {};
+    vec4 result = {};
     
     result.xyz = cross(left.xyz, right.xyz);
     result.w   = 1;
@@ -854,53 +854,53 @@ inline Vec4 cross(Vec4 const& left, Vec4 const& right)
 }
 
 // Finds the squared magnitude of a vector
-inline float mag_sq(Vec2 const& v)
+inline float mag_sq(vec2 const& v)
 {
     return (v.x * v.x) + (v.y * v.y);
 }
 
-inline float mag_sq(Vec3 const& v)
+inline float mag_sq(vec3 const& v)
 {
     return (v.x * v.x) + (v.y * v.y) + (v.z * v.z);
 }
 
-inline float mag_sq(Vec4 const& v)
+inline float mag_sq(vec4 const& v)
 {
     return (v.x * v.x) + (v.y * v.y) + (v.z * v.z) + (v.w * v.w);
 }
 
 // Finds the magnitude of a vector
-inline float mag(Vec2 const& v)
+inline float mag(vec2 const& v)
 {
     return (float)sqrt((v.x * v.x) + (v.y * v.y));
 }
 
-inline float mag(Vec3 const& v)
+inline float mag(vec3 const& v)
 {
     return (float)sqrt((v.x * v.x) + (v.y * v.y) + (v.z * v.z));
 }
 
-inline float mag(Vec4 const& v)
+inline float mag(vec4 const& v)
 {
     return (float)sqrt((v.x * v.x) + (v.y * v.y) + (v.z * v.z) + (v.w * v.w));
 }
 
 // Normalizs a vector so that its magnitude == 1
-inline Vec2 norm(Vec2 v)
+inline vec2 norm(vec2 v)
 {
     float m = mag(v);
     v /= m;
     return v;
 }
 
-inline Vec3 norm(Vec3 v)
+inline vec3 norm(vec3 v)
 {
     float m = mag(v);
     v /= m;
     return v;
 }
 
-inline Vec4 norm(Vec4 v)
+inline vec4 norm(vec4 v)
 {
     float m = mag(v);
     v /= m;
@@ -939,9 +939,9 @@ Mat4 MakeMat4(float *ptr)
 
 inline Mat3 operator*(Mat3 const& left, Mat3 const& r)
 {
-    Vec3 lr0 = { left[0][0], left[1][0], left[2][0] };
-    Vec3 lr1 = { left[0][1], left[1][1], left[2][1] };
-    Vec3 lr2 = { left[0][2], left[1][2], left[2][2] };
+    vec3 lr0 = { left[0][0], left[1][0], left[2][0] };
+    vec3 lr1 = { left[0][1], left[1][1], left[2][1] };
+    vec3 lr2 = { left[0][2], left[1][2], left[2][2] };
     
     return Mat3(dot(lr0, r.col0), dot(lr0, r.col1), dot(lr0, r.col2),
                 dot(lr1, r.col0), dot(lr1, r.col1), dot(lr1, r.col2),
@@ -950,10 +950,10 @@ inline Mat3 operator*(Mat3 const& left, Mat3 const& r)
 
 inline Mat4 operator*(Mat4 const& left, Mat4 const& r)
 {
-    Vec4 lr0 = { left[0][0], left[1][0], left[2][0], left[3][0] };
-    Vec4 lr1 = { left[0][1], left[1][1], left[2][1], left[3][1] };
-    Vec4 lr2 = { left[0][2], left[1][2], left[2][2], left[3][2] };
-    Vec4 lr3 = { left[0][3], left[1][3], left[2][3], left[3][3] };
+    vec4 lr0 = { left[0][0], left[1][0], left[2][0], left[3][0] };
+    vec4 lr1 = { left[0][1], left[1][1], left[2][1], left[3][1] };
+    vec4 lr2 = { left[0][2], left[1][2], left[2][2], left[3][2] };
+    vec4 lr3 = { left[0][3], left[1][3], left[2][3], left[3][3] };
     
     return Mat4(dot(lr0, r.col0), dot(lr0, r.col1), dot(lr0, r.col2), dot(lr0, r.col3),
                 dot(lr1, r.col0), dot(lr1, r.col1), dot(lr1, r.col2), dot(lr1, r.col3),
@@ -1013,7 +1013,7 @@ inline Mat3 RotateZ(float theta)
                 0.0f, 0.0f, 1.0f);
 }
 
-inline Mat3 Rotate(float theta, Vec3 axis)
+inline Mat3 Rotate(float theta, vec3 axis)
 {
     float rad = DegreesToRadians(theta);
     axis = norm(axis);
@@ -1034,7 +1034,7 @@ inline Mat3 Rotate(float theta, Vec3 axis)
                 axaz - s * axis.y, ayaz + s * axis.x, c + z * axis.z);
 }
 
-inline Mat3 Reflect(Vec3 axis)
+inline Mat3 Reflect(vec3 axis)
 {
     axis = norm(axis);
     
@@ -1062,7 +1062,7 @@ Mat4 Scale(float sx, float sy, float sz)
     return result;
 }
 
-inline Mat4 Scale(float s, Vec3 scale)
+inline Mat4 Scale(float s, vec3 scale)
 {
     scale = norm(scale);
     
@@ -1103,11 +1103,11 @@ inline Mat4 Scale(float s, Vec3 scale)
 // skew is the vector representing the direction along which the skew ocurs
 // perp is the vector perpendicular to skew along which vectors are measured to
 // to determine how to skew.
-inline Mat3 Skew(float theta, Vec3 skew, Vec3 perp)
+inline Mat3 Skew(float theta, vec3 skew, vec3 perp)
 {
     float t = DegreesToRadians(theta);
-    Vec3 a = norm(skew);
-    Vec3 b = norm(perp);
+    vec3 a = norm(skew);
+    vec3 b = norm(perp);
     
     float r = DegreesToRadians(theta);
     r = (float)tan(r);
@@ -1120,7 +1120,7 @@ inline Mat3 Skew(float theta, Vec3 skew, Vec3 perp)
                 z * b.x, z * b.y, z * b.z + 1.0f);
 }
 
-Mat4 Translate(Vec3 trans)
+Mat4 Translate(vec3 trans)
 {
     Mat4 result = Mat4(1.0f);
     
@@ -1152,7 +1152,7 @@ Quaternion MakeQuaternion(float x, float y, float z, float w)
 
 
 // Creates a quaternion for rotation from an axis and angle (degrees)
-Quaternion CreateQuaternion(Vec3 axis, r32 theta)
+Quaternion CreateQuaternion(vec3 axis, r32 theta)
 {
     r32 r = DegreesToRadians(theta);
     r32 half_angle = r * 0.5f;
@@ -1190,7 +1190,7 @@ Quaternion QuaternionMul(Quaternion const& left, Quaternion const& right)
 }
 
 
-Vec3 GetQuaternionVector(Quaternion const& quat)
+vec3 GetQuaternionVector(Quaternion const& quat)
 {
     return quat.xyz;
 }
@@ -1222,9 +1222,9 @@ Quaternion norm(const Quaternion& q)
     return result;
 }
 
-Vec3 Transform(const Vec3& v, const Quaternion& q)
+vec3 Transform(const vec3& v, const Quaternion& q)
 {
-    const Vec3& b = q.xyz;
+    const vec3& b = q.xyz;
     float b2 = b.x * b.x + b.y * b.y + b.z * b.z;
     return v * (q.w * q.w - b2) +
         b * (dot(v, b) * 2.0f) +
@@ -1309,13 +1309,13 @@ Quaternion CreateQuaternionFromRotationMatrix(const Mat3& m)
 
 //----------------------------------------------------------------------------------------//
 
-Mat4 LookAt(Vec3 eye, Vec3 center, Vec3 up)
+Mat4 LookAt(vec3 eye, vec3 center, vec3 up)
 {
     Mat4 result = Mat4(1.0f);
     
-    Vec3 f = norm(center - eye);
-    Vec3 s = norm(cross(f, up));
-    Vec3 u = cross(s, f);
+    vec3 f = norm(center - eye);
+    vec3 s = norm(cross(f, up));
+    vec3 u = cross(s, f);
     
     result[0][0] = s.x;
     result[0][1] = u.x;

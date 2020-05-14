@@ -45,7 +45,7 @@ EXIT /B %ERRORLEVEL%
         	1>NUL md data
     	)
 
-		xcopy %HOST_DIR%\example\data data\ /i /d /y /s
+		xcopy %HOST_DIR%\data data\ /i /d /y /s
 	popd
 	EXIT /B 0
 

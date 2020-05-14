@@ -237,7 +237,7 @@ inline void mprinte(char *fmt, ...);
 
 // Custom I/O
 #define PlatformFormatString                  Win32FormatString
-#define PlatformPrintMesage                   Win32PrintMessage
+#define PlatformPrintMessage                  Win32PrintMessage
 #define PlatformPrintError                    Win32PrintError
 
 #define PlatformGetExeFilepath                Win32GetExeFilepath
