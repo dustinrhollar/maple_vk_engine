@@ -6,8 +6,6 @@
 
 // TODO(Dustin): Subscribe to specific key press events
 
-#define BIT(x) 1<<(x)
-
 enum EventKey
 {
     KEY_a,

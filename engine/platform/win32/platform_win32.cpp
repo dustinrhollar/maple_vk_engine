@@ -1002,6 +1002,75 @@ file_internal void CoreVulkanResizeEventCallback(void *instance, CoreVulkanResiz
     event::Dispatch<ResizeEvent>(r_event);
 }
 
+u32 __inline Win32ComputeTrailingZero(u64 Value)
+{
+    unsigned long TrailingZero = 0;
+    
+    if ( _BitScanForward64(&TrailingZero, Value))
+        return TrailingZero;
+    else
+        return 32;
+}
+
+u32 __inline Win32ComputeLeadingZero(u64 Value)
+{
+    unsigned long LeadingZero = 0;
+    
+    if (_BitScanReverse64(&LeadingZero, Value))
+        return 31 - LeadingZero;
+    else
+        return 32;
+}
+
+void* Win32RequestMemory(u64 Size)
+{
+    SYSTEM_INFO sSysInfo;
+    DWORD       dwPageSize;
+    LPVOID      lpvBase;
+    u64         ActualSize;
+    
+    GetSystemInfo(&sSysInfo);
+    dwPageSize = sSysInfo.dwPageSize;
+    
+    ActualSize = (Size + (u64)dwPageSize - 1) & ~((u64)dwPageSize - 1);
+    
+    lpvBase = VirtualAlloc(NULL,                    // System selects address
+                           ActualSize,              // Size of allocation
+                           MEM_COMMIT|MEM_RESERVE,  // Allocate reserved pages
+                           PAGE_NOACCESS);          // Protection = no access
+    
+    return lpvBase;
+}
+
+void Win32ReleaseMemory(void *Ptr)
+{
+    BOOL bSuccess = VirtualFree(Ptr,           // Base address of block
+                                0,             // Bytes of committed pages
+                                MEM_RELEASE);  // Decommit the pages
+    assert(bSuccess && "Unable to free a VirtualAlloc allocation!");
+}
+
+void BitCallback(u32 Index)
+{
+    mprint("Bit %d was set!\n", Index);
+}
+
+void FindAllSetBits(u64 *Bitmask, u32 Count)
+{
+    u64 Bitset;
+    for (u32 i = 0; i < Count; ++i)
+    {
+        Bitset = Bitmask[i];
+        while (Bitset != 0)
+        {
+            uint64_t t = Bitset & -Bitset;
+            u32 Idx = Win32ComputeTrailingZero(Bitset);
+            BitCallback(i * 64 + Idx);
+            Bitset ^= t;
+        }
+    }
+}
+
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    PSTR lpCmdLine, INT nCmdShow)
 {
@@ -1129,6 +1198,15 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     
     //~ Client Initialization
     GameInit();
+    
+    //~ Bit testing
+    u64 BitList[] = {
+        1,
+        2,
+        4,
+    };
+    
+    FindAllSetBits(BitList, 3);
     
     //~ App Loop
     ::ShowWindow(ClientWindow, nCmdShow);
