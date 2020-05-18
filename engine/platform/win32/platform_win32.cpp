@@ -1006,7 +1006,7 @@ u32 __inline Win32ComputeTrailingZero(u64 Value)
 {
     unsigned long TrailingZero = 0;
     
-    if ( _BitScanForward64(&TrailingZero, Value))
+    if (_BitScanForward64(&TrailingZero, Value))
         return TrailingZero;
     else
         return 32;
@@ -1048,27 +1048,6 @@ void Win32ReleaseMemory(void *Ptr)
                                 0,             // Bytes of committed pages
                                 MEM_RELEASE);  // Decommit the pages
     assert(bSuccess && "Unable to free a VirtualAlloc allocation!");
-}
-
-void BitCallback(u32 Index)
-{
-    mprint("Bit %d was set!\n", Index);
-}
-
-void FindAllSetBits(u64 *Bitmask, u32 Count)
-{
-    u64 Bitset;
-    for (u32 i = 0; i < Count; ++i)
-    {
-        Bitset = Bitmask[i];
-        while (Bitset != 0)
-        {
-            uint64_t t = Bitset & -Bitset;
-            u32 Idx = Win32ComputeTrailingZero(Bitset);
-            BitCallback(i * 64 + Idx);
-            Bitset ^= t;
-        }
-    }
 }
 
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -1199,14 +1178,55 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     //~ Client Initialization
     GameInit();
     
-    //~ Bit testing
-    u64 BitList[] = {
-        1,
-        2,
-        4,
-    };
+    //~ Tagged Heap testing
     
-    FindAllSetBits(BitList, 3);
+    // TODO(Dustin): Find away to use large pages...
+    DWORD       dwPageSize;
+    SYSTEM_INFO sSysInfo;
+    
+    GetSystemInfo(&sSysInfo);
+    dwPageSize = sSysInfo.dwPageSize;
+    
+    // _128MB should get me 64 2MiB blocks
+    tagged_heap TaggedHeap;
+    InitTaggedHeap(&TaggedHeap, _128MB, _2MB);
+    
+    tagged_heap_block Block4 = TaggedHeapRequestAllocation(&TaggedHeap, 4);
+    tagged_heap_block Block0 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    tagged_heap_block Block3 = TaggedHeapRequestAllocation(&TaggedHeap, 3);
+    tagged_heap_block Block1 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    tagged_heap_block Block2 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    
+    tagged_heap_block Block01 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    tagged_heap_block Block02 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    tagged_heap_block Block03 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    
+    tagged_heap_block Block11 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    tagged_heap_block Block12 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    tagged_heap_block Block13 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    
+    tagged_heap_block Block21 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    tagged_heap_block Block22 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    tagged_heap_block Block23 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    tagged_heap_block Block24 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    
+    // Do some per block allocation
+    // each block is 2MiB, try to alloc two 1MiB allocations.
+    void* ret0 = TaggedHeapBlockAlloc(&Block0, _1MB);
+    assert(ret0);
+    void* ret1 = TaggedHeapBlockAlloc(&Block0, _1MB);
+    assert(ret1);
+    // third allocation should fail
+    void* ret3 = TaggedHeapBlockAlloc(&Block0, _1MB);
+    assert(!ret3);
+    
+    TaggedHeapReleaseAllocation(&TaggedHeap, 0);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 3);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 2);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 4);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 1);
+    
+    FreeTaggedHeap(&TaggedHeap);
     
     //~ App Loop
     ::ShowWindow(ClientWindow, nCmdShow);

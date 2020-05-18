@@ -190,5 +190,9 @@ void *VulkanLibrary;
 #include "config/config_parser.h"
 #include "config/config_parser.cpp"
 
+//~ Fiber Implementation
+#include "fibers/tagged_heap.h"
+#include "fibers/tagged_heap.cpp"
+
 //~ ENTRY POINT
 #include "platform/entry.cpp"
