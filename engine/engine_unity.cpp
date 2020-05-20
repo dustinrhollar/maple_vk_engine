@@ -8,11 +8,18 @@
 
 // defined in platform.h
 struct FrameInput;
+struct frame_params;
 
+// NOTE(Dustin): OLD FUNCTIONALITY
 void GameInit();
 void GameShutdown();
 void GameUpdateAndRender(FrameInput input);
 void FlagGameResize();
+
+// NOTE(Dustin): NEW FUNCTIONALITY
+void GameStageInit(frame_params FrameParams);
+void GameStageShutdown(frame_params FrameParams);
+void GameStageEntry(frame_params FrameParams);
 
 
 //~ Vulkan includes
@@ -189,6 +196,26 @@ void *VulkanLibrary;
 //~ Config Source
 #include "config/config_parser.h"
 #include "config/config_parser.cpp"
+
+//~ Resource Managers
+#include "frame_info/frame_params.h"
+
+// Asset Manager
+#define CGLTF_IMPLEMENTATION
+#include "resources/cgltf.h"
+#include "resources/asset.h"
+#include "resources/asset.cpp"
+
+// Resource Manager
+#include "resources/resources.h"
+#include "resources/resources.cpp"
+
+//~ Stage Information
+#include "renderer/frontend.h"
+#include "renderer/backend.h"
+
+#include "renderer/frontend.cpp"
+#include "renderer/backend.cpp"
 
 //~ Fiber Implementation
 #include "fibers/tagged_heap.h"

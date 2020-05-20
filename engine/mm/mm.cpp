@@ -1,5 +1,7 @@
 
 // TODO(Dustin): Use VirtualAlloc instead of malloc when the platform layer in reinstated
+// TODO(Dustin): Refactor use of FreeListAllocator and LinearAllocator to be POD structs
+//               rather c++ classes.
 
 namespace mm {
     
@@ -40,8 +42,7 @@ namespace mm {
         
         PermanantStorage = new (GlobalMemory) FreeListAllocator(memory_to_reserve - memory_for_transient_storage,
                                                                 permanant_start);
-        TransientStorage = new ((char*)GlobalMemory+linear_offset) LinearAllocator(memory_for_transient_storage,
-                                                                                   transient_start);
+        TransientStorage = new ((char*)GlobalMemory+linear_offset) LinearAllocator(memory_for_transient_storage,transient_start);
     }
     
     

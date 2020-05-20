@@ -34,6 +34,7 @@ file_global bool GlobalIsFullscreen = false;
 file_global bool ClientIsRunning = false;
 
 file_global FrameInput GlobalFrameInput;
+file_global u64 FrameCount = 0;
 
 struct CodeDLL
 {
@@ -1176,7 +1177,11 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     
     //~ Client Initialization
-    GameInit();
+    //GameInit();
+    {
+        frame_params FrameParams = {}; // necessary for gpu commands
+        GameStageInit(FrameParams);
+    }
     
     //~ Tagged Heap testing
     
@@ -1275,12 +1280,26 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         last_frame_time = Win32GetWallClock();
         
-        // TODO(Dustin): Handle input
+        // Collect this frame's parameters
+        frame_params FrameParams = {};
+        FrameParams.Frame = FrameCount++;
+        FrameParams.FrameStartTime = Win32GetWallClock();
+        
+        // TODO(Dustin):Copy assets into frame memory
+        
+        // TODO(Dustin): Have the game define a callback function
+        // that will be "GameStageEntry".
+        GameStageEntry(FrameParams);
+        
         GlobalFrameInput.TimeElapsed = seconds_elapsed_per_frame;
-        GameUpdateAndRender(GlobalFrameInput);
     }
     
-    GameShutdown();
+    //GameShutdown();
+    {
+        frame_params FrameParams = {}; // necessary for gpu commands
+        GameStageShutdown(FrameParams);
+    }
+    
     Win32ShutdownRoutines();
     
     return (0);
