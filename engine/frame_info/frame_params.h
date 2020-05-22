@@ -31,9 +31,17 @@ struct frame_params
     // since the old array's memory will not be recycled.
     render_command *RenderCommands;
     u32             RenderCommandsCount;
+    u32             RenderCommandsCap;
     
     gpu_command    *GpuCommands;
     u32             GpuCommandsCount;
+    u32             GpuCommandsCap;
 };
+
+void InitFrameParams(frame_params *FrameParams);
+void FreeFrameParams(frame_params *FrameParams);
+
+void AddRenderCommand(frame_params *FrameParams, render_command Cmd);
+void AddGpuCommand(frame_params *FrameParams, gpu_command Cmd);
 
 #endif //ENGINE_FRAME_INFO_FRAME_PARAMS_H

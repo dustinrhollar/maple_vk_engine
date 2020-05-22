@@ -1,17 +1,15 @@
 
-
 file_global VkRenderPass     RenderPass;
 file_global VkCommandPool    CommandPool;
 
-file_global VkFramebuffer   *Framebuffer;
+file_global VkFramebuffer   *Framebuffers;
 file_global u32              FramebufferCount;
 file_global ImageParameters  DepthResources;
 
 file_global VkCommandBuffer *CommandBuffers;
 file_global u32              CommandBuffersCount;
 
-
-void GpuStageInit(frame_params FrameParams)
+void GpuStageInit(frame_params *FrameParams)
 {
     u32 swapchain_image_count       = vk::GetSwapChainImageCount();
     VkFormat swapchain_image_format = vk::GetSwapChainImageFormat();
@@ -133,7 +131,7 @@ void GpuStageInit(frame_params FrameParams)
                                   VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
         
         FramebufferCount = swapchain_image_count;
-        Framebuffer = palloc<VkFramebuffer>(swapchain_image_count);
+        Framebuffers = palloc<VkFramebuffer>(swapchain_image_count);
         ImageParameters* swapchain_images = vk::GetSwapChainImages();
         for (u32 i = 0; i < swapchain_image_count; ++i) {
             VkImageView attachments[] = {
@@ -142,7 +140,7 @@ void GpuStageInit(frame_params FrameParams)
             };
             
             VkFramebuffer framebuffer = vk::CreateFramebuffer(attachments, 2, i, RenderPass);
-            Framebuffer[i] = framebuffer;
+            Framebuffers[i] = framebuffer;
         }
     }
     
@@ -158,7 +156,227 @@ void GpuStageInit(frame_params FrameParams)
     }
 }
 
-
-void GpuStageEntry(frame_params FrameParams)
+void GpuStageShutdown(frame_params* FrameParams)
 {
+    vk::Idle();
+    
+    vk::DestroyImageView(DepthResources.View);
+    vk::DestroyVmaImage(DepthResources.Handle, DepthResources.Memory);
+    
+    vk::DestroyCommandBuffers(CommandPool, CommandBuffersCount, CommandBuffers);
+    pfree(CommandBuffers);
+    
+    // Destroy framebuffer
+    for (u32 i = 0; i < FramebufferCount; ++i)
+    {
+        vk::DestroyFramebuffer(Framebuffers[i]);
+    }
+    pfree(Framebuffers);
+    
+    vk::DestroyCommandPool(CommandPool);
+    vk::DestroyRenderPass(RenderPass);
+    
+    FramebufferCount = 0;
+    CommandBuffersCount = 0;
+}
+
+
+void GpuStageEntry(frame_params *FrameParams)
+{
+    // NOTE(Dustin): Since multithreading is not in effect, I am going to
+    // create this loop with a single threaded mindset. First, Entry will
+    // init the frame, command buffer, and render pass. It might be a good
+    // to have another stage init Render Passes for greater control, but that
+    // is not needed right now. CommandBuffer begin and end for this stage is
+    // for the main command buffer. Not sure how to handle command buffer
+    // generation across multiple threads quite yet (espicially for binding
+    // resources).
+    
+    // Frame state that might be needed across commands
+    u32 FrameImageIndex;
+    VkCommandBuffer CommandBuffer;
+    VkFramebuffer Framebuffer;
+    VkResult khr_result;
+    
+    for (u32 Cmd = 0; Cmd < FrameParams->GpuCommandsCount; ++Cmd)
+    {
+        gpu_command GpuCmd = FrameParams->GpuCommands[Cmd];
+        
+        switch (GpuCmd.Type)
+        {
+            case GpuCommand_BeginFrame:
+            {
+                gpu_begin_frame_info *Info = static_cast<gpu_begin_frame_info*>(GpuCmd.Data);
+                
+                khr_result = vk::BeginFrame(FrameImageIndex);
+                if (khr_result == VK_ERROR_OUT_OF_DATE_KHR)
+                {
+                    u32 width, height;
+                    PlatformGetClientWindowDimensions(&width, &height);
+                    
+                    WindowResizeEvent event;
+                    event.Width  = width;
+                    event.Height = height;
+                    
+                    event::Dispatch<WindowResizeEvent>(event);
+                    return;
+                }
+                else if (khr_result != VK_SUCCESS &&
+                         khr_result != VK_SUBOPTIMAL_KHR)
+                {
+                    mprinte("Failed to acquire swap chain image!");
+                }
+                
+                CommandBuffer = CommandBuffers[FrameImageIndex];
+                Framebuffer = Framebuffers[FrameImageIndex];
+                
+                vk::BeginCommandBuffer(CommandBuffer);
+                
+                if (Info->HasDepth)
+                {
+                    VkClearValue clear_values[2] = {};
+                    clear_values[0].color        = Info->Color;
+                    clear_values[1].depthStencil = {Info->Depth, Info->Stencil};
+                    vk::BeginRenderPass(CommandBuffer, clear_values, 2, Framebuffer, RenderPass);
+                }
+                else
+                {
+                    VkClearValue clear_values[1] = {};
+                    clear_values[0].color        = Info->Color;
+                    vk::BeginRenderPass(CommandBuffer, clear_values, 1, Framebuffer, RenderPass);
+                }
+            } break;
+            
+            case GpuCommand_EndFrame:
+            {
+                gpu_end_frame_info *Info = static_cast<gpu_end_frame_info*>(GpuCmd.Data);
+                
+                vk::EndRenderPass(CommandBuffer);
+                vk::EndCommandBuffer(CommandBuffer);
+                
+                vk::EndFrame(FrameImageIndex, &CommandBuffer, 1);
+                
+                if (khr_result == VK_ERROR_OUT_OF_DATE_KHR ||
+                    khr_result == VK_SUBOPTIMAL_KHR)
+                {
+                    u32 width, height;
+                    PlatformGetClientWindowDimensions(&width, &height);
+                    
+                    WindowResizeEvent event;
+                    event.Width  = width;
+                    event.Height = height;
+                    
+                    event::Dispatch<WindowResizeEvent>(event);
+                }
+                else if (khr_result != VK_SUCCESS) {
+                    mprinte("Something went wrong acquiring the swapchain image!\n");
+                }
+            } break;
+            
+            case GpuCommand_SetScissor:
+            {
+                gpu_set_scissor_info *Info = static_cast<gpu_set_scissor_info*>(GpuCmd.Data);
+                
+                VkRect2D scissor = {};
+                scissor.offset   = {Info->XOffset, Info->YOffset};
+                scissor.extent   = Info->Extent;
+                
+                vk::SetScissor(CommandBuffer, 0, 1, &scissor);
+            } break;
+            
+            case GpuCommand_SetViewport:
+            {
+                gpu_set_viewport_info *Info = static_cast<gpu_set_viewport_info*>(GpuCmd.Data);
+                
+                VkViewport viewport = {};
+                viewport.x          = Info->X;
+                viewport.y          = Info->Y;
+                viewport.width      = Info->Width;
+                viewport.height     = Info->Height;
+                viewport.minDepth   = 0.0f;
+                viewport.maxDepth   = 1.0f;
+                
+                vk::SetViewport(CommandBuffer, 0, 1, &viewport);
+            } break;
+            
+            // Upload Resources
+            case GpuCommand_UploadVertexBuffer:
+            {
+                gpu_vertex_buffer_create_info *Info = static_cast<gpu_vertex_buffer_create_info*>(GpuCmd.Data);
+                vk::CreateVmaBufferWithStaging(CommandPool,
+                                               Info->BufferCreateInfo,
+                                               Info->VmaCreateInfo,
+                                               *(Info->Buffer),
+                                               *(Info->Allocation),
+                                               Info->Data,
+                                               Info->Size);
+            } break;
+            
+            case GpuCommand_UploadIndexBuffer:
+            {
+                gpu_index_buffer_create_info *Info = static_cast<gpu_index_buffer_create_info*>(GpuCmd.Data);
+                vk::CreateVmaBufferWithStaging(CommandPool,
+                                               Info->BufferCreateInfo,
+                                               Info->VmaCreateInfo,
+                                               *(Info->Buffer),
+                                               *(Info->Allocation),
+                                               Info->Data,
+                                               Info->Size);
+            } break;
+            
+            case GpuCommand_UploadImage:
+            {
+            } break;
+            
+            case GpuCommand_Draw:
+            {
+            } break;
+            
+            case GpuCommand_DrawIndexed:
+            {
+            } break;
+            
+            case GpuCommand_CreateDescriptor:
+            {
+            } break;
+            
+            case GpuCommand_UpdateDescriptor:
+            {
+            } break;
+            
+            case GpuCommand_CopyDescriptor:
+            {
+            } break;
+            
+            case GpuCommand_BindDescriptor:
+            {
+            } break;
+            
+            case GpuCommand_BeginCommandBuffer:
+            {
+            } break;
+            
+            case GpuCommand_EndCommandBuffer:
+            
+            // Render Pass
+            case GpuCommand_BeginRenderPass:
+            {
+            } break;
+            
+            case GpuCommand_EndRenderPass:
+            {
+            } break;
+            
+            default:
+            {
+                mprinte("Unknown Gpu Command %d!\n", GpuCmd.Type);
+                break;
+            }
+        }
+    }
+}
+
+VkRenderPass GetPrimaryRenderPass()
+{
+    return RenderPass;
 }

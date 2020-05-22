@@ -1177,10 +1177,27 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     
     //~ Client Initialization
-    //GameInit();
     {
-        frame_params FrameParams = {}; // necessary for gpu commands
-        GameStageInit(FrameParams);
+        mm::ResetTransientMemory();
+        
+        // Collect this frame's parameters
+        // NOTE(Dustin): Copy assets, create a frame_params init function
+        frame_params FrameParams = {};
+        FrameParams.RenderCommands      = talloc<render_command>(10);
+        FrameParams.RenderCommandsCount = 0;
+        FrameParams.RenderCommandsCap   = 10;
+        FrameParams.GpuCommands         = talloc<gpu_command>(10);
+        FrameParams.GpuCommandsCount    = 0;
+        FrameParams.GpuCommandsCap      = 10;
+        
+        mresource::Init(&FrameParams);
+        GpuStageInit(&FrameParams);
+        RenderStageInit(&FrameParams);
+        GameStageInit(&FrameParams);
+        
+        // Game Init will probably init some render/gpu commands...
+        RenderStageEntry(&FrameParams);
+        GpuStageEntry(&FrameParams);
     }
     
     //~ Tagged Heap testing
@@ -1280,24 +1297,46 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         last_frame_time = Win32GetWallClock();
         
+        mm::ResetTransientMemory();
+        
         // Collect this frame's parameters
+        // TODO(Dustin): Copy assets, create a frame_params init function
+        // TODO(Dustin): Set frame timers, frame number, etc...
         frame_params FrameParams = {};
-        FrameParams.Frame = FrameCount++;
-        FrameParams.FrameStartTime = Win32GetWallClock();
+        FrameParams.RenderCommands      = talloc<render_command>(10);
+        FrameParams.RenderCommandsCount = 0;
+        FrameParams.RenderCommandsCap   = 10;
+        FrameParams.GpuCommands         = talloc<gpu_command>(10);
+        FrameParams.GpuCommandsCount    = 0;
+        FrameParams.GpuCommandsCap      = 10;
         
         // TODO(Dustin):Copy assets into frame memory
         
         // TODO(Dustin): Have the game define a callback function
         // that will be "GameStageEntry".
-        GameStageEntry(FrameParams);
+        GameStageEntry(&FrameParams);
+        RenderStageEntry(&FrameParams);
+        GpuStageEntry(&FrameParams);
         
         GlobalFrameInput.TimeElapsed = seconds_elapsed_per_frame;
     }
     
     //GameShutdown();
     {
-        frame_params FrameParams = {}; // necessary for gpu commands
-        GameStageShutdown(FrameParams);
+        mm::ResetTransientMemory();
+        
+        // NOTE(Dustin): Copy assets, create a frame_params init function
+        frame_params FrameParams = {};
+        FrameParams.RenderCommands      = talloc<render_command>(10);
+        FrameParams.RenderCommandsCount = 0;
+        FrameParams.RenderCommandsCap   = 10;
+        FrameParams.GpuCommands         = talloc<gpu_command>(10);
+        FrameParams.GpuCommandsCount    = 0;
+        FrameParams.GpuCommandsCap      = 10;
+        
+        GameStageShutdown(&FrameParams);
+        mresource::Free(&FrameParams);
+        GpuStageShutdown(&FrameParams);
     }
     
     Win32ShutdownRoutines();

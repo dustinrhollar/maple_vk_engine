@@ -1,9 +1,5 @@
 
 // TODO(Dustin): Go to resources
-
-// TODO(Dustin): Go to resources
-
-// TODO(Dustin): Go to resources
 file_global resource_id_t GlobalDescriptorLayout;
 file_global resource_id_t GlobalDescriptorSet;
 file_global resource_id_t GlobalPipeline;
@@ -27,7 +23,7 @@ file_global asset_id_t ModelAsset;
 file_internal void RecordCommandBuffer(u32 idx);
 file_internal void CreateVulkanResizableState();
 
-void GameStageInit(frame_params FrameParams)
+void GameStageInit(frame_params* FrameParams)
 {
     // TODO(Dustin): Currently, a user will have know the swapchain image
     // count when allocating the descriptors...I don't like this. I'd rather
@@ -47,7 +43,8 @@ void GameStageInit(frame_params FrameParams)
     MvpBufferCreateInfo.BufferCount        = SwapchainImageCount;
     MvpBufferCreateInfo.PersistentlyMapped = true;
     MvpBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    MvpBufferCreateInfo.Properties         = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    MvpBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    MvpBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
     
     //~ Descriptor Layouts
     VkDescriptorSetLayoutBinding Bindings[1]= {};
@@ -61,19 +58,15 @@ void GameStageInit(frame_params FrameParams)
     DescriptorLayoutCreateInfo.BindingsCount = 1;
     DescriptorLayoutCreateInfo.Bindings      = Bindings;
     
-    GlobalDescriptorLayout = mresource::Load(Resource_DescriptorSetLayout,
+    GlobalDescriptorLayout = mresource::Load(FrameParams, Resource_DescriptorSetLayout,
                                              &DescriptorLayoutCreateInfo);
     
     //~ Descriptors
-    resource_id_t *Layouts = talloc<resource_id_t>(SwapchainImageCount);
-    for (u32 Layout = 0; Layout < SwapchainImageCount; ++Layout)
-        Layouts[Layout] = GlobalDescriptorLayout;
-    
     descriptor_create_info DescriptorCreateInfo = {};
-    DescriptorCreateInfo.DescriptorLayouts = Layouts;
-    DescriptorCreateInfo.SetCount          = SwapchainImageCount;
+    DescriptorCreateInfo.DescriptorLayouts = &GlobalDescriptorLayout;
+    DescriptorCreateInfo.SetCount          = 1;
     
-    GlobalDescriptorSet = mresource::Load(Resource_DescriptorSet,
+    GlobalDescriptorSet = mresource::Load(FrameParams, Resource_DescriptorSet,
                                           &DescriptorCreateInfo);
     
     //~ Pipeline
@@ -92,8 +85,8 @@ void GameStageInit(frame_params FrameParams)
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width  = (float) swapchain_extent.width;
-    viewport.height = (float) swapchain_extent.height;
+    viewport.width  = (r32) swapchain_extent.width;
+    viewport.height = (r32) swapchain_extent.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     
@@ -101,7 +94,10 @@ void GameStageInit(frame_params FrameParams)
     scissor.offset = {0, 0};
     scissor.extent = swapchain_extent;
     
-    // TODO(Dustin): Need to get the Descriptor layouts and Render Pass
+    resource_id_t Layouts[] = {
+        GlobalDescriptorLayout,
+    };
+    
     pipeline_create_info PipelineCreateInfo = {};
     PipelineCreateInfo.Shaders      = Shaders;
     PipelineCreateInfo.ShadersCount = 2;
@@ -117,26 +113,53 @@ void GameStageInit(frame_params FrameParams)
     PipelineCreateInfo.PolygonMode            = VK_POLYGON_MODE_FILL;
     PipelineCreateInfo.FrontFace              = VK_FRONT_FACE_CLOCKWISE;
     PipelineCreateInfo.HasMultisampling       = false;
-    //PipelineCreateInfo.MuliSampleSamples; // optional
+    PipelineCreateInfo.MuliSampleSamples      = VK_SAMPLE_COUNT_1_BIT; // optional
     PipelineCreateInfo.HasDepthStencil        = true;
     PipelineCreateInfo.DescriptorLayoutIds    = Layouts;
     PipelineCreateInfo.DescriptorLayoutsCount = 1;
     PipelineCreateInfo.PushConstants          = nullptr;
     PipelineCreateInfo.PushConstantsCount     = 0;
-    //PipelineCreateInfo.RenderPass             = ;
+    PipelineCreateInfo.RenderPass             = GetPrimaryRenderPass();
     
-    GlobalPipeline = mresource::Load(Resource_Pipeline, &PipelineCreateInfo);
+    GlobalPipeline = mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
     
     // Build any render commands
     
 }
 
-void GameStageEntry(frame_params FrameParams)
+void GameStageEntry(frame_params* FrameParams)
 {
+    VkExtent2D Extent = vk::GetSwapChainExtent();
+    
+    gpu_begin_frame_info *BeginFrame = talloc<gpu_begin_frame_info>(1);
+    BeginFrame->Color    = {0.67f, 0.85f, 0.90f, 1.0f};
+    BeginFrame->HasDepth = true;
+    BeginFrame->Depth    = 1.0f;
+    BeginFrame->Stencil  = 0;
+    AddGpuCommand(FrameParams, { GpuCommand_BeginFrame, BeginFrame });
+    
+    gpu_set_scissor_info *ScissorInfo = talloc<gpu_set_scissor_info>(1);
+    ScissorInfo->Extent  = Extent;
+    ScissorInfo->XOffset = 0;
+    ScissorInfo->YOffset = 0;
+    AddGpuCommand(FrameParams, { GpuCommand_SetScissor, ScissorInfo });
+    
+    gpu_set_viewport_info *ViewportInfo = talloc<gpu_set_viewport_info>(1);
+    ViewportInfo->Width  = static_cast<r32>(Extent.width);
+    ViewportInfo->Height = static_cast<r32>(Extent.height);
+    ViewportInfo->X      = 0.0f;
+    ViewportInfo->Y      = 0.0f;
+    AddGpuCommand(FrameParams, { GpuCommand_SetViewport, ViewportInfo });
+    
+    AddGpuCommand(FrameParams, { GpuCommand_EndFrame, nullptr });
 }
 
-void GameStageShutdown(frame_params FrameParams)
+void GameStageShutdown(frame_params* FrameParams)
 {
+    EXE_PATH.Clear();
+    SHADER_PATH.Clear();
+    VERT_SHADER.Clear();
+    FRAG_SHADER.Clear();
 }
 
 file_internal void CreateVulkanResizableState()
@@ -235,30 +258,7 @@ void FlagGameResize()
 
 void GameUpdateAndRender(FrameInput input)
 {
-    mm::ResetTransientMemory();
-    
 #if 0
-    u32 image_index;
-    
-    VkResult khr_result = vk::BeginFrame(image_index);
-    if (khr_result == VK_ERROR_OUT_OF_DATE_KHR)
-    {
-        u32 width, height;
-        PlatformGetClientWindowDimensions(&width, &height);
-        
-        WindowResizeEvent event;
-        event.Width  = width;
-        event.Height = height;
-        
-        event::Dispatch<WindowResizeEvent>(event);
-        return;
-    }
-    else if (khr_result != VK_SUCCESS &&
-             khr_result != VK_SUBOPTIMAL_KHR)
-    {
-        mprinte("Failed to acquire swap chain image!");
-    }
-    
     {// Update uniform data
         uniform *FrameUniform = &MvpUniforms[image_index];
         void *uniform_ptr = (FrameUniform->AllocInfo.pMappedData);
@@ -282,70 +282,12 @@ void GameUpdateAndRender(FrameInput input)
         
         memcpy(uniform_ptr, &mvp, sizeof(MVP));
     }
-    
-    // Command buffer to present
-    RecordCommandBuffer(image_index);
-    VkCommandBuffer command_buffer = CommandBuffers[image_index];
-    
-    // End the frame
-    {
-        vk::EndFrame(image_index, &command_buffer, 1);
-        
-        if (khr_result == VK_ERROR_OUT_OF_DATE_KHR ||
-            khr_result == VK_SUBOPTIMAL_KHR || GameNeedsResize )
-        {
-            u32 width, height;
-            PlatformGetClientWindowDimensions(&width, &height);
-            
-            WindowResizeEvent event;
-            event.Width  = width;
-            event.Height = height;
-            
-            event::Dispatch<WindowResizeEvent>(event);
-        }
-        else if (khr_result != VK_SUCCESS) {
-            mprinte("Something went wrong acquiring the swapchain image!\n");
-        }
-    }
 #endif
 }
 
 file_internal void RecordCommandBuffer(u32 idx)
 {
 #if 0
-    VkCommandBuffer command_buffer = CommandBuffers[idx];
-    VkFramebuffer framebuffer = Framebuffer[idx];
-    
-    vk::BeginCommandBuffer(command_buffer);
-    
-    
-    // Bind global descriptor
-    VkDescriptorSet frame_ds = GlobalDescriptorSets[i];
-    vk::BindDescriptorSets(command_buffer, PipelineLayout,
-                           0, 1,
-                           &frame_ds,
-                           0, 0);
-    
-    VkExtent2D extent = vk::GetSwapChainExtent();
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width  = (float) extent.width;
-    viewport.height = (float) extent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    
-    VkRect2D scissor = {};
-    scissor.offset = {0, 0};
-    scissor.extent = extent;
-    
-    vk::SetViewport(command_buffer, 0, 1, &viewport);
-    vk::SetScissor(command_buffer, 0, 1, &scissor);
-    
-    VkClearValue clear_values[1] = {};
-    clear_values[0].color = {0.67f, 0.85f, 0.90f, 1.0f};
-    
-    vk::BeginRenderPass(command_buffer, clear_values, 2, framebuffer, RenderPass);
     {
         // Issue draw commands...
         masset::Render(ModelAsset);
@@ -364,9 +306,6 @@ file_internal void RecordCommandBuffer(u32 idx)
         
         ImGui::EndFrame();
     }
-    vk::EndRenderPass(command_buffer);
-    
-    vk::EndCommandBuffer(command_buffer);
 #endif
 }
 
@@ -383,28 +322,12 @@ void GameShutdown()
     for (u32 i = 0; i < swapchain_image_count; ++i)
         vk::DestroyVmaBuffer(MvpUniforms[i].Buffer.Handle, MvpUniforms[i].Buffer.Memory);
     pfree(MvpUniforms);
-    
-    vk::DestroyPipeline(Pipeline);
-    vk::DestroyPipelineLayout(PipelineLayout);
 #endif
-    
-    EXE_PATH.Clear();
-    SHADER_PATH.Clear();
-    
-    VERT_SHADER.Clear();
-    FRAG_SHADER.Clear();
 }
 
 void GameInit()
 {
     mprint("Initializing the game...\n");
-    
-    //~ Vulkan Init State
-    // Create the CommandPool
-    // NOTE(Dustin): CommandPool Creation and management is internal to GpuStage (backend.cpp)
-    // NOTE(Dustin): DescriptorPool Creation and management is internal Resource Manager (resources.cpp)
-    {
-    }
     
     //~ Create Vertex Buffers...
     /*

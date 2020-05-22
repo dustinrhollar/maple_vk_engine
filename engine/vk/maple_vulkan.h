@@ -309,7 +309,7 @@ namespace vk {
     
     VkResult CreateDescriptorSets(VkDescriptorSet             *descriptor_sets,
                                   VkDescriptorSetAllocateInfo allocInfo);
-    void DestroyDescritporSets(VkDescriptorPool descriptor_pool,
+    void DestroyDescriptorSets(VkDescriptorPool descriptor_pool,
                                VkDescriptorSet  *descriptor_sets,
                                u32              descriptor_count);
     

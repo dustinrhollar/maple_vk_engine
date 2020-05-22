@@ -66,7 +66,13 @@ namespace mresource
     file_internal void FreeRegistry(resource_registry *Registry)
     {
         for (u32 i = 0; i < Registry->Cap; ++i)
-            FreeResource(&Registry->Resources[i]);
+        {
+            if (Registry->Resources[i].Id != -1)
+            {
+                FreeResource(&Registry->Resources[i]);
+                Registry->Resources[i].Id = -1;
+            }
+        }
         
         pfree(Registry->Resources);
         Registry->Count = 0;
@@ -80,6 +86,10 @@ namespace mresource
         for (u32 Idx = 0; Idx < Registry->Count; Idx++)
             NewRegistry[Idx] = Registry->Resources[Idx];
         
+        // Mark empty slots as invalid resources
+        for (u32 Idx = Registry->Count; Idx < NewSize; ++Idx)
+            NewRegistry[Idx].Id = -1;
+        
         pfree(Registry->Resources);
         Registry->Resources = NewRegistry;
         Registry->Cap       = NewSize;
@@ -88,7 +98,7 @@ namespace mresource
     file_internal resource_id_t RegistryAdd(resource_registry *Registry, resource Resource)
     {
         if (Registry->Count + 1 >= Registry->Cap)
-            RegistryResize(Registry, Registry->Cap*2);
+            RegistryResize(Registry, (Registry->Cap>0) ? Registry->Cap*2 : 10);
         
         resource_id_t Result = Registry->Count;
         Resource.Id = Result;
@@ -127,7 +137,6 @@ namespace mresource
         Pool->DescriptorSizes      = nullptr;
     }
     
-    
     file_internal void DescriptorPoolListResize(descriptor_pool_list *PoolList, u32 NewSize)
     {
         descriptor_pool *NewPoolList = palloc<descriptor_pool>(NewSize);
@@ -145,7 +154,7 @@ namespace mresource
         PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "A new descriptor pool is being added!\n");
         
         if (PoolList->Count + 1 >= PoolList->Cap)
-            DescriptorPoolListResize(PoolList, PoolList->Cap*2);
+            DescriptorPoolListResize(PoolList, (PoolList->Cap>0) ? PoolList->Cap*2 : 10);
         
         PoolList->Pools[PoolList->Count++] = Pool;
     }
@@ -179,7 +188,7 @@ namespace mresource
         PoolList->Pools = nullptr;
     }
     
-    void Init(frame_params FrameParams)
+    void Init(frame_params *FrameParams)
     {
         InitDescriptorPoolList(&PoolList, 3);
         
@@ -205,8 +214,14 @@ namespace mresource
         DescriptorPoolListAdd(&PoolList, Pool);
     }
     
+    void Free(frame_params *FrameParams)
+    {
+        FreeRegistry(&ResourceRegistry);
+        FreeDescriptorPoolList(&PoolList);
+    }
     
-    resource_id_t Load(resource_type Type, void *Data)
+    
+    resource_id_t Load(frame_params *FrameParams, resource_type Type, void *Data)
     {
         resource_id_t Result = -1;
         resource Resource = {};
@@ -230,56 +245,64 @@ namespace mresource
             
             case Resource_DescriptorSet:
             {
+                u32 SwapchainImageCount = vk::GetSwapChainImageCount();
+                
                 descriptor_create_info *Info =
                     static_cast<descriptor_create_info*>(Data);
                 
                 resource_descriptor_set RDescriptorSet = {};
-                RDescriptorSet.DescriptorSetsCount = Info->SetCount;
-                RDescriptorSet.DescriptorSets = palloc<DescriptorSetParameters>(Info->SetCount);
+                RDescriptorSet.DescriptorSetsCount = SwapchainImageCount;
+                RDescriptorSet.DescriptorSets = palloc<DescriptorSetParameters>(SwapchainImageCount);
                 
-                for (u32 Set = 0; Set < Info->SetCount; ++Set)
+                VkResult SetAllocResult;
+                VkDescriptorPool DescriptorPool;
+                
+                resource ResourceLayout =
+                    ResourceRegistry.Resources[Info->DescriptorLayouts[0]];
+                VkDescriptorSetLayout Layout = ResourceLayout.DescriptorLayout.DescriptorLayout;
+                
+                VkDescriptorSet *Sets = talloc<VkDescriptorSet>(SwapchainImageCount);
+                VkDescriptorSetLayout *Layouts = talloc<VkDescriptorSetLayout>(SwapchainImageCount);
+                for (u32 LayoutIdx = 0; LayoutIdx < SwapchainImageCount; ++LayoutIdx)
+                    Layouts[LayoutIdx] = Layout;
+                
+                for (u32 Pool = 0; Pool < PoolList.Count; ++Pool)
                 {
-                    VkResult SetAllocResult;
-                    VkDescriptorPool DescriptorPool;
+                    DescriptorPool = PoolList.Pools[Pool].Pool;
                     
-                    resource ResourceLayout =
-                        ResourceRegistry.Resources[Info->DescriptorLayouts[Set]];
-                    VkDescriptorSetLayout Layout = ResourceLayout.DescriptorLayout.DescriptorLayout;
+                    VkDescriptorSetAllocateInfo allocInfo = {};
+                    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+                    allocInfo.descriptorPool     = DescriptorPool;
+                    allocInfo.descriptorSetCount = SwapchainImageCount;
+                    allocInfo.pSetLayouts        = Layouts;
                     
-                    for (u32 Pool = 0; Pool < PoolList.Count; ++Pool)
-                    {
-                        DescriptorPool = PoolList.Pools[Pool].Pool;
-                        
-                        VkDescriptorSetAllocateInfo allocInfo = {};
-                        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-                        allocInfo.descriptorPool     = DescriptorPool;
-                        allocInfo.descriptorSetCount = 1;
-                        allocInfo.pSetLayouts        = &Layout;
-                        
-                        // NOTE(Dustin): Do I want to move this to a GpuCommand?
-                        SetAllocResult =
-                            vk::CreateDescriptorSets(&RDescriptorSet.DescriptorSets[Set].Handle,
-                                                     allocInfo);
-                        
-                        if (SetAllocResult == VK_SUCCESS)
-                            break;
-                        
-                        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey,
-                                             "Failed to allocate a descriptor set, trying next pool!\n");
-                    }
+                    // NOTE(Dustin): Do I want to move this to a GpuCommand?
+                    SetAllocResult = vk::CreateDescriptorSets(Sets, allocInfo);
                     
-                    if (SetAllocResult != VK_SUCCESS)
-                    {
-                        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey,
-                                             "Failed to allocate a descriptor set from any of the pools! Creating a new pool...\n");
-                        // TODO(Dustin): Create New Descriptor Pool
-                        
-                        
-                        // TODO(Dustin): Attempt to allocate the descriptorset from the new pool...
-                    }
+                    if (SetAllocResult == VK_SUCCESS)
+                        break;
                     
-                    RDescriptorSet.DescriptorSets[Set].Layout = Layout;
-                    RDescriptorSet.DescriptorSets[Set].Pool   = DescriptorPool;
+                    PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey,
+                                         "Failed to allocate a descriptor set, trying next pool!\n");
+                }
+                
+                if (SetAllocResult != VK_SUCCESS)
+                {
+                    PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey,
+                                         "Failed to allocate a descriptor set from any of the pools! Creating a new pool...\n");
+                    
+                    // TODO(Dustin): Create New Descriptor Pool
+                    
+                    
+                    // TODO(Dustin): Attempt to allocate the descriptorset from the new pool...
+                }
+                
+                for (u32 Image = 0; Image < SwapchainImageCount; ++Image)
+                {
+                    RDescriptorSet.DescriptorSets[Image].Handle = Sets[Image];;
+                    RDescriptorSet.DescriptorSets[Image].Layout = Layout;
+                    RDescriptorSet.DescriptorSets[Image].Pool   = DescriptorPool;
+                    
                 }
                 
                 Resource.DescriptorSet = RDescriptorSet;
@@ -288,10 +311,60 @@ namespace mresource
             
             case Resource_VertexBuffer:
             {
+                vertex_buffer_create_info *Info =
+                    static_cast<vertex_buffer_create_info*>(Data);
+                
+                VkBufferCreateInfo vertex_buffer_info = {};
+                vertex_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                vertex_buffer_info.size  = Info->Size;
+                vertex_buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+                
+                VmaAllocationCreateInfo vertex_alloc_info = {};
+                vertex_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+                
+                // TODO(Dustin): Might want to have some flag that says if the resource has been uploaded
+                // to the gpu yet.
+                Resource.VertexBuffer = {}; // doesn't quite get initialized yet
+                Result = RegistryAdd(&ResourceRegistry, Resource);
+                
+                gpu_vertex_buffer_create_info *VertexBufferCreateInfo = talloc<gpu_vertex_buffer_create_info>(1);
+                VertexBufferCreateInfo->BufferCreateInfo = vertex_buffer_info;
+                VertexBufferCreateInfo->VmaCreateInfo    = vertex_alloc_info;
+                VertexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Handle;
+                VertexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Memory;
+                VertexBufferCreateInfo->Data             = Info->Data;
+                VertexBufferCreateInfo->Size             = Info->Size;
+                
+                AddGpuCommand(FrameParams, { GpuCommand_UploadVertexBuffer, VertexBufferCreateInfo });
             } break;
             
             case Resource_IndexBuffer:
             {
+                index_buffer_create_info *Info =
+                    static_cast<index_buffer_create_info*>(Data);
+                
+                VkBufferCreateInfo index_buffer_info = {};
+                index_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                index_buffer_info.size  = Info->Size;
+                index_buffer_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+                
+                VmaAllocationCreateInfo index_alloc_info = {};
+                index_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+                
+                // TODO(Dustin): Might want to have some flag that says if the resource has been uploaded
+                // to the gpu yet.
+                Resource.IndexBuffer = {}; // doesn't quite get initialized yet
+                Result = RegistryAdd(&ResourceRegistry, Resource);
+                
+                gpu_index_buffer_create_info *IndexBufferCreateInfo = talloc<gpu_index_buffer_create_info>(1);
+                IndexBufferCreateInfo->BufferCreateInfo = index_buffer_info;
+                IndexBufferCreateInfo->VmaCreateInfo    = index_alloc_info;
+                IndexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].IndexBuffer.Buffer.Handle;
+                IndexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].IndexBuffer.Buffer.Memory;
+                IndexBufferCreateInfo->Data             = Info->Data;
+                IndexBufferCreateInfo->Size             = Info->Size;
+                
+                AddGpuCommand(FrameParams, { GpuCommand_UploadIndexBuffer, IndexBufferCreateInfo });
             } break;
             
             case Resource_UniformBuffer:
@@ -306,13 +379,13 @@ namespace mresource
                 
                 for (u32 Buffer = 0; Buffer < Info->BufferCount; ++Buffer)
                 {
-                    
                     VkBufferCreateInfo create_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
                     create_info.size  = Info->SizePerBuffer;
                     create_info.usage = Info->Usage;
                     
                     VmaAllocationCreateInfo alloc_info = {};
-                    alloc_info.usage = Info->Properties;
+                    alloc_info.usage = Info->MemoryUsage;
+                    alloc_info.flags = Info->MemoryFlags;
                     
                     if (RBuffer.PersistentlyMapped)
                         alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
@@ -338,11 +411,9 @@ namespace mresource
             
             case Resource_Pipeline:
             {
-                pipeline_create_info *Info =
-                    static_cast<pipeline_create_info*>(Data);
+                pipeline_create_info *Info = static_cast<pipeline_create_info*>(Data);
                 
-                VkShaderModule                  *ShaderModules =
-                    talloc<VkShaderModule>(Info->ShadersCount);
+                VkShaderModule *ShaderModules = talloc<VkShaderModule>(Info->ShadersCount);
                 VkPipelineShaderStageCreateInfo *ShaderStages  =
                     talloc<VkPipelineShaderStageCreateInfo>(Info->ShadersCount);
                 
@@ -440,11 +511,10 @@ namespace mresource
                 
                 VkPipelineDynamicStateCreateInfo DynamicStateInfo;
                 DynamicStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-                DynamicStateInfo.pNext = nullptr;
-                DynamicStateInfo.flags = 0;
+                DynamicStateInfo.pNext             = nullptr;
+                DynamicStateInfo.flags             = 0;
                 DynamicStateInfo.dynamicStateCount = 2;
-                DynamicStateInfo.pDynamicStates = dynamic_states;
-                
+                DynamicStateInfo.pDynamicStates    = dynamic_states;
                 
                 VkDescriptorSetLayout *Layouts =
                     talloc<VkDescriptorSetLayout>(Info->DescriptorLayoutsCount);
@@ -505,10 +575,52 @@ namespace mresource
         return Result;
     }
     
-    
     file_internal void FreeResource(resource *Resource)
     {
-        
+        switch (Resource->Type)
+        {
+            case Resource_DescriptorSetLayout:
+            {
+                vk::DestroyDescriptorSetLayout(Resource->DescriptorLayout.DescriptorLayout);
+            } break;
+            
+            case Resource_DescriptorSet:
+            {
+                for (u32 Image = 0; Image < Resource->DescriptorSet.DescriptorSetsCount; ++Image)
+                    vk::DestroyDescriptorSets(Resource->DescriptorSet.DescriptorSets[Image].Pool,
+                                              &Resource->DescriptorSet.DescriptorSets[Image].Handle,
+                                              1);
+                pfree(Resource->DescriptorSet.DescriptorSets);
+            } break;
+            
+            case Resource_VertexBuffer:
+            {
+            } break;
+            
+            case Resource_IndexBuffer:
+            {
+            } break;
+            
+            case Resource_UniformBuffer:
+            {
+            } break;
+            
+            case Resource_DynamicUniformBuffer:
+            {
+            } break;
+            
+            case Resource_Image:
+            {
+            } break;
+            
+            case Resource_Pipeline:
+            {
+                vk::DestroyPipelineLayout(Resource->Pipeline.Layout);
+                vk::DestroyPipeline(Resource->Pipeline.Pipeline);
+            } break;
+            
+            default: break;
+        }
     }
     
 }; // mresource

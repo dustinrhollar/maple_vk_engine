@@ -1571,7 +1571,7 @@ VkResult vk::CreateDescriptorSets(VkDescriptorSet *descriptor_sets,
     
 }
 
-void vk::DestroyDescritporSets(VkDescriptorPool descriptor_pool,
+void vk::DestroyDescriptorSets(VkDescriptorPool descriptor_pool,
                                VkDescriptorSet *descriptor_sets,
                                u32 descriptor_count) {
     vkFreeDescriptorSets(GlobalVulkanState.Device,

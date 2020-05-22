@@ -20,11 +20,14 @@ struct buffer_create_info
     // if PersistentlyMapped is set to true and
     // Properties contains the VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     // then the buffer will be persistently mapped.
-    u64                   SizePerBuffer;
-    u32                   BufferCount;
-    bool                  PersistentlyMapped;
-    VkBufferUsageFlags    Usage;
-    VmaMemoryUsage        Properties;
+    u64                         SizePerBuffer;
+    u32                         BufferCount;
+    bool                        PersistentlyMapped;
+    VkBufferUsageFlags          Usage;
+    VmaMemoryUsage              MemoryUsage;
+    VmaAllocationCreateFlagBits MemoryFlags;
+    
+    frame_params         *FrameParams; // needed for Vertex/Index Buffers they will emit gpu commands
 };
 
 struct image_create_info
@@ -71,6 +74,18 @@ struct pipeline_create_info
     // TODO(Dustin): Might want to expose subpasses?
 };
 
+struct vertex_buffer_create_info
+{
+    u64   Size;
+    void *Data;
+};
+
+struct index_buffer_create_info
+{
+    u64   Size;
+    void *Data;
+};
+
 enum resource_type
 {
     Resource_DescriptorSetLayout,
@@ -91,14 +106,24 @@ struct resource_descriptor_set_layout
 struct resource_descriptor_set
 {
     DescriptorSetParameters *DescriptorSets;
-    u32                     DescriptorSetsCount;
+    u32                      DescriptorSetsCount;
+};
+
+struct resource_vertex_buffer
+{
+    BufferParameters Buffer;
+};
+
+struct resource_index_buffer
+{
+    BufferParameters Buffer;
 };
 
 struct resource_buffer
 {
     BufferParameters  *Buffers;
     u32                BufferCount;
-    bool              PersistentlyMapped;
+    bool               PersistentlyMapped;
 };
 
 struct resource_image
@@ -121,8 +146,8 @@ struct resource
     {
         resource_descriptor_set_layout DescriptorLayout;
         resource_descriptor_set        DescriptorSet;
-        resource_buffer                VertexBuffer;
-        resource_buffer                IndexBuffer;
+        resource_vertex_buffer         VertexBuffer;
+        resource_index_buffer          IndexBuffer;
         resource_buffer                UniformBuffer;
         resource_buffer                DynamicUniformBuffer;
         resource_image                 Image;
@@ -132,9 +157,10 @@ struct resource
 
 namespace mresource
 {
-    void Init(frame_params FrameParams);
+    void Init(frame_params *FrameParams);
+    void Free(frame_params *FrameParams);
     
-    resource_id_t Load(resource_type Type, void *Data);
+    resource_id_t Load(frame_params *FrameParams, resource_type Type, void *Data);
 };
 
 #endif //RESOURCES_H
