@@ -25,6 +25,7 @@ file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 M
 file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix,
                                    dyn_uniform_template *PerObjectTemplate);
 file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_template *PerObjectTemplate);
+file_internal void ProcessKeyboardInput(void *instance, KeyPressEvent event);
 
 void GameStageInit(frame_params* FrameParams)
 {
@@ -171,6 +172,9 @@ void GameStageInit(frame_params* FrameParams)
     ModelAsset = masset::Load(Asset_Model, ModelCreateInfo);
     
     ExampleModel.Clear();
+    
+    //~ Subscribe to necessary events
+    event::Subscribe<KeyPressEvent>(&ProcessKeyboardInput, nullptr);
 }
 
 void GameStageEntry(frame_params* FrameParams)
@@ -204,7 +208,7 @@ void GameStageEntry(frame_params* FrameParams)
         gpu_update_buffer_info *BufferInfo = talloc<gpu_update_buffer_info>(1);
         BufferInfo->Uniform        = GlobalVPBuffer;
         BufferInfo->Data           = ViewProj;
-        BufferInfo->DataSize       = sizeof(ViewProj);
+        BufferInfo->DataSize       = sizeof(vp);
         BufferInfo->BufferOffset   = 0;
         
         AddGpuCommand(FrameParams, { GpuCmd_UpdateBuffer, BufferInfo });
@@ -366,6 +370,74 @@ file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_templa
             }
         }
     }
+}
+
+file_internal void ProcessKeyboardInput(void *instance, KeyPressEvent event)
+{
+    EventKey ki = event.Key;
+    
+    // HACK(Dustin): hardcoded time-step. need a better solution
+    r32 time = 0.016667;
+    
+    r32 delta_x = 0.0f;
+    r32 delta_y = 0.0f;
+    
+    if (ki == KEY_Up)
+    {
+        delta_y -= time;
+    }
+    
+    if (ki == KEY_Down)
+    {
+        delta_y += time;
+    }
+    
+    if (ki == KEY_Left)
+    {
+        delta_x -= time;
+    }
+    
+    if (ki == KEY_Right)
+    {
+        delta_x += time;
+    }
+    
+    if (delta_x != 0.0f || delta_y != 0.0f)
+    {
+        r32 xoffset = (delta_x - Camera.MouseXPos);
+        r32 yoffset = (delta_y - Camera.MouseYPos);
+        
+        xoffset *= Camera.MouseSensitivity;
+        yoffset *= Camera.MouseSensitivity;
+        
+        vec2 mouse_rotation = {xoffset, yoffset};
+        
+        RotateCameraAboutX(&Camera, mouse_rotation.y);
+        RotateCameraAboutY(&Camera, -mouse_rotation.x);
+    }
+    
+    r32 velocity = Camera.MovementSpeed * time;
+    if (ki == KEY_w)
+    {
+        Camera.Position += Camera.Front * velocity;
+    }
+    
+    if (ki == KEY_s)
+    {
+        Camera.Position -= Camera.Front * velocity;
+    }
+    
+    if (ki == KEY_a)
+    {
+        Camera.Position -= Camera.Right * velocity;
+    }
+    
+    if (ki == KEY_d)
+    {
+        Camera.Position += Camera.Right * velocity;
+    }
+    
+    UpdatePerspectiveCameraVectors(&Camera);
 }
 
 // TODO(Dustin): Move this to the engine layer. This should be Engine related UI
