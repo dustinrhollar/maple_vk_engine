@@ -1042,8 +1042,7 @@ void vk::TransitionImageLayout(VkCommandPool command_pool,
         mprinte("Unsupported layout transition!");
     }
     
-    vkCmdPipelineBarrier(
-                         commandBuffer,
+    vkCmdPipelineBarrier(commandBuffer,
                          sourceStage, destinationStage,
                          0,
                          0, nullptr,
@@ -1057,8 +1056,8 @@ void vk::TransitionImageLayout(VkCommandPool command_pool,
 
 VkRenderPass vk::CreateRenderPass(VkAttachmentDescription *attachments, u32 attachments_count,
                                   VkSubpassDescription *subpasses, u32 subpass_count,
-                                  VkSubpassDependency *dependencies, u32 dependency_count) {
-    
+                                  VkSubpassDependency *dependencies, u32 dependency_count)
+{
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = attachments_count;
@@ -1535,13 +1534,13 @@ void vk::DestroyDescriptorSetLayout(VkDescriptorSetLayout layout) {
 
 VkDescriptorPool vk::CreateDescriptorPool(VkDescriptorPoolSize *pool_sizes,
                                           u32 pool_size_count,
-                                          u32 swapchain_count,
+                                          u32 max_sets,
                                           VkDescriptorPoolCreateFlags flags) {
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = pool_size_count;
     poolInfo.pPoolSizes    = pool_sizes;
-    poolInfo.maxSets       = swapchain_count;
+    poolInfo.maxSets       = max_sets;
     poolInfo.flags         = flags;
     
     VkDescriptorPool descriptor_pool;
@@ -1563,16 +1562,16 @@ void vk::ResetDescriptorPool(VkDescriptorPool descriptor_pool)
 }
 
 
-void vk::CreateDescriptorSets(VkDescriptorSet *descriptor_sets,
-                              VkDescriptorSetAllocateInfo allocInfo) {
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(GlobalVulkanState.Device,
-                                             &allocInfo,
-                                             descriptor_sets),
-                    "Failed to allocate descriptor sets!");
+VkResult vk::CreateDescriptorSets(VkDescriptorSet *descriptor_sets,
+                                  VkDescriptorSetAllocateInfo allocInfo) {
+    VkResult Result = vkAllocateDescriptorSets(GlobalVulkanState.Device,
+                                               &allocInfo,
+                                               descriptor_sets);
+    return Result;
     
 }
 
-void vk::DestroyDescritporSets(VkDescriptorPool descriptor_pool,
+void vk::DestroyDescriptorSets(VkDescriptorPool descriptor_pool,
                                VkDescriptorSet *descriptor_sets,
                                u32 descriptor_count) {
     vkFreeDescriptorSets(GlobalVulkanState.Device,

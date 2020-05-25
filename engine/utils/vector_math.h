@@ -389,7 +389,7 @@ struct Mat3
     }
 };
 
-struct Mat4
+struct mat4
 {
     union
     {
@@ -414,7 +414,7 @@ struct Mat4
         return &data[idx][0];
     }
     
-    Mat4(float diagonal = 0.0f)
+    mat4(float diagonal = 0.0f)
     {
         data[0][0] = diagonal;
         data[0][1] = 0.0f;
@@ -439,7 +439,7 @@ struct Mat4
     
     // Expects the data to be passed in row order
     // and is converted to column order
-    Mat4(float a, float b, float c, float d,
+    mat4(float a, float b, float c, float d,
          float e, float f, float g, float h,
          float i, float j, float k, float l,
          float m, float n, float o, float p)
@@ -465,7 +465,7 @@ struct Mat4
         data[3][3] = p;
     }
     
-    Mat4(Mat3 mat)
+    mat4(Mat3 mat)
     {
         
         data[0][0] = mat[0][0];
@@ -544,7 +544,7 @@ inline vec3 operator*(float const& scalar, vec3 left);
 inline vec4 operator*(float const& scalar, vec4 left);
 
 inline Mat3 operator*(Mat3 const& left, Mat3 const& r);
-inline Mat4 operator*(Mat4 const& left, Mat4 const& r);
+inline mat4 operator*(mat4 const& left, mat4 const& r);
 
 Quaternion operator*(const Quaternion& l, const Quaternion& r);
 
@@ -588,23 +588,23 @@ inline vec4 norm(vec4 vector);
 // MATRICES
 
 inline Mat3 MakeMat3(float *ptr);
-Mat4 MakeMat4(float *ptr);
+mat4 MakeMat4(float *ptr);
 
 inline Mat3 Mul(Mat3 const& left, Mat3 const& right);
-Mat4 Mul(Mat4 const& left, Mat4 const& right);
+mat4 Mul(mat4 const& left, mat4 const& right);
 inline Mat3 RotateX(float theta);
 inline Mat3 RotateY(float theta);
 inline Mat3 RotateZ(float theta);
 inline Mat3 Rotate(float theta, vec3 axis);
 inline Mat3 Reflect(vec3 vec3);
-Mat4 Scale(float sx, float sy, float sz);
-inline Mat4 Scale(float s, vec3 scale);
+mat4 Scale(float sx, float sy, float sz);
+inline mat4 Scale(float s, vec3 scale);
 // skew is the vector representing the direction along which the skew ocurs
 // perp is the vector perpendicular to skew along which vectors are measured to
 // to determine how to skew.
 inline Mat3 Skew(float theta, vec3 skew, vec3 perp);
 
-Mat4 Translate(vec3 trans);
+mat4 Translate(vec3 trans);
 
 // QUATERNIONS
 
@@ -622,8 +622,8 @@ Quaternion norm(const Quaternion& q);
 Quaternion conjugate(const Quaternion& q);
 
 // OTHER USEFUL GRAPHICS FUNCTIONS
-Mat4 LookAt(vec3 eye, vec3 center, vec3 up);
-Mat4 PerspectiveProjection(float fov, float aspect_ratio, float near, float far);
+mat4 LookAt(vec3 eye, vec3 center, vec3 up);
+mat4 PerspectiveProjection(float fov, float aspect_ratio, float near, float far);
 
 
 #endif // JENGINE_UTILS_VECTOR_MATH_H
@@ -925,9 +925,9 @@ inline Mat3 MakeMat3(float *ptr)
     return result;
 }
 
-Mat4 MakeMat4(float *ptr)
+mat4 MakeMat4(float *ptr)
 {
-    Mat4 result = Mat4();
+    mat4 result = mat4();
     
     result.col0 = MakeVec4(ptr);
     result.col1 = MakeVec4(ptr + 4);
@@ -948,14 +948,14 @@ inline Mat3 operator*(Mat3 const& left, Mat3 const& r)
                 dot(lr2, r.col0), dot(lr2, r.col1), dot(lr2, r.col2));
 }
 
-inline Mat4 operator*(Mat4 const& left, Mat4 const& r)
+inline mat4 operator*(mat4 const& left, mat4 const& r)
 {
     vec4 lr0 = { left[0][0], left[1][0], left[2][0], left[3][0] };
     vec4 lr1 = { left[0][1], left[1][1], left[2][1], left[3][1] };
     vec4 lr2 = { left[0][2], left[1][2], left[2][2], left[3][2] };
     vec4 lr3 = { left[0][3], left[1][3], left[2][3], left[3][3] };
     
-    return Mat4(dot(lr0, r.col0), dot(lr0, r.col1), dot(lr0, r.col2), dot(lr0, r.col3),
+    return mat4(dot(lr0, r.col0), dot(lr0, r.col1), dot(lr0, r.col2), dot(lr0, r.col3),
                 dot(lr1, r.col0), dot(lr1, r.col1), dot(lr1, r.col2), dot(lr1, r.col3),
                 dot(lr2, r.col0), dot(lr2, r.col1), dot(lr2, r.col2), dot(lr2, r.col3),
                 dot(lr3, r.col0), dot(lr3, r.col1), dot(lr3, r.col2), dot(lr3, r.col3));
@@ -966,7 +966,7 @@ inline Mat3 Mul(Mat3 const& left, Mat3 const& right)
     return left * right;
 }
 
-Mat4 Mul(Mat4 const& left, Mat4 const& right)
+mat4 Mul(mat4 const& left, mat4 const& right)
 {
     return left * right;
 }
@@ -1051,9 +1051,9 @@ inline Mat3 Reflect(vec3 axis)
                 axaz, ayaz, z * axis.z + 1.0f);
 }
 
-Mat4 Scale(float sx, float sy, float sz)
+mat4 Scale(float sx, float sy, float sz)
 {
-    Mat4 result = Mat4(1.0f);
+    mat4 result = mat4(1.0f);
     
     result[0][0] = sx;
     result[1][1] = sy;
@@ -1062,7 +1062,7 @@ Mat4 Scale(float sx, float sy, float sz)
     return result;
 }
 
-inline Mat4 Scale(float s, vec3 scale)
+inline mat4 Scale(float s, vec3 scale)
 {
     scale = norm(scale);
     
@@ -1074,7 +1074,7 @@ inline Mat4 Scale(float s, vec3 scale)
     float axaz = x * scale.z;
     float ayaz = y * scale.z;
     
-    Mat4 result = Mat4(1.0f);
+    mat4 result = mat4(1.0f);
     
     result[0][0] = x * scale.x + 1.0f;
     result[1][0] = axay;
@@ -1120,9 +1120,9 @@ inline Mat3 Skew(float theta, vec3 skew, vec3 perp)
                 z * b.x, z * b.y, z * b.z + 1.0f);
 }
 
-Mat4 Translate(vec3 trans)
+mat4 Translate(vec3 trans)
 {
-    Mat4 result = Mat4(1.0f);
+    mat4 result = mat4(1.0f);
     
     result[3][0] = trans.x;
     result[3][1] = trans.y;
@@ -1309,9 +1309,9 @@ Quaternion CreateQuaternionFromRotationMatrix(const Mat3& m)
 
 //----------------------------------------------------------------------------------------//
 
-Mat4 LookAt(vec3 eye, vec3 center, vec3 up)
+mat4 LookAt(vec3 eye, vec3 center, vec3 up)
 {
-    Mat4 result = Mat4(1.0f);
+    mat4 result = mat4(1.0f);
     
     vec3 f = norm(center - eye);
     vec3 s = norm(cross(f, up));
@@ -1340,9 +1340,9 @@ Mat4 LookAt(vec3 eye, vec3 center, vec3 up)
     return result;
 }
 
-Mat4 PerspectiveProjection(float fov, float aspect_ratio, float near_plane, float far_plane)
+mat4 PerspectiveProjection(float fov, float aspect_ratio, float near_plane, float far_plane)
 {
-    Mat4 result = Mat4(1.0f);
+    mat4 result = mat4(1.0f);
     
     float cotangent = 1.0f / tanf(fov * ((float)JPI / 360.0f));
     

@@ -34,6 +34,7 @@ file_global bool GlobalIsFullscreen = false;
 file_global bool ClientIsRunning = false;
 
 file_global FrameInput GlobalFrameInput;
+file_global u64 FrameCount = 0;
 
 struct CodeDLL
 {
@@ -1002,6 +1003,54 @@ file_internal void CoreVulkanResizeEventCallback(void *instance, CoreVulkanResiz
     event::Dispatch<ResizeEvent>(r_event);
 }
 
+u32 __inline Win32ComputeTrailingZero(u64 Value)
+{
+    unsigned long TrailingZero = 0;
+    
+    if (_BitScanForward64(&TrailingZero, Value))
+        return TrailingZero;
+    else
+        return 32;
+}
+
+u32 __inline Win32ComputeLeadingZero(u64 Value)
+{
+    unsigned long LeadingZero = 0;
+    
+    if (_BitScanReverse64(&LeadingZero, Value))
+        return 31 - LeadingZero;
+    else
+        return 32;
+}
+
+void* Win32RequestMemory(u64 Size)
+{
+    SYSTEM_INFO sSysInfo;
+    DWORD       dwPageSize;
+    LPVOID      lpvBase;
+    u64         ActualSize;
+    
+    GetSystemInfo(&sSysInfo);
+    dwPageSize = sSysInfo.dwPageSize;
+    
+    ActualSize = (Size + (u64)dwPageSize - 1) & ~((u64)dwPageSize - 1);
+    
+    lpvBase = VirtualAlloc(NULL,                    // System selects address
+                           ActualSize,              // Size of allocation
+                           MEM_COMMIT|MEM_RESERVE,  // Allocate reserved pages
+                           PAGE_NOACCESS);          // Protection = no access
+    
+    return lpvBase;
+}
+
+void Win32ReleaseMemory(void *Ptr)
+{
+    BOOL bSuccess = VirtualFree(Ptr,           // Base address of block
+                                0,             // Bytes of committed pages
+                                MEM_RELEASE);  // Decommit the pages
+    assert(bSuccess && "Unable to free a VirtualAlloc allocation!");
+}
+
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    PSTR lpCmdLine, INT nCmdShow)
 {
@@ -1128,7 +1177,78 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     
     //~ Client Initialization
-    GameInit();
+    {
+        mm::ResetTransientMemory();
+        
+        // Collect this frame's parameters
+        // NOTE(Dustin): Copy assets, create a frame_params init function
+        frame_params FrameParams = {};
+        FrameParams.RenderCommands      = talloc<render_command>(10);
+        FrameParams.RenderCommandsCount = 0;
+        FrameParams.RenderCommandsCap   = 10;
+        FrameParams.GpuCommands         = talloc<gpu_command>(10);
+        FrameParams.GpuCommandsCount    = 0;
+        FrameParams.GpuCommandsCap      = 10;
+        
+        mresource::Init(&FrameParams);
+        GpuStageInit(&FrameParams);
+        RenderStageInit(&FrameParams);
+        GameStageInit(&FrameParams);
+        
+        // Game Init will probably init some render/gpu commands...
+        RenderStageEntry(&FrameParams);
+        GpuStageEntry(&FrameParams);
+    }
+    
+    //~ Tagged Heap testing
+    
+    // TODO(Dustin): Find away to use large pages...
+    DWORD       dwPageSize;
+    SYSTEM_INFO sSysInfo;
+    
+    GetSystemInfo(&sSysInfo);
+    dwPageSize = sSysInfo.dwPageSize;
+    
+    // _128MB should get me 64 2MiB blocks
+    tagged_heap TaggedHeap;
+    InitTaggedHeap(&TaggedHeap, _128MB, _2MB);
+    
+    tagged_heap_block Block4 = TaggedHeapRequestAllocation(&TaggedHeap, 4);
+    tagged_heap_block Block0 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    tagged_heap_block Block3 = TaggedHeapRequestAllocation(&TaggedHeap, 3);
+    tagged_heap_block Block1 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    tagged_heap_block Block2 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    
+    tagged_heap_block Block01 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    tagged_heap_block Block02 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    tagged_heap_block Block03 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
+    
+    tagged_heap_block Block11 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    tagged_heap_block Block12 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    tagged_heap_block Block13 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
+    
+    tagged_heap_block Block21 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    tagged_heap_block Block22 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    tagged_heap_block Block23 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    tagged_heap_block Block24 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
+    
+    // Do some per block allocation
+    // each block is 2MiB, try to alloc two 1MiB allocations.
+    void* ret0 = TaggedHeapBlockAlloc(&Block0, _1MB);
+    assert(ret0);
+    void* ret1 = TaggedHeapBlockAlloc(&Block0, _1MB);
+    assert(ret1);
+    // third allocation should fail
+    void* ret3 = TaggedHeapBlockAlloc(&Block0, _1MB);
+    assert(!ret3);
+    
+    TaggedHeapReleaseAllocation(&TaggedHeap, 0);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 3);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 2);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 4);
+    TaggedHeapReleaseAllocation(&TaggedHeap, 1);
+    
+    FreeTaggedHeap(&TaggedHeap);
     
     //~ App Loop
     ::ShowWindow(ClientWindow, nCmdShow);
@@ -1177,12 +1297,40 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         last_frame_time = Win32GetWallClock();
         
-        // TODO(Dustin): Handle input
+        mm::ResetTransientMemory();
+        
+        // Collect this frame's parameters
+        // TODO(Dustin): Copy assets, create a frame_params init function
+        // TODO(Dustin): Set frame timers, frame number, etc...
+        frame_params FrameParams = {};
+        InitFrameParams(&FrameParams);
+        CopyModelAssets(&FrameParams);
+        
+        // TODO(Dustin):Copy assets into frame memory
+        
+        // TODO(Dustin): Have the game define a callback function
+        // that will be "GameStageEntry".
+        GameStageEntry(&FrameParams);
+        RenderStageEntry(&FrameParams);
+        GpuStageEntry(&FrameParams);
+        
         GlobalFrameInput.TimeElapsed = seconds_elapsed_per_frame;
-        GameUpdateAndRender(GlobalFrameInput);
     }
     
-    GameShutdown();
+    //GameShutdown();
+    {
+        mm::ResetTransientMemory();
+        
+        // NOTE(Dustin): Copy assets, create a frame_params init function
+        frame_params FrameParams = {};
+        InitFrameParams(&FrameParams);
+        
+        GameStageShutdown(&FrameParams);
+        masset::Free();
+        mresource::Free(&FrameParams);
+        GpuStageShutdown(&FrameParams);
+    }
+    
     Win32ShutdownRoutines();
     
     return (0);

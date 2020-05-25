@@ -301,15 +301,15 @@ namespace vk {
     
     VkDescriptorPool CreateDescriptorPool(VkDescriptorPoolSize *pool_sizes,
                                           u32 pool_size_count,
-                                          u32 swapchain_count,
+                                          u32 max_sets,
                                           VkDescriptorPoolCreateFlags flags = 0);
     void DestroyDescriptorPool(VkDescriptorPool descriptor_pool);
     
     void ResetDescriptorPool(VkDescriptorPool descriptor_pool);
     
-    void CreateDescriptorSets(VkDescriptorSet             *descriptor_sets,
-                              VkDescriptorSetAllocateInfo allocInfo);
-    void DestroyDescritporSets(VkDescriptorPool descriptor_pool,
+    VkResult CreateDescriptorSets(VkDescriptorSet             *descriptor_sets,
+                                  VkDescriptorSetAllocateInfo allocInfo);
+    void DestroyDescriptorSets(VkDescriptorPool descriptor_pool,
                                VkDescriptorSet  *descriptor_sets,
                                u32              descriptor_count);
     

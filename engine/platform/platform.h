@@ -121,6 +121,23 @@ Executes a system command. This calling is blocking,
 so the function will block until the command has
 finished executing.
 
+- u32 PlatformClz(u64 Value)
+
+Win32 version of __clz, a GNU instrinsic for calcaulating the least significant
+zero in a number. The index of the least significant zero is returned. Behavior is
+undefined when value == 0.
+
+
+- void* PlatformRequestMemory(u64 Size)
+
+Requests memory from the platform. On Windows, VirtualAlloc is used with the flags
+MEM_COMMIT|MEM_RESERVE. Allocations are aligned with the PageSize of the target
+machine. If the allocation fails, NULL is returned.
+
+- void PlatformReleaseMemory(void *Ptr)
+
+Release memory allocated using PlatformRequestMemory.
+
 */
 
 struct KeyboardInput
@@ -254,6 +271,12 @@ inline void mprinte(char *fmt, ...);
 #define PlatformGetSecondsElapsed             Win32GetSecondsElapsed
 #define PlatformRaiseError                    Win32RaiseError
 
+#define PlatformClz(v)                        (v)?Win32ComputeLeadingZero(v):32
+#define PlatformCtz(v)                        (v)?Win32ComputeTrailingZero(v):32
+
+#define PlatformRequestMemory                 Win32RequestMemory
+#define PlatformReleaseMemory                 Win32ReleaseMemory
+
 i32 Win32FormatString(char *buff, i32 len, char* fmt, ...);
 void Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
 void Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
@@ -271,6 +294,13 @@ void Win32RaiseError(ErrorCode error, char *fmt, ...);
 const char* Win32GetRequiredInstanceExtensions(bool validation_layers);
 void Win32GetClientWindowDimensions(u32 *width, u32 *height);
 void Win32VulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance);
+
+u32 __inline Win32ComputeLeadingZero(u64 Value);
+u32 __inline Win32ComputeTrailingZero(u64 Value);
+
+void* Win32RequestMemory(u64 Size);
+void Win32ReleaseMemory(void *Ptr);
+
 
 #else
 

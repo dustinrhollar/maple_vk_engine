@@ -1,135 +1,451 @@
 
-// Shader representation of a Vertex.
-struct Vertex
-{
-    vec3 Position;
-    
-    static VkVertexInputBindingDescription GetBindingDescription() {
-        VkVertexInputBindingDescription bindingDescription = {};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        
-        return bindingDescription;
-    }
-    
-    static JTuple<VkVertexInputAttributeDescription*, int> GetAttributeDescriptions() {
-        // Create Attribute Descriptions
-        VkVertexInputAttributeDescription *attribs = talloc<VkVertexInputAttributeDescription>(1);
-        
-        // Positions
-        attribs[0].binding = 0;
-        attribs[0].location = 0;
-        attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attribs[0].offset = offsetof(Vertex, Position);
-        
-        JTuple<VkVertexInputAttributeDescription*, int> tuple(attribs, 1);
-        return tuple;
-    }
-};
+// TODO(Dustin): Go to resources
+file_global resource_id_t GlobalDescriptorLayout;       // per frame descriptor
+file_global resource_id_t GlobalObjectDescriptorLayout; // per object descriptor
+file_global resource_id_t GlobalDescriptorSet;
+file_global resource_id_t GlobalObjectDescriptorSet;
+file_global resource_id_t GlobalPipeline;
+file_global resource_id_t GlobalVPBuffer;
+file_global resource_id_t GlobalModelBuffer;
 
-
-vec3 vertices[] = {
-    {-0.5f, -0.5f, 0.0f},
-    {0.5f, -0.5f, 0.0f},
-    {0.0f,  0.5f, 0.0f}
-};
-
-file_global VkRenderPass     RenderPass;
-file_global VkCommandPool    CommandPool;
-
-file_global VkFramebuffer   *Framebuffer;
-file_global u32              FramebufferCount;
-
-file_global VkDescriptorPoolSize DescriptorSizes[2];
-file_global VkDescriptorPool     DescriptorPool;
-
-file_global VkCommandBuffer *CommandBuffers;
-file_global u32              CommandBuffersCount;
-
-file_global VkPipelineLayout PipelineLayout;
-file_global VkPipeline       Pipeline;
-
-file_global BufferParameters VertexBuffer;
+//file_global BufferParameters VertexBuffer;
 
 file_global bool IsGameInit      = false;
 file_global bool GameNeedsResize = false;
 
-file_global jstring EXE_PATH;
-file_global jstring SHADER_PATH;
-
 file_global jstring VERT_SHADER;
 file_global jstring FRAG_SHADER;
 
-file_internal void RecordCommandBuffer(u32 idx);
-file_internal void CreateVulkanResizableState();
+file_global PerspectiveCamera Camera;
 
-file_internal void CreateVulkanResizableState()
+file_global asset_id_t ModelAsset;
+
+file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate);
+file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate);
+file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_template *PerObjectTemplate);
+file_internal void ProcessKeyboardInput(void *instance, KeyPressEvent event);
+
+void GameStageInit(frame_params* FrameParams)
 {
-    u32 swapchain_image_count = vk::GetSwapChainImageCount();
-    VkFormat swapchain_image_format = vk::GetSwapChainImageFormat();
+    VERT_SHADER = InitJString("data/shaders/shader.vert.spv");
+    FRAG_SHADER = InitJString("data/shaders/shader.frag.spv");
     
-    // Create the RenderPass
-    //---------------------------------------------------------------------------
+    //~ Camera
+    vec3 pos = {0.0f, 0.0f, -2.0f};
+    InitPerspectiveCamera(&Camera, pos);
+    
+    //~ Mvp Uniforms
+    buffer_create_info MvpBufferCreateInfo = {};
+    MvpBufferCreateInfo.BufferSize         = sizeof(mat4) * 2;
+    MvpBufferCreateInfo.PersistentlyMapped = true;
+    MvpBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    MvpBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    MvpBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    
+    GlobalVPBuffer = mresource::Load(FrameParams, Resource_UniformBuffer, &MvpBufferCreateInfo);
+    
+    dynamic_buffer_create_info ModelBufferCreateInfo = {};
+    ModelBufferCreateInfo.ElementCount       = 50;
+    ModelBufferCreateInfo.ElementStride      = sizeof(mat4);
+    ModelBufferCreateInfo.PersistentlyMapped = true;
+    ModelBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    ModelBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    ModelBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    
+    GlobalModelBuffer = mresource::Load(FrameParams, Resource_DynamicUniformBuffer, &ModelBufferCreateInfo);
+    
+    //~ Descriptor Layouts
+    VkDescriptorSetLayoutBinding Bindings[1]= {};
+    Bindings[0].binding            = 0;
+    Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    Bindings[0].descriptorCount    = 1;
+    Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+    Bindings[0].pImmutableSamplers = nullptr; // Optional
+    
+    descriptor_layout_create_info DescriptorLayoutCreateInfo = {};
+    DescriptorLayoutCreateInfo.BindingsCount = 1;
+    DescriptorLayoutCreateInfo.Bindings      = Bindings;
+    
+    GlobalDescriptorLayout = mresource::Load(FrameParams, Resource_DescriptorSetLayout,
+                                             &DescriptorLayoutCreateInfo);
+    
+    Bindings[0].binding            = 0;
+    Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    Bindings[0].descriptorCount    = 1;
+    Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+    Bindings[0].pImmutableSamplers = nullptr; // Optional
+    
+    DescriptorLayoutCreateInfo.BindingsCount = 1;
+    DescriptorLayoutCreateInfo.Bindings      = Bindings;
+    
+    GlobalObjectDescriptorLayout = mresource::Load(FrameParams, Resource_DescriptorSetLayout,
+                                                   &DescriptorLayoutCreateInfo);
+    
+    //~ Descriptors
+    // per frame descriptor
+    descriptor_create_info DescriptorCreateInfo = {};
+    DescriptorCreateInfo.DescriptorLayouts = &GlobalDescriptorLayout;
+    DescriptorCreateInfo.SetCount          = 1;
+    
+    GlobalDescriptorSet = mresource::Load(FrameParams, Resource_DescriptorSet,
+                                          &DescriptorCreateInfo);
+    
+    // per object descriptor
+    DescriptorCreateInfo.DescriptorLayouts = &GlobalObjectDescriptorLayout;
+    DescriptorCreateInfo.SetCount          = 1;
+    
+    GlobalObjectDescriptorSet = mresource::Load(FrameParams, Resource_DescriptorSet,
+                                                &DescriptorCreateInfo);
+    
+    // Bind the uniform buffers to the descriptors
+    descriptor_write_info WriteInfos[2] = {
+        { GlobalVPBuffer,    GlobalDescriptorSet,       0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER         },
+        { GlobalModelBuffer, GlobalObjectDescriptorSet, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC }
+    };
+    
+    descriptor_update_write_info DescriptorUpdateInfos = {};
+    DescriptorUpdateInfos.WriteInfos      = WriteInfos;
+    DescriptorUpdateInfos.WriteInfosCount = 2;
+    
+    mresource::Load(FrameParams, Resource_DescriptorSetWriteUpdate, &DescriptorUpdateInfos);
+    
+    //~ Pipeline
+    shader_file_create_info Shaders[] = {
+        { VERT_SHADER, VK_SHADER_STAGE_VERTEX_BIT   },
+        { FRAG_SHADER, VK_SHADER_STAGE_FRAGMENT_BIT }
+    };
+    
+    VkVertexInputBindingDescription bindingDescription = Vertex::GetBindingDescription();
+    JTuple<VkVertexInputAttributeDescription*, int> attribs = Vertex::GetAttributeDescriptions();
+    
+    VkExtent2D swapchain_extent = vk::GetSwapChainExtent();
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width  = (r32) swapchain_extent.width;
+    viewport.height = (r32) swapchain_extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = swapchain_extent;
+    
+    resource_id_t Layouts[] = {
+        GlobalDescriptorLayout,
+        GlobalObjectDescriptorLayout,
+    };
+    
+    pipeline_create_info PipelineCreateInfo = {};
+    PipelineCreateInfo.Shaders      = Shaders;
+    PipelineCreateInfo.ShadersCount = 2;
+    PipelineCreateInfo.VertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    PipelineCreateInfo.VertexInputInfo.vertexBindingDescriptionCount   = 1;
+    PipelineCreateInfo.VertexInputInfo.pVertexBindingDescriptions      = &bindingDescription;
+    PipelineCreateInfo.VertexInputInfo.vertexAttributeDescriptionCount = attribs.Second();
+    PipelineCreateInfo.VertexInputInfo.pVertexAttributeDescriptions    = attribs.First();
+    PipelineCreateInfo.Viewport               = &viewport;
+    PipelineCreateInfo.Scissor                = &scissor;
+    PipelineCreateInfo.ScissorCount           = 1;
+    PipelineCreateInfo.ViewportCount          = 1;
+    PipelineCreateInfo.PolygonMode            = VK_POLYGON_MODE_FILL;
+    PipelineCreateInfo.FrontFace              = VK_FRONT_FACE_CLOCKWISE;
+    PipelineCreateInfo.HasMultisampling       = false;
+    PipelineCreateInfo.MuliSampleSamples      = VK_SAMPLE_COUNT_1_BIT; // optional
+    PipelineCreateInfo.HasDepthStencil        = true;
+    PipelineCreateInfo.DescriptorLayoutIds    = Layouts;
+    PipelineCreateInfo.DescriptorLayoutsCount = 2;
+    PipelineCreateInfo.PushConstants          = nullptr;
+    PipelineCreateInfo.PushConstantsCount     = 0;
+    PipelineCreateInfo.RenderPass             = GetPrimaryRenderPass();
+    
+    GlobalPipeline = mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
+    
+    //~ Asset Loading
+    jstring ExampleModel = InitJString("data/models/Fox/glTF/fox.gltf");
+    
+    model_create_info *ModelCreateInfo = talloc<model_create_info>(1);
+    ModelCreateInfo->Filename    = ExampleModel;
+    ModelCreateInfo->FrameParams = FrameParams;
+    ModelAsset = masset::Load(Asset_Model, ModelCreateInfo);
+    
+    ExampleModel.Clear();
+    
+    //~ Subscribe to necessary events
+    event::Subscribe<KeyPressEvent>(&ProcessKeyboardInput, nullptr);
+}
+
+void GameStageEntry(frame_params* FrameParams)
+{
+    VkExtent2D Extent = vk::GetSwapChainExtent();
+    
+    gpu_begin_frame_info *BeginFrame = talloc<gpu_begin_frame_info>(1);
+    BeginFrame->Color    = {0.67f, 0.85f, 0.90f, 1.0f};
+    BeginFrame->HasDepth = true;
+    BeginFrame->Depth    = 1.0f;
+    BeginFrame->Stencil  = 0;
+    AddGpuCommand(FrameParams, { GpuCmd_BeginFrame, BeginFrame });
+    
+    // Copy Per-Frame Descriptors into Uniform memory
     {
-        VkAttachmentDescription colorAttachment = {};
-        colorAttachment.format         = swapchain_image_format;
-        colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        u32 Width, Height;
+        PlatformGetClientWindowDimensions(&Width, &Height);
         
-        VkAttachmentReference colorAttachmentRef = {};
-        colorAttachmentRef.attachment = 0;
-        colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        mat4 View = GetViewMatrix(&Camera);
+        mat4 Proj = PerspectiveProjection(90.0f, (r32)Width/(r32)Height, 0.1f, 1000.0f);
         
-        VkSubpassDescription subpass    = {};
-        subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount    = 1;
-        subpass.pColorAttachments       = &colorAttachmentRef;
+        struct vp {
+            mat4 View;
+            mat4 Proj;
+        } *ViewProj = talloc<vp>(1);
         
-        VkAttachmentDescription attachments[1] = {
-            colorAttachment,
-        };
+        ViewProj->View = View;
+        ViewProj->Proj = Proj;
+        ViewProj->Proj[1][1] *= -1;
         
-        RenderPass = vk::CreateRenderPass(attachments, 1,
-                                          &subpass, 1,
-                                          nullptr, 0);
+        gpu_update_buffer_info *BufferInfo = talloc<gpu_update_buffer_info>(1);
+        BufferInfo->Uniform        = GlobalVPBuffer;
+        BufferInfo->Data           = ViewProj;
+        BufferInfo->DataSize       = sizeof(vp);
+        BufferInfo->BufferOffset   = 0;
+        
+        AddGpuCommand(FrameParams, { GpuCmd_UpdateBuffer, BufferInfo });
     }
     
-    // Create the Framebuffer and Depth Resources
+    render_set_scissor_info *ScissorInfo = talloc<render_set_scissor_info>(1);
+    ScissorInfo->Extent  = Extent;
+    ScissorInfo->XOffset = 0;
+    ScissorInfo->YOffset = 0;
+    AddRenderCommand(FrameParams, { RenderCmd_SetScissor, ScissorInfo });
+    
+    render_set_viewport_info *ViewportInfo = talloc<render_set_viewport_info>(1);
+    ViewportInfo->Width  = static_cast<r32>(Extent.width);
+    ViewportInfo->Height = static_cast<r32>(Extent.height);
+    ViewportInfo->X      = 0.0f;
+    ViewportInfo->Y      = 0.0f;
+    AddRenderCommand(FrameParams, { RenderCmd_SetViewport, ViewportInfo });
+    
+    // NOTE(Dustin): ok....so there is only one pipeline so go ahead and bind it...
+    render_bind_pipeline_info *PipelineBindInfo = talloc<render_bind_pipeline_info>(1);
+    PipelineBindInfo->PipelineId = GlobalPipeline;
+    AddRenderCommand(FrameParams, { RenderCmd_BindPipeline, PipelineBindInfo });
+    
+    // Bind Global Descriptor
+    render_bind_descriptor_set *BindDescriptor = talloc<render_bind_descriptor_set>(1);
+    BindDescriptor->PipelineId          = GlobalPipeline;
+    BindDescriptor->DescriptorId        = GlobalDescriptorSet;
+    BindDescriptor->FirstSet            = 0;
+    BindDescriptor->DynamicOffsets      = nullptr;
+    BindDescriptor->DynamicOffsetsCount = 0;
+    AddRenderCommand(FrameParams, { RenderCmd_BindDescriptorSet, BindDescriptor });
+    
+    // TODO(Dustin): Parse assets*
+    dyn_uniform_template PerObjectTemplate = mresource::GetDynamicUniformTemplate(GlobalObjectDescriptorSet);
+    
+    RenderAllAssets(FrameParams, &PerObjectTemplate);
+}
+
+void GameStageShutdown(frame_params* FrameParams)
+{
+    VERT_SHADER.Clear();
+    FRAG_SHADER.Clear();
+}
+
+
+file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate)
+{
+    // Update Model Info and bind the object descriptor
+    i64 ObjOffset = mresource::DynUniformGetNextOffset(PerObjectTemplate);
+    
+    mat4 *tMat = talloc<mat4>(1);
+    *tMat = Matrix;
+    
+    gpu_update_buffer_info *BufferInfo = talloc<gpu_update_buffer_info>(1);
+    BufferInfo->Uniform        = GlobalModelBuffer;
+    BufferInfo->Data           = tMat;
+    BufferInfo->DataSize       = sizeof(mat4);
+    BufferInfo->BufferOffset   = ObjOffset;
+    AddGpuCommand(FrameParams, { GpuCmd_UpdateBuffer, BufferInfo });
+    
+    u32 *Offsets = talloc<u32>(1);
+    Offsets[0] = ObjOffset;
+    
+    render_bind_descriptor_set *BindDescriptor = talloc<render_bind_descriptor_set>(1);
+    BindDescriptor->PipelineId          = GlobalPipeline;
+    BindDescriptor->DescriptorId        = GlobalObjectDescriptorSet;
+    BindDescriptor->FirstSet            = 1;
+    BindDescriptor->DynamicOffsets      = Offsets;
+    BindDescriptor->DynamicOffsetsCount = 1;
+    AddRenderCommand(FrameParams, { RenderCmd_BindDescriptorSet, BindDescriptor });
+    
+    for (int i = 0; i < Mesh->PrimitivesCount; ++i)
     {
-        FramebufferCount = swapchain_image_count;
-        Framebuffer = palloc<VkFramebuffer>(swapchain_image_count);
-        ImageParameters* swapchain_images = vk::GetSwapChainImages();
-        for (u32 i = 0; i < swapchain_image_count; ++i) {
+        primitive Primitive = Mesh->Primitives[i];
+        
+        resource_id_t *VBuffers = talloc<resource_id_t>(1);
+        u64*VOffsets = talloc<u64>(1);
+        
+        VBuffers[0] = Primitive.VertexBuffer;
+        VOffsets[0] = 0;
+        
+        render_draw_command *DrawCommand = talloc<render_draw_command>(1);
+        DrawCommand->VertexBuffers      = VBuffers;
+        DrawCommand->VertexBuffersCount = 1;
+        DrawCommand->Offsets            = VOffsets;
+        DrawCommand->IsIndexed          = Primitive.IsIndexed;
+        DrawCommand->IndexBuffer        = Primitive.IndexBuffer;
+        DrawCommand->Count              = (Primitive.IsIndexed) ? Primitive.IndexCount : Primitive.VertexCount;
+        AddRenderCommand(FrameParams, { RenderCmd_Draw, DrawCommand });
+    }
+}
+
+file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate)
+{
+    mat4 NodeMatrix = mat4(1.0f);
+    
+    if (Node->HasMatrix)
+    {
+        NodeMatrix = Node->Matrix;
+    }
+    else
+    {
+        mat4 TranslationMatrix = mat4(1.0f);
+        mat4 ScaleMatrix       = mat4(1.0f);
+        mat4 RotationMatrix    = mat4(1.0f);
+        
+        if (Node->HasTranslation)
+        {
+            TranslationMatrix = Translate(Node->Translation);
+        }
+        
+        if (Node->HasScale)
+        {
+            ScaleMatrix = Scale(Node->Scale.x, Node->Scale.y, Node->Scale.z);
+        }
+        
+        if (Node->HasRotation)
+        {
+            vec3 axis = Node->Rotation.xyz;
+            float theta = Node->Rotation.w;
             
-            VkImageView attachments[] = {
-                swapchain_images[i].View,
-            };
-            
-            VkFramebuffer framebuffer = vk::CreateFramebuffer(attachments, 1, i, RenderPass);
-            Framebuffer[i] = framebuffer;
+            Quaternion rotation = MakeQuaternion(axis.x,axis.y,axis.z,theta);
+            RotationMatrix = GetQuaternionRotationMatrix(rotation);
+        }
+        
+        // Multiplication order = T * R * S
+        NodeMatrix = Mul(NodeMatrix, ScaleMatrix);
+        NodeMatrix = Mul(NodeMatrix, RotationMatrix);
+        NodeMatrix = Mul(NodeMatrix, TranslationMatrix);
+    }
+    
+    mat4 ModelMatrix = Mul(Matrix, NodeMatrix);
+    
+    if (Node->Mesh)
+    {
+        RenderAssetMesh(FrameParams, Node->Mesh, ModelMatrix, PerObjectTemplate);
+    }
+    
+    for (int i = 0; i < Node->ChildrenCount; ++i)
+    {
+        RenderAssetNode(FrameParams, Node->Children + i, ModelMatrix, PerObjectTemplate);
+    }
+}
+
+file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_template *PerObjectTemplate)
+{
+    for (u32 AssetIdx = 0; AssetIdx < FrameParams->AssetsCount; ++AssetIdx)
+    {
+        asset Asset = FrameParams->Assets[AssetIdx];
+        
+        if (Asset.Type == Asset_Model)
+        {
+            for (u32 DisjointNode = 0; DisjointNode < Asset.Model.Model.NodesCount; ++DisjointNode)
+            {
+                model_node *RootNode = Asset.Model.Model.Nodes + DisjointNode;
+                RenderAssetNode(FrameParams, RootNode, mat4(1.0f), PerObjectTemplate);
+            }
         }
     }
+}
+
+file_internal void ProcessKeyboardInput(void *instance, KeyPressEvent event)
+{
+    EventKey ki = event.Key;
     
-    // Descriptor Pool
+    // HACK(Dustin): hardcoded time-step. need a better solution
+    r32 time = 0.016667;
+    
+    r32 delta_x = 0.0f;
+    r32 delta_y = 0.0f;
+    
+    if (ki == KEY_Up)
     {
-        DescriptorSizes[0].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        DescriptorSizes[0].descriptorCount = swapchain_image_count;
-        
-        DescriptorSizes[1].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        DescriptorSizes[1].descriptorCount = swapchain_image_count;
-        
-        DescriptorPool = vk::CreateDescriptorPool(DescriptorSizes, 2, 10 * swapchain_image_count);
+        delta_y -= time;
     }
     
+    if (ki == KEY_Down)
+    {
+        delta_y += time;
+    }
+    
+    if (ki == KEY_Left)
+    {
+        delta_x -= time;
+    }
+    
+    if (ki == KEY_Right)
+    {
+        delta_x += time;
+    }
+    
+    if (delta_x != 0.0f || delta_y != 0.0f)
+    {
+        r32 xoffset = (delta_x - Camera.MouseXPos);
+        r32 yoffset = (delta_y - Camera.MouseYPos);
+        
+        xoffset *= Camera.MouseSensitivity;
+        yoffset *= Camera.MouseSensitivity;
+        
+        vec2 mouse_rotation = {xoffset, yoffset};
+        
+        RotateCameraAboutX(&Camera, mouse_rotation.y);
+        RotateCameraAboutY(&Camera, -mouse_rotation.x);
+    }
+    
+    r32 velocity = Camera.MovementSpeed * time;
+    if (ki == KEY_w)
+    {
+        Camera.Position += Camera.Front * velocity;
+    }
+    
+    if (ki == KEY_s)
+    {
+        Camera.Position -= Camera.Front * velocity;
+    }
+    
+    if (ki == KEY_a)
+    {
+        Camera.Position -= Camera.Right * velocity;
+    }
+    
+    if (ki == KEY_d)
+    {
+        Camera.Position += Camera.Right * velocity;
+    }
+    
+    UpdatePerspectiveCameraVectors(&Camera);
+}
+
+// TODO(Dustin): Move this to the engine layer. This should be Engine related UI
+file_internal void CreateVulkanResizableState()
+{
+#if 0
     // Create ImGui State
     {
-        
         //~ ImGui
         
         // NOTE(Dustin): Is QueueFamily supposed to be the graphics or present queue?
@@ -153,383 +469,27 @@ file_internal void CreateVulkanResizableState()
         vk::EndSingleTimeCommands(command_buffer, CommandPool);
     }
     
-    // Create Command buffers
-    {
-        CommandBuffers = palloc<VkCommandBuffer>(swapchain_image_count);
-        
-        CommandBuffersCount = swapchain_image_count;
-        vk::CreateCommandBuffers(CommandPool,
-                                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                                 swapchain_image_count,
-                                 CommandBuffers);
-    }
-}
-
-void GameResize(void *instance, ResizeEvent event)
-{
-    if (!IsGameInit) return;
+    //~ Drawing the UI Window
+    masset::Render(ModelAsset);
     
+    // Render ImGui Window
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    ImGui::ShowDemoWindow();
+    
+    ImGui::Render();
+    
+    // Render draw data into a single time command buffer -
+    // not the best idea
+    // NOTE(Dustin): DONT DO THAT, but for now I am testing this...
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+    
+    ImGui::EndFrame();
+    
+    //~ Shutting down the UI layer
     ImGui_ImplVulkan_Shutdown();
     
-    vk::DestroyDescriptorPool(DescriptorPool);
-    
-    vk::DestroyCommandBuffers(CommandPool, CommandBuffersCount,
-                              CommandBuffers);
-    pfree(CommandBuffers);
-    
-    // Destroy framebuffer
-    for (u32 i = 0; i < FramebufferCount; ++i)
-    {
-        vk::DestroyFramebuffer(Framebuffer[i]);
-    }
-    pfree(Framebuffer);
-    
-    vk::DestroyRenderPass(RenderPass);
-    
-    CreateVulkanResizableState();
-}
-
-void FlagGameResize()
-{
-    GameNeedsResize = true;
-}
-
-void GameUpdateAndRender(FrameInput input)
-{
-    mm::ResetTransientMemory();
-    
-    u32 image_index;
-    
-    VkResult khr_result = vk::BeginFrame(image_index);
-    if (khr_result == VK_ERROR_OUT_OF_DATE_KHR)
-    {
-        u32 width, height;
-        PlatformGetClientWindowDimensions(&width, &height);
-        
-        WindowResizeEvent event;
-        event.Width  = width;
-        event.Height = height;
-        
-        event::Dispatch<WindowResizeEvent>(event);
-        return;
-    }
-    else if (khr_result != VK_SUCCESS &&
-             khr_result != VK_SUBOPTIMAL_KHR)
-    {
-        mprinte("Failed to acquire swap chain image!");
-    }
-    
-    // Command buffer to present
-    RecordCommandBuffer(image_index);
-    VkCommandBuffer command_buffer = CommandBuffers[image_index];
-    
-    // End the frame
-    {
-        vk::EndFrame(image_index, &command_buffer, 1);
-        
-        if (khr_result == VK_ERROR_OUT_OF_DATE_KHR ||
-            khr_result == VK_SUBOPTIMAL_KHR || GameNeedsResize )
-        {
-            u32 width, height;
-            PlatformGetClientWindowDimensions(&width, &height);
-            
-            WindowResizeEvent event;
-            event.Width  = width;
-            event.Height = height;
-            
-            event::Dispatch<WindowResizeEvent>(event);
-        }
-        else if (khr_result != VK_SUCCESS) {
-            mprinte("Something went wrong acquiring the swapchain image!\n");
-        }
-    }
-}
-
-file_internal void RecordCommandBuffer(u32 idx)
-{
-    VkCommandBuffer command_buffer = CommandBuffers[idx];
-    VkFramebuffer framebuffer = Framebuffer[idx];
-    
-    vk::BeginCommandBuffer(command_buffer);
-    
-    VkExtent2D extent = vk::GetSwapChainExtent();
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width  = (float) extent.width;
-    viewport.height = (float) extent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    
-    VkRect2D scissor = {};
-    scissor.offset = {0, 0};
-    scissor.extent = extent;
-    
-    vk::SetViewport(command_buffer, 0, 1, &viewport);
-    vk::SetScissor(command_buffer, 0, 1, &scissor);
-    
-    VkClearValue clear_values[1] = {};
-    clear_values[0].color = {0.67f, 0.85f, 0.90f, 1.0f};
-    
-    vk::BeginRenderPass(command_buffer, clear_values, 2, framebuffer, RenderPass);
-    {
-        // Issue draw commands...
-        vk::BindPipeline(command_buffer, Pipeline);
-        
-        VkBuffer vertex_buffers[] = {VertexBuffer.Handle};
-        VkDeviceSize offsets[] = {0};
-        vk::BindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-        
-        vk::Draw(command_buffer, 3, 1, 0, 0);
-        
-        // Render ImGui Window
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        ImGui::ShowDemoWindow();
-        
-        ImGui::Render();
-        
-        // Render draw data into a single time command buffer -
-        // not the best idea
-        // NOTE(Dustin): DONT DO THAT, but for now I am testing this...
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
-        
-        ImGui::EndFrame();
-    }
-    vk::EndRenderPass(command_buffer);
-    
-    vk::EndCommandBuffer(command_buffer);
-}
-
-void GameShutdown()
-{
-    vk::Idle();
-    
-    ImGui_ImplVulkan_Shutdown();
-    
-    vk::DestroyDescriptorPool(DescriptorPool);
-    
-    vk::DestroyVmaBuffer(VertexBuffer.Handle, VertexBuffer.Memory);
-    
-    vk::DestroyCommandBuffers(CommandPool, CommandBuffersCount,
-                              CommandBuffers);
-    pfree(CommandBuffers);
-    
-    vk::DestroyPipeline(Pipeline);
-    vk::DestroyPipelineLayout(PipelineLayout);
-    
-    // Destroy framebuffer
-    for (u32 i = 0; i < FramebufferCount; ++i)
-    {
-        vk::DestroyFramebuffer(Framebuffer[i]);
-    }
-    pfree(Framebuffer);
-    
-    vk::DestroyCommandPool(CommandPool);
-    
-    vk::DestroyRenderPass(RenderPass);
-    
-    EXE_PATH.Clear();
-    SHADER_PATH.Clear();
-    
-    VERT_SHADER.Clear();
-    FRAG_SHADER.Clear();
-}
-
-void GameInit()
-{
-    mprint("Initializing the game...\n");
-    
-    VERT_SHADER = InitJString("data/shaders/shader.vert.spv");
-    FRAG_SHADER = InitJString("data/shaders/shader.frag.spv");
-    
-    //~ Vulkan Init State
-    // Create the CommandPool
-    {
-        CommandPool = vk::CreateCommandPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
-                                            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    }
-    
-    CreateVulkanResizableState();
-    
-    //~ Create the shader...
-    jstring vert_shader = PlatformLoadFile(VERT_SHADER);
-    jstring frag_shader = PlatformLoadFile(FRAG_SHADER);
-    
-    VkShaderModule vshad_module = vk::CreateShaderModule(vert_shader.GetCStr(), vert_shader.len);
-    VkShaderModule fshad_module = vk::CreateShaderModule(frag_shader.GetCStr(), frag_shader.len);
-    
-    // Shader pipeline
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vshad_module;
-    vertShaderStageInfo.pName = "main";
-    
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fshad_module;
-    fragShaderStageInfo.pName = "main";
-    
-    VkPipelineShaderStageCreateInfo shaderStages[] = {
-        vertShaderStageInfo,
-        fragShaderStageInfo
-    };
-    
-    // Create Vertex Descriptions: interleaved format
-    VkVertexInputBindingDescription bindingDescription = Vertex::GetBindingDescription();
-    JTuple<VkVertexInputAttributeDescription*, int> attribs = Vertex::GetAttributeDescriptions();
-    
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount   = 1;
-    vertexInputInfo.pVertexBindingDescriptions      = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = attribs.Second();
-    vertexInputInfo.pVertexAttributeDescriptions    = attribs.First();
-    
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-    
-    VkExtent2D swapchain_extent = vk::GetSwapChainExtent();
-    
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width  = (float) swapchain_extent.width;
-    viewport.height = (float) swapchain_extent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    
-    VkRect2D scissor = {};
-    scissor.offset = {0, 0};
-    scissor.extent = swapchain_extent;
-    
-    VkPipelineViewportStateCreateInfo viewportState = {};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
-    
-    // Rasterizer
-    VkPipelineRasterizationStateCreateInfo rasterizer = {};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
-    rasterizer.depthBiasConstantFactor = 0.0f; // Optional
-    rasterizer.depthBiasClamp = 0.0f; // Optional
-    rasterizer.depthBiasSlopeFactor = 0.0f; // Optional
-    
-    // Multisampling
-    VkPipelineMultisampleStateCreateInfo multisampling = {};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable   = VK_FALSE;
-    multisampling.rasterizationSamples  = VK_SAMPLE_COUNT_1_BIT;
-    multisampling.minSampleShading      = 1.0f; // Optional
-    multisampling.pSampleMask           = nullptr; // Optional
-    multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-    multisampling.alphaToOneEnable      = VK_FALSE; // Optional
-    
-    // Depth/Stencil Testing - not right now
-    VkPipelineDepthStencilStateCreateInfo depthStencil = {};
-    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.minDepthBounds = 0.0f; // Optional
-    depthStencil.maxDepthBounds = 1.0f; // Optional
-    depthStencil.stencilTestEnable = VK_FALSE;
-    depthStencil.front = {}; // Optional
-    depthStencil.back = {}; // Optional
-    
-    // Color Blending
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-        VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    
-    VkPipelineColorBlendStateCreateInfo colorBlending = {};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-    colorBlending.blendConstants[0] = 0.0f;
-    colorBlending.blendConstants[1] = 0.0f;
-    colorBlending.blendConstants[2] = 0.0f;
-    colorBlending.blendConstants[3] = 0.0f;
-    
-    // Pipeline Layout
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-    pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    
-    PipelineLayout = vk::CreatePipelineLayout(pipelineLayoutInfo);
-    
-    VkDynamicState dynamic_states[] = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
-    };
-    
-    VkPipelineDynamicStateCreateInfo dynamic_state_info;
-    dynamic_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic_state_info.pNext = nullptr;
-    dynamic_state_info.flags = 0;
-    dynamic_state_info.dynamicStateCount = 2;
-    dynamic_state_info.pDynamicStates = dynamic_states;
-    
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = &dynamic_state_info; // Optional
-    pipelineInfo.layout = PipelineLayout;
-    pipelineInfo.renderPass = RenderPass;
-    pipelineInfo.subpass = 0;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
-    pipelineInfo.basePipelineIndex = -1; // Optional
-    
-    Pipeline = vk::CreatePipeline(pipelineInfo);
-    
-    vk::DestroyShaderModule(vshad_module);
-    vk::DestroyShaderModule(fshad_module);
-    
-    vert_shader.Clear();
-    frag_shader.Clear();
-    
-    //~ Create Vertex Buffers...
-    VkBufferCreateInfo vertex_buffer_info = {};
-    vertex_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    vertex_buffer_info.size = 3 * sizeof(Vertex);
-    vertex_buffer_info.usage =
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    
-    VmaAllocationCreateInfo vertex_alloc_info = {};
-    vertex_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    
-    vk::CreateVmaBufferWithStaging(CommandPool,
-                                   vertex_buffer_info,
-                                   vertex_alloc_info,
-                                   VertexBuffer.Handle,
-                                   VertexBuffer.Memory,
-                                   vertices,
-                                   vertex_buffer_info.size);
-    
-    // Register for WindowResize
+    //~ Game Resize
     event::Subscribe<ResizeEvent>(&GameResize, nullptr);
-    
-    IsGameInit = true;
+#endif
 }
