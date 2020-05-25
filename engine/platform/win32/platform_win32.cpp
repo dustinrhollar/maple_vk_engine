@@ -1303,12 +1303,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         // TODO(Dustin): Copy assets, create a frame_params init function
         // TODO(Dustin): Set frame timers, frame number, etc...
         frame_params FrameParams = {};
-        FrameParams.RenderCommands      = talloc<render_command>(10);
-        FrameParams.RenderCommandsCount = 0;
-        FrameParams.RenderCommandsCap   = 10;
-        FrameParams.GpuCommands         = talloc<gpu_command>(10);
-        FrameParams.GpuCommandsCount    = 0;
-        FrameParams.GpuCommandsCap      = 10;
+        InitFrameParams(&FrameParams);
+        CopyModelAssets(&FrameParams);
         
         // TODO(Dustin):Copy assets into frame memory
         
@@ -1327,14 +1323,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         // NOTE(Dustin): Copy assets, create a frame_params init function
         frame_params FrameParams = {};
-        FrameParams.RenderCommands      = talloc<render_command>(10);
-        FrameParams.RenderCommandsCount = 0;
-        FrameParams.RenderCommandsCap   = 10;
-        FrameParams.GpuCommands         = talloc<gpu_command>(10);
-        FrameParams.GpuCommandsCount    = 0;
-        FrameParams.GpuCommandsCap      = 10;
+        InitFrameParams(&FrameParams);
         
         GameStageShutdown(&FrameParams);
+        masset::Free();
         mresource::Free(&FrameParams);
         GpuStageShutdown(&FrameParams);
     }

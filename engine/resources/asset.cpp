@@ -3,10 +3,11 @@ namespace masset
     // TODO(Dustin): After memory manager has been refactored, have a pool here for
     // model memory rather than just allocating from global storage.
     
-    file_global const u32  MaxAssets = 10;
+    file_global const u32  MaxAssets = 100;
     file_global asset      AssetRegistry[MaxAssets];
-    file_global asset     *AssetModelRegistry[MaxAssets];
-    file_global asset_id_t NextAssetId = 0;
+    file_global asset      AssetModelRegistry[MaxAssets];
+    file_global asset_id_t NextAssetId  = 0;
+    file_global u32        NextModelIdx = 0;
     
     
     //~  Model Asset Functionality
@@ -14,94 +15,29 @@ namespace masset
     struct mesh_loader
     {
         // NOTE(Dustin): THIS IS TEMPORARY UNTIL STAGES HAVE BEEN SPLIT
-        VkCommandPool CommandPool;
+        //VkCommandPool CommandPool;
         
-        cgltf_data *Data;
-        
-        jstring Filename;
-        jstring Directory;
+        cgltf_data   *Data;
+        jstring       Filename;
+        jstring       Directory;
+        frame_params *FrameParams;
     };
     
     //void ParseTexture(mesh_loader *Loader, cgltf_texture *Texture, texture_parameters *TexParam);
     //void ParseMaterial(mesh_loader *Loader, cgltf_material *cg_material, material_parameters *Material);
-    file_internal render_component CreateRenderComponent(VkCommandPool CommandPool,
-                                                         size_t vertex_count, size_t vertex_stride, void *vertices,
-                                                         size_t index_count, size_t index_stride, void *indices);
     file_internal void ParsePrimitive(mesh_loader *Loader, cgltf_primitive *cg_primitive, primitive *Primitive);
     file_internal void ParseMesh(mesh_loader *Loader, cgltf_mesh *CgMesh, mesh *Mesh);
     file_internal void ParseNode(mesh_loader *Loader, cgltf_node *CgNode, model_node  *Node);
     file_internal void ParseScene(mesh_loader *Loader, cgltf_scene *CgScene, model *Model);
+    file_internal asset_id_t LoadModel(jstring Filename);
+    
+    file_internal void FreeModel(model Model);
+    file_internal void ShutdownNode(model_node *Node);
+    file_internal void ShutdownMesh(mesh *Mesh);
     
     file_internal void RenderModelAsset(asset *Asset);
     file_internal void RenderModelMesh(mesh *Mesh, mat4 Matrix);
     file_internal void RenderModelNode(model_node *Node, mat4 Matrix);
-    
-    file_internal render_component CreateRenderComponent(VkCommandPool CommandPool,
-                                                         size_t vertex_count, size_t vertex_stride, void *vertices,
-                                                         size_t index_count, size_t index_stride, void *indices)
-    {
-        
-        render_component rcomp = {};
-        
-        // Create vertex info
-        VkBufferCreateInfo vertex_buffer_info = {};
-        vertex_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        vertex_buffer_info.size = vertex_count * vertex_stride;
-        vertex_buffer_info.usage =
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        
-        VmaAllocationCreateInfo vertex_alloc_info = {};
-        vertex_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-        
-        
-        vk::CreateVmaBufferWithStaging(CommandPool,
-                                       vertex_buffer_info,
-                                       vertex_alloc_info,
-                                       rcomp.VertexBuffer.Handle,
-                                       rcomp.VertexBuffer.Memory,
-                                       vertices,
-                                       vertex_count * vertex_stride);
-        
-        rcomp.VertexBuffer.Size = vertex_count * vertex_stride;
-        
-        if (index_count > 0)
-        {
-            rcomp.IndexedDraw = true;
-            // Create index info
-            VkBufferCreateInfo index_buffer_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-            index_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            index_buffer_info.size = index_count * index_stride;
-            index_buffer_info.usage =
-                VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-            
-            VmaAllocationCreateInfo index_alloc_info = {};
-            index_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-            
-            vk::CreateVmaBufferWithStaging(CommandPool,
-                                           index_buffer_info,
-                                           index_alloc_info,
-                                           rcomp.IndexBuffer.Handle,
-                                           rcomp.IndexBuffer.Memory,
-                                           indices,
-                                           index_count * index_stride);
-            
-            rcomp.IndexBuffer.Size = index_count * index_stride;
-            
-            rcomp.Count = (u32)index_count;
-        }
-        else
-        {
-            rcomp.IndexedDraw = false;
-            rcomp.Count = (u32)vertex_count;
-        }
-        
-        return rcomp;
-    };
-    
-    void DestroyRenderComponent(render_component rcom) {
-        vk::DestroyVmaBuffer(rcom.VertexBuffer.Handle, rcom.VertexBuffer.Memory);
-        vk::DestroyVmaBuffer(rcom.IndexBuffer.Handle, rcom.IndexBuffer.Memory);
-    }
     
     file_internal void ParsePrimitive(mesh_loader *Loader, cgltf_primitive *CgPrimitive, primitive *Primitive)
     {
@@ -117,9 +53,16 @@ namespace masset
         */
         
         if (CgPrimitive->indices)
+        {
             Primitive->IndexCount = CgPrimitive->indices->count;
+            Primitive->IsIndexed  = true;
+        }
         else
-            Primitive->IndexCount = 0;
+        {
+            Primitive->IndexCount  = 0;
+            Primitive->IsIndexed   = false;
+            Primitive->IndexBuffer = -1;
+        }
         
         // figure out the vertex count
         for (size_t k = 0; k < CgPrimitive->attributes_count; ++k)
@@ -152,7 +95,7 @@ namespace masset
         size_t data_size = sizeof(u32) * Primitive->IndexCount + sizeof(Vertex) * Primitive->VertexCount;
         
         Primitive->IndicesOffset = 0;
-        Primitive->VerticesOffeset = sizeof(u32) * Primitive->IndexCount;
+        Primitive->VerticesOffset = sizeof(u32) * Primitive->IndexCount;
         
         Primitive->DataBlock = (char*)palloc(data_size);
         
@@ -313,6 +256,13 @@ namespace masset
             }
             printf("----------------------------------------\n");
 #endif
+            
+            index_buffer_create_info *IndexBufferCreatInfo = talloc<index_buffer_create_info>(1);
+            IndexBufferCreatInfo->Size = sizeof(u32) * Primitive->IndexCount;
+            IndexBufferCreatInfo->Data = (char*)Primitive->DataBlock + Primitive->IndicesOffset;
+            
+            Primitive->IndexBuffer  = mresource::Load(Loader->FrameParams,
+                                                      Resource_IndexBuffer, IndexBufferCreatInfo);
         }
         
         
@@ -339,16 +289,16 @@ namespace masset
                 printf("\tTex0     %lf %lf\n", vertices[idx].Tex0.x, vertices[idx].Tex0.y);
 #endif
             }
+            
+            
+            vertex_buffer_create_info *VertexBufferCreatInfo = talloc<vertex_buffer_create_info>(1);
+            VertexBufferCreatInfo->Size = sizeof(Vertex) * Primitive->VertexCount;
+            VertexBufferCreatInfo->Data = (char*)Primitive->DataBlock + Primitive->VerticesOffset;
+            
+            Primitive->VertexBuffer = mresource::Load(Loader->FrameParams,
+                                                      Resource_VertexBuffer,
+                                                      VertexBufferCreatInfo);
         }
-        
-        u64 render_comp_stride = sizeof(Vertex);
-        Primitive->RenderComp = CreateRenderComponent(Loader->CommandPool,
-                                                      Primitive->VertexCount,
-                                                      render_comp_stride,
-                                                      ((char*)Primitive->DataBlock + sizeof(u32) * Primitive->IndexCount),
-                                                      Primitive->IndexCount,
-                                                      sizeof(u32),
-                                                      indices);
     }
     
     file_internal void ParseMesh(mesh_loader *Loader, cgltf_mesh *CgMesh, mesh *Mesh)
@@ -458,13 +408,13 @@ namespace masset
         }
     }
     
-    asset_id_t LoadModel(jstring Filename, VkCommandPool CommandPool)
+    file_internal asset_id_t LoadModel(frame_params *FrameParams, jstring Filename)
     {
         // TODO(Dustin): In the future, determine the file extension, if the extension
         // is not ".model" format, then do glTF loading/conversion on the model
         mesh_loader Loader = {};
-        Loader.Filename = Filename;
-        Loader.CommandPool = CommandPool;
+        Loader.Filename    = Filename;
+        Loader.FrameParams = FrameParams;
         
         const char *cfile = Filename.GetCStr();
         const char* ptr = strrchr(cfile, '/');
@@ -528,6 +478,109 @@ namespace masset
         return ModelAsset->Id;
     }
     
+    asset_id_t Load(asset_type Type, void *Data)
+    {
+        asset_id_t Result = -1;
+        
+        switch (Type)
+        {
+            case Asset_Model:
+            {
+                model_create_info *Info = static_cast<model_create_info*>(Data);
+                Result = LoadModel(Info->FrameParams, Info->Filename);
+                
+                AssetModelRegistry[NextModelIdx++] = AssetRegistry[Result];
+            } break;
+            
+            case Asset_Texture:
+            {
+            } break;
+            
+            case Asset_Material:
+            {
+            } break;
+            
+            default:
+            {
+                mprinte("Unknown asset type for load \"%d\"!\n", Type);
+            } break;
+        }
+        
+        return Result;
+    }
+    
+    void GetModelAssets(asset **Assets, u32 *Count)
+    {
+        *Assets = AssetModelRegistry;
+        *Count = NextModelIdx;
+    }
+    
+    file_internal void FreeModel(model Model)
+    {
+        for (u32 j = 0; j < Model.NodesCount; ++j)
+        {
+            model_node *Node = Model.Nodes + j;
+            ShutdownNode(Node);
+        }
+        
+        pfree(Model.Nodes);
+    }
+    
+    file_internal void ShutdownMesh(mesh *Mesh)
+    {
+        for (int i = 0; i < Mesh->PrimitivesCount; ++i)
+        {
+            pfree(Mesh->Primitives[i].DataBlock);
+        }
+        
+        pfree(Mesh->Primitives);
+    }
+    
+    file_internal void ShutdownNode(model_node *Node)
+    {
+        Node->Name.Clear();
+        
+        if (Node->Mesh)
+        {
+            ShutdownMesh(Node->Mesh);
+            pfree(Node->Mesh);
+        }
+        
+        for (int i = 0; i < Node->ChildrenCount; ++i) {
+            ShutdownNode(Node->Children + i);
+        }
+        
+        if (Node->ChildrenCount > 0)
+            pfree(Node->Children);
+    }
+    
+    void Free()
+    {
+        for (u32 Asset = 0; Asset < NextAssetId; ++Asset)
+        {
+            switch (AssetRegistry[Asset].Type)
+            {
+                case Asset_Model:
+                {
+                    FreeModel(AssetRegistry[Asset].Model.Model);
+                } break;
+                
+                case Asset_Texture:
+                {
+                } break;
+                
+                case Asset_Material:
+                {
+                } break;
+                
+                default:
+                {
+                    mprinte("Unknown asset type for load \"%d\"!\n", AssetRegistry[Asset].Type);
+                } break;
+            }
+        }
+    }
+    
     
     //~ Material Asset Functionality
     
@@ -537,7 +590,7 @@ namespace masset
     
     
     //~ Render Command
-    
+#if 0
     file_internal void RenderModelMesh(mesh *Mesh, mat4 Matrix)
     {
         
@@ -560,7 +613,6 @@ namespace masset
             if (Node->HasTranslation)
             {
                 TranslationMatrix = Translate(Node->Translation);
-                
             }
             
             if (Node->HasScale)
@@ -623,4 +675,5 @@ namespace masset
             default: break;
         }
     }
+#endif
 }; // masset

@@ -6,19 +6,23 @@ layout (location = 1) in vec3 normals;
 layout (location = 2) in vec4 color;
 layout (location = 3) in vec2 uv0;
 
-struct MVP {
+struct ViewProj {
     mat4 View;
     mat4 Projection;
-	mat4 Model;
 };
 
-layout (binding = 0, set = 0) uniform MvpBuffer {
-    MVP Mvp;
+struct ObjectData {
+    mat4 Model;
 };
 
-layout(binding = 0, set = 1) uniform sampler2D heightmap;
+layout (binding = 0, set=0) uniform VPBuffer {
+    ViewProj VP;
+};
 
+layout (binding = 0, set=1) uniform ModelBuffer {
+    ObjectData Object;
+};
 void main()
 {
-	gl_Position = Mvp.Projection * Mvp.View * Mvp.Model * vec4(position, 1.0f);
+	gl_Position = VP.Projection * VP.View * Object.Model * vec4(position, 1.0);
 }

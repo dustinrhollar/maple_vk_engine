@@ -52,20 +52,12 @@ struct Vertex
     
 };
 
-
 typedef i64 asset_id_t;
 
-// For now, render components are simple
-// structs. And the render system will merely
-// iterate over them.
-struct render_component
+struct model_create_info
 {
-    bool IndexedDraw;
-    
-    BufferParameters VertexBuffer;
-    BufferParameters IndexBuffer;
-    
-    u32 Count; // either tri count or vertex count depending if IndexedDraw
+    frame_params *FrameParams;
+    jstring       Filename;
 };
 
 // Mesh might have multiple primitives
@@ -79,12 +71,14 @@ struct primitive
     u64              VertexCount;
     
     u64              IndicesOffset;
-    u64              VerticesOffeset;
+    u64              VerticesOffset;
     
     vec3             Min;
     vec3             Max;
     
-    render_component RenderComp;
+    bool             IsIndexed;
+    resource_id_t    VertexBuffer;
+    resource_id_t    IndexBuffer;
     
     void            *DataBlock; // Pointer to where the primitive data is organized in interleaved format
 };
@@ -106,7 +100,7 @@ struct model_node
     model_node *Parent;
     
     model_node *Children;
-    u64      ChildrenCount;
+    u64         ChildrenCount;
     
     bool HasTranslation;
     bool HasRotation;
@@ -177,10 +171,14 @@ struct asset
 
 namespace masset
 {
-    asset_id_t LoadModel(jstring filename, VkCommandPool CommandPool);
+    asset_id_t Load(asset_type Type, void *Data);
+    void Free();
+    
     void Render(asset_id_t AssetId);
     
     asset* GetAsset(asset_id_t Id);
+    void GetModelAssets(asset **Assets, u32 *Count);
+    
     // Retrieves a list of assets of the specified type
     DynamicArray<asset*> Filter(asset_type Type);
 }; // masset

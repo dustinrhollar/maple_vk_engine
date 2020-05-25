@@ -200,8 +200,8 @@ void *VulkanLibrary;
 //~ Resource Managers
 #define CGLTF_IMPLEMENTATION
 #include "resources/cgltf.h"
-#include "resources/asset.h"
 #include "resources/resources.h"
+#include "resources/asset.h"
 #include "renderer/frontend.h"
 #include "renderer/backend.h"
 #include "frame_info/frame_params.h"

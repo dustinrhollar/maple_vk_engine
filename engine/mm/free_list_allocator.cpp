@@ -277,6 +277,8 @@ After split:
     
     void *FreeListAllocator::Allocate(u64 size, u64 alignment)
     {
+        if (size == 0) return nullptr;
+        
         size = ALIGN(size);
         u64 adj_size = HeaderAdjustedSize(size);
         

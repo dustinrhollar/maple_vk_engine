@@ -1,17 +1,17 @@
 
 // TODO(Dustin): Go to resources
-file_global resource_id_t GlobalDescriptorLayout;
+file_global resource_id_t GlobalDescriptorLayout;       // per frame descriptor
+file_global resource_id_t GlobalObjectDescriptorLayout; // per object descriptor
 file_global resource_id_t GlobalDescriptorSet;
+file_global resource_id_t GlobalObjectDescriptorSet;
 file_global resource_id_t GlobalPipeline;
-//file_global uniform               *MvpUniforms;  // one per swapchain image
+file_global resource_id_t GlobalVPBuffer;
+file_global resource_id_t GlobalModelBuffer;
 
 //file_global BufferParameters VertexBuffer;
 
 file_global bool IsGameInit      = false;
 file_global bool GameNeedsResize = false;
-
-file_global jstring EXE_PATH;
-file_global jstring SHADER_PATH;
 
 file_global jstring VERT_SHADER;
 file_global jstring FRAG_SHADER;
@@ -20,18 +20,16 @@ file_global PerspectiveCamera Camera;
 
 file_global asset_id_t ModelAsset;
 
-file_internal void RecordCommandBuffer(u32 idx);
-file_internal void CreateVulkanResizableState();
+file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate);
+file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate);
+file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_template *PerObjectTemplate);
 
 void GameStageInit(frame_params* FrameParams)
 {
-    // TODO(Dustin): Currently, a user will have know the swapchain image
-    // count when allocating the descriptors...I don't like this. I'd rather
-    // the descriptor count be hidden to make resize easier to manager. Let
-    // a user create a single descriptor, and the Resource Manager create that
-    // descriptor/uniform for each swapchain image.
-    
-    u32 SwapchainImageCount = vk::GetSwapChainImageCount();
+    VERT_SHADER = InitJString("data/shaders/shader.vert.spv");
+    FRAG_SHADER = InitJString("data/shaders/shader.frag.spv");
     
     //~ Camera
     vec3 pos = {0.0f, 0.0f, -2.0f};
@@ -39,12 +37,23 @@ void GameStageInit(frame_params* FrameParams)
     
     //~ Mvp Uniforms
     buffer_create_info MvpBufferCreateInfo = {};
-    MvpBufferCreateInfo.SizePerBuffer      = sizeof(mat4) * 3;
-    MvpBufferCreateInfo.BufferCount        = SwapchainImageCount;
+    MvpBufferCreateInfo.BufferSize         = sizeof(mat4) * 2;
     MvpBufferCreateInfo.PersistentlyMapped = true;
     MvpBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     MvpBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
     MvpBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    
+    GlobalVPBuffer = mresource::Load(FrameParams, Resource_UniformBuffer, &MvpBufferCreateInfo);
+    
+    dynamic_buffer_create_info ModelBufferCreateInfo = {};
+    ModelBufferCreateInfo.ElementCount       = 50;
+    ModelBufferCreateInfo.ElementStride      = sizeof(mat4);
+    ModelBufferCreateInfo.PersistentlyMapped = true;
+    ModelBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    ModelBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    ModelBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    
+    GlobalModelBuffer = mresource::Load(FrameParams, Resource_DynamicUniformBuffer, &ModelBufferCreateInfo);
     
     //~ Descriptor Layouts
     VkDescriptorSetLayoutBinding Bindings[1]= {};
@@ -61,7 +70,20 @@ void GameStageInit(frame_params* FrameParams)
     GlobalDescriptorLayout = mresource::Load(FrameParams, Resource_DescriptorSetLayout,
                                              &DescriptorLayoutCreateInfo);
     
+    Bindings[0].binding            = 0;
+    Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    Bindings[0].descriptorCount    = 1;
+    Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+    Bindings[0].pImmutableSamplers = nullptr; // Optional
+    
+    DescriptorLayoutCreateInfo.BindingsCount = 1;
+    DescriptorLayoutCreateInfo.Bindings      = Bindings;
+    
+    GlobalObjectDescriptorLayout = mresource::Load(FrameParams, Resource_DescriptorSetLayout,
+                                                   &DescriptorLayoutCreateInfo);
+    
     //~ Descriptors
+    // per frame descriptor
     descriptor_create_info DescriptorCreateInfo = {};
     DescriptorCreateInfo.DescriptorLayouts = &GlobalDescriptorLayout;
     DescriptorCreateInfo.SetCount          = 1;
@@ -69,10 +91,26 @@ void GameStageInit(frame_params* FrameParams)
     GlobalDescriptorSet = mresource::Load(FrameParams, Resource_DescriptorSet,
                                           &DescriptorCreateInfo);
     
-    //~ Pipeline
-    VERT_SHADER = InitJString("data/shaders/shader.vert.spv");
-    FRAG_SHADER = InitJString("data/shaders/shader.frag.spv");
+    // per object descriptor
+    DescriptorCreateInfo.DescriptorLayouts = &GlobalObjectDescriptorLayout;
+    DescriptorCreateInfo.SetCount          = 1;
     
+    GlobalObjectDescriptorSet = mresource::Load(FrameParams, Resource_DescriptorSet,
+                                                &DescriptorCreateInfo);
+    
+    // Bind the uniform buffers to the descriptors
+    descriptor_write_info WriteInfos[2] = {
+        { GlobalVPBuffer,    GlobalDescriptorSet,       0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER         },
+        { GlobalModelBuffer, GlobalObjectDescriptorSet, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC }
+    };
+    
+    descriptor_update_write_info DescriptorUpdateInfos = {};
+    DescriptorUpdateInfos.WriteInfos      = WriteInfos;
+    DescriptorUpdateInfos.WriteInfosCount = 2;
+    
+    mresource::Load(FrameParams, Resource_DescriptorSetWriteUpdate, &DescriptorUpdateInfos);
+    
+    //~ Pipeline
     shader_file_create_info Shaders[] = {
         { VERT_SHADER, VK_SHADER_STAGE_VERTEX_BIT   },
         { FRAG_SHADER, VK_SHADER_STAGE_FRAGMENT_BIT }
@@ -96,6 +134,7 @@ void GameStageInit(frame_params* FrameParams)
     
     resource_id_t Layouts[] = {
         GlobalDescriptorLayout,
+        GlobalObjectDescriptorLayout,
     };
     
     pipeline_create_info PipelineCreateInfo = {};
@@ -116,15 +155,22 @@ void GameStageInit(frame_params* FrameParams)
     PipelineCreateInfo.MuliSampleSamples      = VK_SAMPLE_COUNT_1_BIT; // optional
     PipelineCreateInfo.HasDepthStencil        = true;
     PipelineCreateInfo.DescriptorLayoutIds    = Layouts;
-    PipelineCreateInfo.DescriptorLayoutsCount = 1;
+    PipelineCreateInfo.DescriptorLayoutsCount = 2;
     PipelineCreateInfo.PushConstants          = nullptr;
     PipelineCreateInfo.PushConstantsCount     = 0;
     PipelineCreateInfo.RenderPass             = GetPrimaryRenderPass();
     
     GlobalPipeline = mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
     
-    // Build any render commands
+    //~ Asset Loading
+    jstring ExampleModel = InitJString("data/models/Fox/glTF/fox.gltf");
     
+    model_create_info *ModelCreateInfo = talloc<model_create_info>(1);
+    ModelCreateInfo->Filename    = ExampleModel;
+    ModelCreateInfo->FrameParams = FrameParams;
+    ModelAsset = masset::Load(Asset_Model, ModelCreateInfo);
+    
+    ExampleModel.Clear();
 }
 
 void GameStageEntry(frame_params* FrameParams)
@@ -136,64 +182,196 @@ void GameStageEntry(frame_params* FrameParams)
     BeginFrame->HasDepth = true;
     BeginFrame->Depth    = 1.0f;
     BeginFrame->Stencil  = 0;
-    AddGpuCommand(FrameParams, { GpuCommand_BeginFrame, BeginFrame });
+    AddGpuCommand(FrameParams, { GpuCmd_BeginFrame, BeginFrame });
     
-    gpu_set_scissor_info *ScissorInfo = talloc<gpu_set_scissor_info>(1);
+    // Copy Per-Frame Descriptors into Uniform memory
+    {
+        u32 Width, Height;
+        PlatformGetClientWindowDimensions(&Width, &Height);
+        
+        mat4 View = GetViewMatrix(&Camera);
+        mat4 Proj = PerspectiveProjection(90.0f, (r32)Width/(r32)Height, 0.1f, 1000.0f);
+        
+        struct vp {
+            mat4 View;
+            mat4 Proj;
+        } *ViewProj = talloc<vp>(1);
+        
+        ViewProj->View = View;
+        ViewProj->Proj = Proj;
+        ViewProj->Proj[1][1] *= -1;
+        
+        gpu_update_buffer_info *BufferInfo = talloc<gpu_update_buffer_info>(1);
+        BufferInfo->Uniform        = GlobalVPBuffer;
+        BufferInfo->Data           = ViewProj;
+        BufferInfo->DataSize       = sizeof(ViewProj);
+        BufferInfo->BufferOffset   = 0;
+        
+        AddGpuCommand(FrameParams, { GpuCmd_UpdateBuffer, BufferInfo });
+    }
+    
+    render_set_scissor_info *ScissorInfo = talloc<render_set_scissor_info>(1);
     ScissorInfo->Extent  = Extent;
     ScissorInfo->XOffset = 0;
     ScissorInfo->YOffset = 0;
-    AddGpuCommand(FrameParams, { GpuCommand_SetScissor, ScissorInfo });
+    AddRenderCommand(FrameParams, { RenderCmd_SetScissor, ScissorInfo });
     
-    gpu_set_viewport_info *ViewportInfo = talloc<gpu_set_viewport_info>(1);
+    render_set_viewport_info *ViewportInfo = talloc<render_set_viewport_info>(1);
     ViewportInfo->Width  = static_cast<r32>(Extent.width);
     ViewportInfo->Height = static_cast<r32>(Extent.height);
     ViewportInfo->X      = 0.0f;
     ViewportInfo->Y      = 0.0f;
-    AddGpuCommand(FrameParams, { GpuCommand_SetViewport, ViewportInfo });
+    AddRenderCommand(FrameParams, { RenderCmd_SetViewport, ViewportInfo });
     
-    AddGpuCommand(FrameParams, { GpuCommand_EndFrame, nullptr });
+    // NOTE(Dustin): ok....so there is only one pipeline so go ahead and bind it...
+    render_bind_pipeline_info *PipelineBindInfo = talloc<render_bind_pipeline_info>(1);
+    PipelineBindInfo->PipelineId = GlobalPipeline;
+    AddRenderCommand(FrameParams, { RenderCmd_BindPipeline, PipelineBindInfo });
+    
+    // Bind Global Descriptor
+    render_bind_descriptor_set *BindDescriptor = talloc<render_bind_descriptor_set>(1);
+    BindDescriptor->PipelineId          = GlobalPipeline;
+    BindDescriptor->DescriptorId        = GlobalDescriptorSet;
+    BindDescriptor->FirstSet            = 0;
+    BindDescriptor->DynamicOffsets      = nullptr;
+    BindDescriptor->DynamicOffsetsCount = 0;
+    AddRenderCommand(FrameParams, { RenderCmd_BindDescriptorSet, BindDescriptor });
+    
+    // TODO(Dustin): Parse assets*
+    dyn_uniform_template PerObjectTemplate = mresource::GetDynamicUniformTemplate(GlobalObjectDescriptorSet);
+    
+    RenderAllAssets(FrameParams, &PerObjectTemplate);
 }
 
 void GameStageShutdown(frame_params* FrameParams)
 {
-    EXE_PATH.Clear();
-    SHADER_PATH.Clear();
     VERT_SHADER.Clear();
     FRAG_SHADER.Clear();
 }
 
+
+file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate)
+{
+    // Update Model Info and bind the object descriptor
+    i64 ObjOffset = mresource::DynUniformGetNextOffset(PerObjectTemplate);
+    
+    mat4 *tMat = talloc<mat4>(1);
+    *tMat = Matrix;
+    
+    gpu_update_buffer_info *BufferInfo = talloc<gpu_update_buffer_info>(1);
+    BufferInfo->Uniform        = GlobalModelBuffer;
+    BufferInfo->Data           = tMat;
+    BufferInfo->DataSize       = sizeof(mat4);
+    BufferInfo->BufferOffset   = ObjOffset;
+    AddGpuCommand(FrameParams, { GpuCmd_UpdateBuffer, BufferInfo });
+    
+    u32 *Offsets = talloc<u32>(1);
+    Offsets[0] = ObjOffset;
+    
+    render_bind_descriptor_set *BindDescriptor = talloc<render_bind_descriptor_set>(1);
+    BindDescriptor->PipelineId          = GlobalPipeline;
+    BindDescriptor->DescriptorId        = GlobalObjectDescriptorSet;
+    BindDescriptor->FirstSet            = 1;
+    BindDescriptor->DynamicOffsets      = Offsets;
+    BindDescriptor->DynamicOffsetsCount = 1;
+    AddRenderCommand(FrameParams, { RenderCmd_BindDescriptorSet, BindDescriptor });
+    
+    for (int i = 0; i < Mesh->PrimitivesCount; ++i)
+    {
+        primitive Primitive = Mesh->Primitives[i];
+        
+        resource_id_t *VBuffers = talloc<resource_id_t>(1);
+        u64*VOffsets = talloc<u64>(1);
+        
+        VBuffers[0] = Primitive.VertexBuffer;
+        VOffsets[0] = 0;
+        
+        render_draw_command *DrawCommand = talloc<render_draw_command>(1);
+        DrawCommand->VertexBuffers      = VBuffers;
+        DrawCommand->VertexBuffersCount = 1;
+        DrawCommand->Offsets            = VOffsets;
+        DrawCommand->IsIndexed          = Primitive.IsIndexed;
+        DrawCommand->IndexBuffer        = Primitive.IndexBuffer;
+        DrawCommand->Count              = (Primitive.IsIndexed) ? Primitive.IndexCount : Primitive.VertexCount;
+        AddRenderCommand(FrameParams, { RenderCmd_Draw, DrawCommand });
+    }
+}
+
+file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix,
+                                   dyn_uniform_template *PerObjectTemplate)
+{
+    mat4 NodeMatrix = mat4(1.0f);
+    
+    if (Node->HasMatrix)
+    {
+        NodeMatrix = Node->Matrix;
+    }
+    else
+    {
+        mat4 TranslationMatrix = mat4(1.0f);
+        mat4 ScaleMatrix       = mat4(1.0f);
+        mat4 RotationMatrix    = mat4(1.0f);
+        
+        if (Node->HasTranslation)
+        {
+            TranslationMatrix = Translate(Node->Translation);
+        }
+        
+        if (Node->HasScale)
+        {
+            ScaleMatrix = Scale(Node->Scale.x, Node->Scale.y, Node->Scale.z);
+        }
+        
+        if (Node->HasRotation)
+        {
+            vec3 axis = Node->Rotation.xyz;
+            float theta = Node->Rotation.w;
+            
+            Quaternion rotation = MakeQuaternion(axis.x,axis.y,axis.z,theta);
+            RotationMatrix = GetQuaternionRotationMatrix(rotation);
+        }
+        
+        // Multiplication order = T * R * S
+        NodeMatrix = Mul(NodeMatrix, ScaleMatrix);
+        NodeMatrix = Mul(NodeMatrix, RotationMatrix);
+        NodeMatrix = Mul(NodeMatrix, TranslationMatrix);
+    }
+    
+    mat4 ModelMatrix = Mul(Matrix, NodeMatrix);
+    
+    if (Node->Mesh)
+    {
+        RenderAssetMesh(FrameParams, Node->Mesh, ModelMatrix, PerObjectTemplate);
+    }
+    
+    for (int i = 0; i < Node->ChildrenCount; ++i)
+    {
+        RenderAssetNode(FrameParams, Node->Children + i, ModelMatrix, PerObjectTemplate);
+    }
+}
+
+file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_template *PerObjectTemplate)
+{
+    for (u32 AssetIdx = 0; AssetIdx < FrameParams->AssetsCount; ++AssetIdx)
+    {
+        asset Asset = FrameParams->Assets[AssetIdx];
+        
+        if (Asset.Type == Asset_Model)
+        {
+            for (u32 DisjointNode = 0; DisjointNode < Asset.Model.Model.NodesCount; ++DisjointNode)
+            {
+                model_node *RootNode = Asset.Model.Model.Nodes + DisjointNode;
+                RenderAssetNode(FrameParams, RootNode, mat4(1.0f), PerObjectTemplate);
+            }
+        }
+    }
+}
+
+// TODO(Dustin): Move this to the engine layer. This should be Engine related UI
 file_internal void CreateVulkanResizableState()
 {
 #if 0
-    u32 swapchain_image_count       = vk::GetSwapChainImageCount();
-    VkFormat swapchain_image_format = vk::GetSwapChainImageFormat();
-    VkExtent2D extent               = vk::GetSwapChainExtent();
-    
-    { // Create Global Descriptors
-        for (u32 i = 0; i < swapchain_image_count; ++i)
-        {
-            VkWriteDescriptorSet descriptorWrites[1] = {};
-            
-            // Set 3: Material Information
-            VkDescriptorBufferInfo uniform_info = {};
-            uniform_info.buffer                 = MvpUniforms[i].Buffer.Handle;
-            uniform_info.offset                 = 0;
-            uniform_info.range                  = VK_WHOLE_SIZE;
-            
-            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[0].dstSet           = GlobalDescriptorSets[i];
-            descriptorWrites[0].dstBinding       = 0;
-            descriptorWrites[0].dstArrayElement  = 0;
-            descriptorWrites[0].descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrites[0].descriptorCount  = 1;
-            descriptorWrites[0].pBufferInfo      = &uniform_info;
-            descriptorWrites[0].pImageInfo       = nullptr;
-            descriptorWrites[0].pTexelBufferView = nullptr;
-            
-            vk::UpdateDescriptorSets(descriptorWrites, 1);
-        }
-    }
-    
     // Create ImGui State
     {
         //~ ImGui
@@ -218,149 +396,28 @@ file_internal void CreateVulkanResizableState()
         }
         vk::EndSingleTimeCommands(command_buffer, CommandPool);
     }
-#endif
-}
-
-// TODO(Dustin): Move to Resources...
-
-void GameResize(void *instance, ResizeEvent event)
-{
-#if 0
-    if (!IsGameInit) return;
     
+    //~ Drawing the UI Window
+    masset::Render(ModelAsset);
+    
+    // Render ImGui Window
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    ImGui::ShowDemoWindow();
+    
+    ImGui::Render();
+    
+    // Render draw data into a single time command buffer -
+    // not the best idea
+    // NOTE(Dustin): DONT DO THAT, but for now I am testing this...
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+    
+    ImGui::EndFrame();
+    
+    //~ Shutting down the UI layer
     ImGui_ImplVulkan_Shutdown();
     
-    vk::DestroyDescriptorPool(DescriptorPool);
-    
-    vk::DestroyCommandBuffers(CommandPool, CommandBuffersCount,
-                              CommandBuffers);
-    pfree(CommandBuffers);
-    
-    // Destroy framebuffer
-    for (u32 i = 0; i < FramebufferCount; ++i)
-    {
-        vk::DestroyFramebuffer(Framebuffer[i]);
-    }
-    pfree(Framebuffer);
-    
-    vk::DestroyRenderPass(RenderPass);
-    
-    CreateVulkanResizableState();
-#endif
-}
-
-
-void FlagGameResize()
-{
-    GameNeedsResize = true;
-}
-
-
-void GameUpdateAndRender(FrameInput input)
-{
-#if 0
-    {// Update uniform data
-        uniform *FrameUniform = &MvpUniforms[image_index];
-        void *uniform_ptr = (FrameUniform->AllocInfo.pMappedData);
-        
-        u32 width, height;
-        PlatformGetClientWindowDimensions(&width, &height);
-        mat4 proj  = PerspectiveProjection(90.0f, (float)width/(float)height, 0.1f, 4000.0f);
-        mat4 view  = GetViewMatrix(&Camera);
-        mat4 model = mat4(1.0f);
-        
-        struct MVP {
-            alignas(16) mat4 View;
-            alignas(16) mat4 Proj;
-            alignas(16) mat4 Model;
-        } mvp;
-        
-        mvp.View = view;
-        mvp.Proj = proj;
-        mvp.Proj[1][1] *= -1;
-        mvp.Model = model;
-        
-        memcpy(uniform_ptr, &mvp, sizeof(MVP));
-    }
-#endif
-}
-
-file_internal void RecordCommandBuffer(u32 idx)
-{
-#if 0
-    {
-        // Issue draw commands...
-        masset::Render(ModelAsset);
-        
-        // Render ImGui Window
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        ImGui::ShowDemoWindow();
-        
-        ImGui::Render();
-        
-        // Render draw data into a single time command buffer -
-        // not the best idea
-        // NOTE(Dustin): DONT DO THAT, but for now I am testing this...
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
-        
-        ImGui::EndFrame();
-    }
-#endif
-}
-
-void GameShutdown()
-{
-    vk::Idle();
-    ImGui_ImplVulkan_Shutdown();
-    
-#if 0
-    u32 swapchain_image_count = vk::GetSwapChainImageCount();
-    
-    //vk::DestroyVmaBuffer(VertexBuffer.Handle, VertexBuffer.Memory);
-    
-    for (u32 i = 0; i < swapchain_image_count; ++i)
-        vk::DestroyVmaBuffer(MvpUniforms[i].Buffer.Handle, MvpUniforms[i].Buffer.Memory);
-    pfree(MvpUniforms);
-#endif
-}
-
-void GameInit()
-{
-    mprint("Initializing the game...\n");
-    
-    //~ Create Vertex Buffers...
-    /*
-    VkBufferCreateInfo vertex_buffer_info = {};
-    vertex_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    vertex_buffer_info.size = 3 * sizeof(Vertex);
-    vertex_buffer_info.usage =
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    
-    VmaAllocationCreateInfo vertex_alloc_info = {};
-    vertex_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    
-    vk::CreateVmaBufferWithStaging(CommandPool,
-                                   vertex_buffer_info,
-                                   vertex_alloc_info,
-                                   VertexBuffer.Handle,
-                                   VertexBuffer.Memory,
-                                   vertices,
-                                   vertex_buffer_info.size);
-    */
-    
-    
-    //~ Events...
-    
-    // Register for WindowResize
+    //~ Game Resize
     event::Subscribe<ResizeEvent>(&GameResize, nullptr);
-    
-    IsGameInit = true;
-    
-    //~ Asset Loading
-    
-    jstring ExampleModel = InitJString("data/models/Fox/glTF/fox.gltf");
-    ModelAsset = masset::LoadModel(ExampleModel, CommandPool);
-    
-    ExampleModel.Clear();
+#endif
 }

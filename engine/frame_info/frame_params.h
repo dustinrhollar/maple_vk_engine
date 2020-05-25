@@ -44,4 +44,6 @@ void FreeFrameParams(frame_params *FrameParams);
 void AddRenderCommand(frame_params *FrameParams, render_command Cmd);
 void AddGpuCommand(frame_params *FrameParams, gpu_command Cmd);
 
+void CopyModelAssets(frame_params *FrameParams);
+
 #endif //ENGINE_FRAME_INFO_FRAME_PARAMS_H

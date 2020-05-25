@@ -51,3 +51,15 @@ void AddGpuCommand(frame_params *FrameParams, gpu_command Cmd)
     
     FrameParams->GpuCommands[FrameParams->GpuCommandsCount++] = Cmd;
 }
+
+void CopyModelAssets(frame_params *FrameParams)
+{
+    asset *Assets = nullptr;
+    u32 Count = 0;
+    masset::GetModelAssets(&Assets, &Count);
+    
+    FrameParams->AssetsCount = Count;
+    FrameParams->Assets      = talloc<asset>(Count);
+    for (u32 Asset = 0; Asset < Count; ++Asset)
+        FrameParams->Assets[Asset] = Assets[Asset];
+}

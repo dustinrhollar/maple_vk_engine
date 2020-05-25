@@ -1,11 +1,22 @@
 #ifndef ENGINE_RENDERER_BACKEND_H
 #define ENGINE_RENDERER_BACKEND_H
 
+struct gpu_set_scissor_info
+{
+    VkExtent2D Extent;
+    i32        XOffset, YOffset;
+};
+
+struct gpu_set_viewport_info
+{
+    r32 Width, Height;
+    r32 X, Y;
+};
+
 struct gpu_begin_frame_info
 {
     // Clear Color Info
     VkClearColorValue Color;
-    //vec4 Color;
     
     // Depth Stencil Info
     bool HasDepth;
@@ -37,28 +48,28 @@ struct gpu_index_buffer_create_info
     VkDeviceSize             Size;
 };
 
-struct gpu_set_scissor_info
-{
-    VkExtent2D Extent;
-    i32        XOffset, YOffset;
-};
-
-struct gpu_set_viewport_info
-{
-    r32 Width, Height;
-    r32 X, Y;
-};
-
 struct gpu_image_create_info
 {
 };
 
-struct gpu_draw_indexed_info
-{
-};
-
+// TODO(Dustin): Allow for instancing
 struct gpu_draw_info
 {
+    VkBuffer         *VertexBuffers;
+    u64              *Offsets;
+    u32               VertexBuffersCount;
+    
+    bool             IsIndexed;
+    VkBuffer         IndexBuffer;
+    
+    // will be either vertex count or index count depending if
+    // the draw is indexed
+    u32 Count;
+};
+
+struct gpu_bind_pipeline_info
+{
+    VkPipeline Pipeline;
 };
 
 struct gpu_descriptor_create_info
@@ -69,8 +80,13 @@ struct gpu_descriptor_update_info
 {
 };
 
-struct gpu_descriptor_bind_info
+struct gpu_descriptor_set_bind_info
 {
+    VkPipelineLayout PipelineLayout;
+    resource_id_t    DescriptorId;
+    u32             *DynamicOffsets;
+    u32              DynamicOffsetsCount;
+    u32              FirstSet;
 };
 
 struct gpu_command_buffer_begin_info
@@ -89,37 +105,53 @@ struct gpu_render_pass_end_info
 {
 };
 
+struct gpu_update_buffer_info
+{
+    resource_id_t  Uniform;
+    
+    // Offset into the uniform buffer
+    u32            BufferOffset = 0;
+    
+    void          *Data;
+    u32            DataSize;
+};
+
 enum gpu_command_type
 {
-    GpuCommand_BeginFrame,
-    GpuCommand_EndFrame,
+    GpuCmd_BeginFrame,
+    GpuCmd_EndFrame,
     
     //  Scissor/Viewport Commands
-    GpuCommand_SetScissor,
-    GpuCommand_SetViewport,
+    GpuCmd_SetScissor,
+    GpuCmd_SetViewport,
     
     // Upload Resources
-    GpuCommand_UploadVertexBuffer,
-    GpuCommand_UploadIndexBuffer,
-    GpuCommand_UploadImage,
+    GpuCmd_UploadVertexBuffer,
+    GpuCmd_UploadIndexBuffer,
+    GpuCmd_UploadImage,
+    
+    // Update Resources
+    GpuCmd_UpdateBuffer,
     
     // Drawing
-    GpuCommand_Draw,         // draw meshes w/o indices
-    GpuCommand_DrawIndexed,  // draw indexed meshes
+    GpuCmd_Draw,
     
     // Descriptors
-    GpuCommand_CreateDescriptor, // NOTE(Dustin): Currently done in Resources...
-    GpuCommand_UpdateDescriptor,
-    GpuCommand_CopyDescriptor,
-    GpuCommand_BindDescriptor,
+    GpuCmd_CreateDescriptor, // NOTE(Dustin): Currently done in Resources...
+    GpuCmd_UpdateDescriptor,
+    GpuCmd_CopyDescriptor,
     
-    // Command Buffer
-    GpuCommand_BeginCommandBuffer,
-    GpuCommand_EndCommandBuffer,
+    // Binding Resources
+    GpuCmd_BindPipeline,
+    GpuCmd_BindDescriptorSet,
+    
+    // Cmd Buffer
+    GpuCmd_BeginCommandBuffer,
+    GpuCmd_EndCommandBuffer,
     
     // Render Pass
-    GpuCommand_BeginRenderPass,
-    GpuCommand_EndRenderPass,
+    GpuCmd_BeginRenderPass,
+    GpuCmd_EndRenderPass,
 };
 
 struct gpu_command

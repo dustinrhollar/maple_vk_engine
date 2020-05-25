@@ -1,4 +1,68 @@
 
+namespace mm
+{
+    void InitDynUniformPool(dyn_uniform_pool *Pool, dynamic_buffer_create_info *Info)
+    {
+        u64 MinAlignment  = vk::GetMinUniformMemoryOffsetAlignment();
+        
+        Pool->Alignment   = (MinAlignment + Info->ElementStride - 1) & ~(MinAlignment - 1);
+        Pool->ElementSize = Info->ElementStride;
+        Pool->Offset      = 0;
+        
+        u64 BufferSize = Pool->Alignment * Info->ElementCount;
+        
+        VkBufferCreateInfo create_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+        create_info.size  = BufferSize;
+        create_info.usage = Info->Usage;
+        
+        VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.usage = Info->MemoryUsage;
+        alloc_info.flags = Info->MemoryFlags;
+        
+        if (Info->PersistentlyMapped)
+            alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        BufferParameters Buffer = {};
+        vk::CreateVmaBuffer(create_info,
+                            alloc_info,
+                            Buffer.Handle,
+                            Buffer.Memory,
+                            Buffer.AllocationInfo);
+        
+        Pool->Buffer = Buffer;
+    }
+    
+    void FreeDynUniformPool(dyn_uniform_pool *Pool)
+    {
+        vk::DestroyVmaBuffer(Pool->Buffer.Handle,
+                             Pool->Buffer.Memory);
+    }
+    
+    void AllocDynUniformPool(dyn_uniform_pool *Pool, void *Data, u32 Offset, bool IsMapped)
+    {
+        if (IsMapped)
+        {
+            memcpy((char*)Pool->Buffer.AllocationInfo.pMappedData + Offset, Data,
+                   Pool->ElementSize);
+        }
+        else
+        {
+            void *BufferPtr = nullptr;
+            vk::VmaMap(&BufferPtr, Pool->Buffer.Memory);
+            {
+                memcpy((char*)BufferPtr + Offset, Data, Pool->ElementSize);
+            }
+            vk::VmaUnmap(Pool->Buffer.Memory);
+        }
+    }
+    
+    void ResetDynUniformPool(dyn_uniform_pool *Pool, u32 Offset)
+    {
+        Pool->Offset = Offset;
+    }
+    
+}; // mm
+
 namespace mresource
 {
     struct descriptor_sizes
@@ -223,6 +287,8 @@ namespace mresource
     
     resource_id_t Load(frame_params *FrameParams, resource_type Type, void *Data)
     {
+        u32 SwapchainImageCount = vk::GetSwapChainImageCount();
+        
         resource_id_t Result = -1;
         resource Resource = {};
         Resource.Type = Type;
@@ -245,8 +311,6 @@ namespace mresource
             
             case Resource_DescriptorSet:
             {
-                u32 SwapchainImageCount = vk::GetSwapChainImageCount();
-                
                 descriptor_create_info *Info =
                     static_cast<descriptor_create_info*>(Data);
                 
@@ -309,6 +373,62 @@ namespace mresource
                 Result = RegistryAdd(&ResourceRegistry, Resource);
             } break;
             
+            case Resource_DescriptorSetWriteUpdate:
+            {
+                descriptor_update_write_info *Infos =
+                    static_cast<descriptor_update_write_info*>(Data);
+                
+                for (u32 SwapImage = 0; SwapImage < SwapchainImageCount; ++SwapImage)
+                {
+                    VkWriteDescriptorSet *DescriptorWrites =
+                        talloc<VkWriteDescriptorSet>(Infos->WriteInfosCount);
+                    
+                    for (u32 WriteInfo = 0; WriteInfo < Infos->WriteInfosCount; WriteInfo++)
+                    {
+                        resource UniformResource =
+                            ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].BufferId];
+                        
+                        resource DescriptorResource =
+                            ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].DescriptorId];
+                        
+                        // Set 0: View-Projection Matrices
+                        VkDescriptorBufferInfo *BufferInfo = talloc<VkDescriptorBufferInfo>(1);
+                        *BufferInfo = {};
+                        if (UniformResource.Type == Resource_UniformBuffer)
+                        {
+                            BufferInfo->buffer =
+                                UniformResource.UniformBuffer.Buffers[SwapImage].Handle;
+                        }
+                        else if (UniformResource.Type == Resource_DynamicUniformBuffer)
+                        {
+                            BufferInfo->buffer =
+                                UniformResource.DynamicUniformBuffer.Pools[SwapImage].Buffer.Handle;
+                        }
+                        else
+                            mprinte("Attempting to update an incorrect buffer type with a Descriptor!\n");
+                        
+                        BufferInfo->offset = 0;
+                        BufferInfo->range  = VK_WHOLE_SIZE;
+                        
+                        DescriptorWrites[WriteInfo] = {};
+                        DescriptorWrites[WriteInfo].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        DescriptorWrites[WriteInfo].dstSet           =
+                            DescriptorResource.DescriptorSet.DescriptorSets[SwapImage].Handle;
+                        DescriptorWrites[WriteInfo].dstBinding       =
+                            Infos->WriteInfos[WriteInfo].DescriptorBinding;
+                        DescriptorWrites[WriteInfo].dstArrayElement  = 0;
+                        DescriptorWrites[WriteInfo].descriptorType   =
+                            Infos->WriteInfos[WriteInfo].DescriptorType;
+                        DescriptorWrites[WriteInfo].descriptorCount  = 1;
+                        DescriptorWrites[WriteInfo].pBufferInfo      = BufferInfo;
+                        DescriptorWrites[WriteInfo].pImageInfo       = nullptr; // Optional
+                        DescriptorWrites[WriteInfo].pTexelBufferView = nullptr; // Optional
+                    }
+                    
+                    vk::UpdateDescriptorSets(DescriptorWrites, Infos->WriteInfosCount);
+                }
+            } break;
+            
             case Resource_VertexBuffer:
             {
                 vertex_buffer_create_info *Info =
@@ -335,7 +455,7 @@ namespace mresource
                 VertexBufferCreateInfo->Data             = Info->Data;
                 VertexBufferCreateInfo->Size             = Info->Size;
                 
-                AddGpuCommand(FrameParams, { GpuCommand_UploadVertexBuffer, VertexBufferCreateInfo });
+                AddGpuCommand(FrameParams, { GpuCmd_UploadVertexBuffer, VertexBufferCreateInfo });
             } break;
             
             case Resource_IndexBuffer:
@@ -364,7 +484,7 @@ namespace mresource
                 IndexBufferCreateInfo->Data             = Info->Data;
                 IndexBufferCreateInfo->Size             = Info->Size;
                 
-                AddGpuCommand(FrameParams, { GpuCommand_UploadIndexBuffer, IndexBufferCreateInfo });
+                AddGpuCommand(FrameParams, { GpuCmd_UploadIndexBuffer, IndexBufferCreateInfo });
             } break;
             
             case Resource_UniformBuffer:
@@ -374,13 +494,13 @@ namespace mresource
                 
                 resource_buffer RBuffer = {};
                 RBuffer.PersistentlyMapped = Info->PersistentlyMapped;
-                RBuffer.BufferCount        = Info->BufferCount;
-                RBuffer.Buffers            = palloc<BufferParameters>(Info->BufferCount);
+                RBuffer.BufferCount        = SwapchainImageCount;
+                RBuffer.Buffers            = palloc<BufferParameters>(SwapchainImageCount);
                 
-                for (u32 Buffer = 0; Buffer < Info->BufferCount; ++Buffer)
+                for (u32 Buffer = 0; Buffer < SwapchainImageCount; ++Buffer)
                 {
                     VkBufferCreateInfo create_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-                    create_info.size  = Info->SizePerBuffer;
+                    create_info.size  = Info->BufferSize;
                     create_info.usage = Info->Usage;
                     
                     VmaAllocationCreateInfo alloc_info = {};
@@ -403,6 +523,24 @@ namespace mresource
             
             case Resource_DynamicUniformBuffer:
             {
+                dynamic_buffer_create_info *Info =
+                    static_cast<dynamic_buffer_create_info*>(Data);
+                
+                resource_dynamic_buffer RBuffer = {};
+                RBuffer.PersistentlyMapped = Info->PersistentlyMapped;
+                RBuffer.PoolsCount         = SwapchainImageCount;
+                RBuffer.Pools              = palloc<mm::dyn_uniform_pool>(SwapchainImageCount);
+                
+                for (u32 Pool = 0; Pool < SwapchainImageCount; ++Pool)
+                {
+                    if (!RBuffer.PersistentlyMapped)
+                        mprinte("Attempting to create a dynamic uniform buffer that is not persistently mapped. This is not currently supported! Please map the buffer.\n");
+                    
+                    mm::InitDynUniformPool(&RBuffer.Pools[Pool], Info);
+                }
+                
+                Resource.DynamicUniformBuffer = RBuffer;
+                Result = RegistryAdd(&ResourceRegistry, Resource);
             } break;
             
             case Resource_Image:
@@ -569,7 +707,10 @@ namespace mresource
                 }
             } break;
             
-            default: break;
+            default:
+            {
+                mprinte("Unknown resource type %d\n", Type);
+            } break;
         }
         
         return Result;
@@ -577,6 +718,9 @@ namespace mresource
     
     file_internal void FreeResource(resource *Resource)
     {
+        // NOTE(Dustin): Probably need tyo unify this...
+        vk::Idle();
+        
         switch (Resource->Type)
         {
             case Resource_DescriptorSetLayout:
@@ -595,18 +739,31 @@ namespace mresource
             
             case Resource_VertexBuffer:
             {
+                vk::DestroyVmaBuffer(Resource->VertexBuffer.Buffer.Handle,
+                                     Resource->VertexBuffer.Buffer.Memory);
             } break;
             
             case Resource_IndexBuffer:
             {
+                vk::DestroyVmaBuffer(Resource->IndexBuffer.Buffer.Handle,
+                                     Resource->IndexBuffer.Buffer.Memory);
             } break;
             
             case Resource_UniformBuffer:
             {
+                u32 SwapchainImageCount = vk::GetSwapChainImageCount();
+                for (u32 Buffer = 0; Buffer < SwapchainImageCount; ++Buffer)
+                    vk::DestroyVmaBuffer(Resource->UniformBuffer.Buffers[Buffer].Handle,
+                                         Resource->UniformBuffer.Buffers[Buffer].Memory);
+                pfree(Resource->UniformBuffer.Buffers);
             } break;
             
             case Resource_DynamicUniformBuffer:
             {
+                u32 SwapchainImageCount = vk::GetSwapChainImageCount();
+                for (u32 Pool = 0; Pool < SwapchainImageCount; ++Pool)
+                    mm::FreeDynUniformPool(&Resource->DynamicUniformBuffer.Pools[Pool]);
+                pfree(Resource->DynamicUniformBuffer.Pools);
             } break;
             
             case Resource_Image:
@@ -623,4 +780,84 @@ namespace mresource
         }
     }
     
+    void UpdateUniform(resource_id_t Uniform, void *Data, u64 Size, u32 ImageIdx, u32 Offset)
+    {
+        resource *Resource = &ResourceRegistry.Resources[Uniform];
+        
+        // NOTE(Dustin): Two Type of uniforms currently supported:
+        // 1. Uniform
+        // 2. Dynamic Uniform
+        
+        if (Resource->Type == Resource_UniformBuffer)
+        {
+            BufferParameters Buffer = Resource->UniformBuffer.Buffers[ImageIdx];
+            
+            if (Resource->UniformBuffer.PersistentlyMapped)
+            {
+                void *BufferPtr = Buffer.AllocationInfo.pMappedData;
+                memcpy((char*)BufferPtr + Offset, Data, Size);
+            }
+            else
+            {
+                void *BufferPtr = nullptr;
+                vk::VmaMap(&BufferPtr, Buffer.Memory);
+                {
+                    memcpy((char*)BufferPtr + Offset, Data, Size);
+                }
+                vk::VmaUnmap(Buffer.Memory);
+            }
+        }
+        else if (Resource->Type == Resource_DynamicUniformBuffer)
+        {
+            mm::dyn_uniform_pool *Pool = &Resource->DynamicUniformBuffer.Pools[ImageIdx];
+            AllocDynUniformPool(Pool, Data, Offset, Resource->UniformBuffer.PersistentlyMapped);
+        }
+    }
+    
+    // used for DynamicUniformBuffers to reset their internal allocator
+    // Do not call directly! A Uniform reset should be done through the command
+    // Gpu_ResetUniformBuffer
+    void ResetDynamicUniformOffset(resource_id_t Uniform, u32 ImageIdx)
+    {
+        resource Resource = ResourceRegistry.Resources[Uniform];
+        
+        mm::dyn_uniform_pool *Pool = &Resource.DynamicUniformBuffer.Pools[ImageIdx];
+        Pool->Offset = 0;
+    }
+    
+    resource GetResource(resource_id_t ResourceId)
+    {
+        resource Resource = ResourceRegistry.Resources[ResourceId];
+        return Resource;
+    }
+    
+    dyn_uniform_template GetDynamicUniformTemplate(resource_id_t Uniform)
+    {
+        resource Resource = ResourceRegistry.Resources[Uniform];
+        
+        mm::dyn_uniform_pool Pool = Resource.DynamicUniformBuffer.Pools[0];
+        
+        dyn_uniform_template Template = {};
+        Template.Alignment   = Pool.Alignment;
+        Template.ElementSize = Pool.ElementSize;
+        Template.Size        = Pool.Buffer.Size;
+        Template.Offset      = 0;
+        
+        return Template;
+    }
+    
+    i64 DynUniformGetNextOffset(dyn_uniform_template *DynUniformTemplate)
+    {
+        i64 Result = DynUniformTemplate->Offset;
+        
+        if (DynUniformTemplate->Offset + DynUniformTemplate->Alignment > DynUniformTemplate->Size)
+        {
+            mprinte("Requesting another offset but not enough space for another element!\n");
+            Result = -1;
+        }
+        
+        DynUniformTemplate->Offset += DynUniformTemplate->Alignment;
+        
+        return Result;
+    }
 }; // mresource
