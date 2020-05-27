@@ -10,6 +10,7 @@ struct FileBuffer
 
 void CreateFileBuffer(FileBuffer *buffer, size_t size = 128);
 void DestroyFileBuffer(FileBuffer *buffer);
+inline void ResizeIfPossible(FileBuffer *buffer, u32 req_size);
 void ResizeFileBuffer(FileBuffer *buffer, u32 new_cap);
 i32 BufferUnusedSize(FileBuffer *buffer);
 
@@ -33,6 +34,8 @@ u64 StrToUInt64(char *str, char *stop);
 r32 StrToR32(char *buffer);
 jstring UInt64ToStr(u64 data);
 
+void CharToBinaryBuffer(FileBuffer *buffer, const char *data, u32 count);
+void Int32ToBinaryBuffer(FileBuffer *buffer, i32 *data, u32 count);
 void UInt16ToBinaryBuffer(FileBuffer *buffer, u16 *data, u32 count);
 void UInt32ToBinaryBuffer(FileBuffer *buffer, u32 *data, u32 count);
 void UInt64ToBinaryBuffer(FileBuffer *buffer, u64 *data, u32 count);
@@ -41,6 +44,7 @@ void BoolToBinaryBuffer(FileBuffer *buffer, bool *data, u32 count);
 void JStringToBinaryBuffer(FileBuffer *buffer, jstring &str);
 void FloatToBinaryBuffer(FileBuffer *buffer, r32 *data, u32 count);
 
+// TODO(Dustin): Allow for reading more than one value at a time
 void ReadFloatFromBinaryBuffer(FileBuffer *buffer, r32 *result);
 void ReadBoolFromBinaryBuffer(FileBuffer *buffer, bool *result);
 void ReadInt32FromBinaryBuffer(FileBuffer *buffer, i32 *result);

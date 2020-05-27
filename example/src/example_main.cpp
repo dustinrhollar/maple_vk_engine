@@ -171,6 +171,8 @@ void GameStageInit(frame_params* FrameParams)
     ModelCreateInfo->FrameParams = FrameParams;
     ModelAsset = masset::Load(Asset_Model, ModelCreateInfo);
     
+    masset::ConvertGlTF(ExampleModel);
+    
     ExampleModel.Clear();
     
     //~ Subscribe to necessary events
@@ -252,7 +254,6 @@ void GameStageShutdown(frame_params* FrameParams)
     VERT_SHADER.Clear();
     FRAG_SHADER.Clear();
 }
-
 
 file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix,
                                    dyn_uniform_template *PerObjectTemplate)

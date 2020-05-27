@@ -93,6 +93,17 @@ struct mesh
     // TODO(Dustin): Add instances here maybe?
 };
 
+/*
+
+Three known types of nodes:
+- Transformation Node : CHECK
+- Joint Node          : DONT CARE
+- Mesh Node           : CHECK
+
+
+
+*/
+
 struct model_node
 {
     jstring Name;
@@ -101,6 +112,9 @@ struct model_node
     
     model_node *Children;
     u64         ChildrenCount;
+    
+    u32 *ChildrenIndices;
+    u64  ChildrenIdxCount;
     
     bool HasTranslation;
     bool HasRotation;
@@ -128,11 +142,14 @@ struct model_node
     
     // Pointer to a mesh, if one exists
     mesh *Mesh;
+    
+    jstring MeshName;
 };
 
 struct model
 {
     // a disjoint set of nodes
+    // NOTE(Dustin): TEMPORARY
     model_node *Nodes;
     u32         NodesCount;
 };

@@ -202,6 +202,7 @@ void *VulkanLibrary;
 #include "resources/cgltf.h"
 #include "resources/resources.h"
 #include "resources/asset.h"
+#include "resources/mesh_converter.h"
 #include "renderer/frontend.h"
 #include "renderer/backend.h"
 #include "frame_info/frame_params.h"
@@ -209,6 +210,7 @@ void *VulkanLibrary;
 #include "frame_info/frame_params.cpp"
 #include "resources/asset.cpp"
 #include "resources/resources.cpp"
+#include "resources/mesh_converter.cpp"
 #include "renderer/frontend.cpp"
 #include "renderer/backend.cpp"
 
