@@ -31,6 +31,18 @@ SET GBL_LIB=%LIB_PATH% %EXT_LIB% libcpmtd.lib user32.lib Gdi32.lib winmm.lib
 
 SET INC=/I%EXT_DIR%
 
+IF NOT EXIST build\data\models\models\ (
+    1>NUL MKDIR build\data\models\models\
+)
+
+IF NOT EXIST build\data\models\binaries\ (
+    1>NUL MKDIR build\data\models\binaries\
+)
+
+IF NOT EXIST build\data\materials\ (
+    1>NUL MKDIR build\data\materials\
+)
+
 pushd %BUILD_DIR%\%GAME%
 	
 	echo Building platform...

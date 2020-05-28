@@ -198,6 +198,10 @@ void *VulkanLibrary;
 #include "config/config_parser.cpp"
 
 //~ Resource Managers
+
+#include "resources/resource_allocator.h"
+#include "resources/resource_allocator.cpp"
+
 #define CGLTF_IMPLEMENTATION
 #include "resources/cgltf.h"
 #include "resources/resources.h"

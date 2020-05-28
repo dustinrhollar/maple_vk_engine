@@ -67,8 +67,11 @@ struct primitive
     //MaterialParameters Material;
     //u32              MaterialId;
     
-    u64              IndexCount;
-    u64              VertexCount;
+    u32              IndexCount;
+    u32              VertexCount;
+    
+    u32              IndexStride;
+    u32              VertexStride;
     
     u64              IndicesOffset;
     u64              VerticesOffset;
@@ -77,17 +80,17 @@ struct primitive
     vec3             Max;
     
     bool             IsIndexed;
+    bool             IsSkinned;
+    
     resource_id_t    VertexBuffer;
     resource_id_t    IndexBuffer;
-    
-    void            *DataBlock; // Pointer to where the primitive data is organized in interleaved format
 };
 
 struct mesh
 {
-    ecs::Entity Entity;
+    jstring     Name; // Keep this?
     
-    primitive  *Primitives;
+    primitive **Primitives;
     u64         PrimitivesCount;
     
     // TODO(Dustin): Add instances here maybe?
@@ -106,52 +109,21 @@ Three known types of nodes:
 
 struct model_node
 {
-    jstring Name;
+    jstring     Name;
     
     model_node *Parent;
     
-    model_node *Children;
+    model_node **Children;
     u64         ChildrenCount;
     
-    u32 *ChildrenIndices;
-    u64  ChildrenIdxCount;
-    
-    bool HasTranslation;
-    bool HasRotation;
-    bool HasScale;
-    bool HasMatrix;
-    
-    // NOTE(Dustin): This is an experiment. I think that
-    // a node can have EITHER a Translation,Rotation,and Scale
-    // OR a Model Matrix.
-    
-    // NOTE(Dustin): When matrix is provided, it must be decomposable
-    // to TRS, and cannot skew or shear.
-    
-    // NOTE(Dustin): When a node is targeted for animation, only TRS
-    // properties will be present; matrix will not be present.
-    
-    vec3 Translation;
-    vec3 Scale;
-    vec4 Rotation; // this is a quaternion
-    
-    // TODO(Dustin): Decide on whether or not to use components OR
-    // matrix. If not matrix, extract the components from the matrix
-    // if one was provided.
-    mat4 Matrix;
+    vec3        Translation;
+    vec3        Scale;
+    vec4        Rotation; // this is a quaternion
     
     // Pointer to a mesh, if one exists
-    mesh *Mesh;
+    mesh       *Mesh;
     
-    jstring MeshName;
-};
-
-struct model
-{
-    // a disjoint set of nodes
-    // NOTE(Dustin): TEMPORARY
-    model_node *Nodes;
-    u32         NodesCount;
+    jstring     MeshName;
 };
 
 enum asset_type
@@ -163,7 +135,19 @@ enum asset_type
 
 struct asset_model
 {
-    model Model;
+    ecs::Entity Entity;
+    
+    model_node **RootModelNodes;
+    i32          RootModelNodesCount;
+    
+    model_node  *Nodes;
+    i32          NodesCount;
+    
+    mesh        *Meshes;
+    i32          MeshesCount;
+    
+    primitive   *Primitives;
+    i32          PrimitivesCount;
 };
 
 struct asset_texture
@@ -188,12 +172,16 @@ struct asset
 
 namespace masset
 {
-    asset_id_t Load(asset_type Type, void *Data);
+    void Init();
     void Free();
+    
+    asset_id_t Load(asset_type Type, void *Data);
     
     void Render(asset_id_t AssetId);
     
     asset* GetAsset(asset_id_t Id);
+    // uh...yea, that's a triple pointer.
+    // an asset array is an array of asset pointers...
     void GetModelAssets(asset **Assets, u32 *Count);
     
     // Retrieves a list of assets of the specified type

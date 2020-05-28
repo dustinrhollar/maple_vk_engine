@@ -28,6 +28,7 @@ namespace mm
                             Buffer.Handle,
                             Buffer.Memory,
                             Buffer.AllocationInfo);
+        Buffer.Size = BufferSize;
         
         Pool->Buffer = Buffer;
     }
@@ -94,10 +95,12 @@ namespace mresource
     
     struct resource_registry
     {
-        resource *Resources;
-        u32       Count;
-        u32       Cap;
+        resource **Resources;
+        u32        Count;
+        u32        Cap;
     } file_global ResourceRegistry;
+    
+    file_global mm::resource_allocator ResourceAllocator;
     
     file_internal void InitDescriptorPool(descriptor_pool *Pool);
     file_internal void FreeDescriptorPool(descriptor_pool *Pool);
@@ -121,20 +124,22 @@ namespace mresource
     {
         Registry->Count     = 0;
         Registry->Cap       = Cap;
-        Registry->Resources = palloc<resource>(Registry->Cap);
+        Registry->Resources = palloc<resource*>(Registry->Cap);
+        
+        mm::InitResourceAllocator(&ResourceAllocator, sizeof(resource), Cap);
         
         for (u32 i = 0; i < Registry->Cap; ++i)
-            Registry->Resources[i].Id = -1;
+            Registry->Resources[i] = nullptr;
     }
     
     file_internal void FreeRegistry(resource_registry *Registry)
     {
         for (u32 i = 0; i < Registry->Cap; ++i)
         {
-            if (Registry->Resources[i].Id != -1)
+            if (Registry->Resources[i])
             {
-                FreeResource(&Registry->Resources[i]);
-                Registry->Resources[i].Id = -1;
+                FreeResource(Registry->Resources[i]);
+                Registry->Resources[i] = nullptr;
             }
         }
         
@@ -145,14 +150,14 @@ namespace mresource
     
     file_internal void RegistryResize(resource_registry *Registry, u32 NewSize)
     {
-        resource *NewRegistry = palloc<resource>(NewSize);
+        resource **NewRegistry = palloc<resource*>(NewSize);
         
         for (u32 Idx = 0; Idx < Registry->Count; Idx++)
             NewRegistry[Idx] = Registry->Resources[Idx];
         
         // Mark empty slots as invalid resources
         for (u32 Idx = Registry->Count; Idx < NewSize; ++Idx)
-            NewRegistry[Idx].Id = -1;
+            NewRegistry[Idx] = nullptr;
         
         pfree(Registry->Resources);
         Registry->Resources = NewRegistry;
@@ -162,26 +167,30 @@ namespace mresource
     file_internal resource_id_t RegistryAdd(resource_registry *Registry, resource Resource)
     {
         if (Registry->Count + 1 >= Registry->Cap)
-            RegistryResize(Registry, (Registry->Cap>0) ? Registry->Cap*2 : 10);
+            RegistryResize(Registry, (Registry->Cap>0) ? Registry->Cap*2 : 20);
+        
+        resource *NewResource = (resource*)ResourceAllocatorAlloc(&ResourceAllocator);
+        *NewResource = Resource;
         
         resource_id_t Result = Registry->Count;
-        Resource.Id = Result;
-        Registry->Resources[Registry->Count++] = Resource;
+        NewResource->Id = Result;
+        Registry->Resources[Registry->Count++] = NewResource;
         
         return Result;
     }
     
     file_internal void RegistryRemove(resource_registry *Registry, u32 ResourceIdx)
     {
-        resource Resource = Registry->Resources[ResourceIdx];
-        FreeResource(&Resource);
-        Registry->Resources[ResourceIdx].Id = -1;
+        resource *Resource = Registry->Resources[ResourceIdx];
+        FreeResource(Resource);
+        ResourceAllocatorFree(&ResourceAllocator, Resource);
+        Registry->Resources[ResourceIdx]->Id = -1;
     }
     
     file_internal inline bool RegistryIsValidResource(resource_registry *Registry,
                                                       resource_id_t Id)
     {
-        return Id < Registry->Count && Registry->Resources[Id].Id == Id;
+        return Id < Registry->Count && Registry->Resources[Id]->Id == Id;
     }
     
     
@@ -276,11 +285,16 @@ namespace mresource
                            DescriptorSizes, 3, 3 * PoolList.MaxSetType);
         
         DescriptorPoolListAdd(&PoolList, Pool);
+        
+        InitRegistry(&ResourceRegistry, 10);
     }
     
     void Free(frame_params *FrameParams)
     {
+        vk::Idle();
+        
         FreeRegistry(&ResourceRegistry);
+        mm::FreeResourceAllocator(&ResourceAllocator);
         FreeDescriptorPoolList(&PoolList);
     }
     
@@ -321,9 +335,9 @@ namespace mresource
                 VkResult SetAllocResult;
                 VkDescriptorPool DescriptorPool;
                 
-                resource ResourceLayout =
+                resource *ResourceLayout =
                     ResourceRegistry.Resources[Info->DescriptorLayouts[0]];
-                VkDescriptorSetLayout Layout = ResourceLayout.DescriptorLayout.DescriptorLayout;
+                VkDescriptorSetLayout Layout = ResourceLayout->DescriptorLayout.DescriptorLayout;
                 
                 VkDescriptorSet *Sets = talloc<VkDescriptorSet>(SwapchainImageCount);
                 VkDescriptorSetLayout *Layouts = talloc<VkDescriptorSetLayout>(SwapchainImageCount);
@@ -385,24 +399,24 @@ namespace mresource
                     
                     for (u32 WriteInfo = 0; WriteInfo < Infos->WriteInfosCount; WriteInfo++)
                     {
-                        resource UniformResource =
+                        resource *UniformResource =
                             ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].BufferId];
                         
-                        resource DescriptorResource =
+                        resource *DescriptorResource =
                             ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].DescriptorId];
                         
                         // Set 0: View-Projection Matrices
                         VkDescriptorBufferInfo *BufferInfo = talloc<VkDescriptorBufferInfo>(1);
                         *BufferInfo = {};
-                        if (UniformResource.Type == Resource_UniformBuffer)
+                        if (UniformResource->Type == Resource_UniformBuffer)
                         {
                             BufferInfo->buffer =
-                                UniformResource.UniformBuffer.Buffers[SwapImage].Handle;
+                                UniformResource->UniformBuffer.Buffers[SwapImage].Handle;
                         }
-                        else if (UniformResource.Type == Resource_DynamicUniformBuffer)
+                        else if (UniformResource->Type == Resource_DynamicUniformBuffer)
                         {
                             BufferInfo->buffer =
-                                UniformResource.DynamicUniformBuffer.Pools[SwapImage].Buffer.Handle;
+                                UniformResource->DynamicUniformBuffer.Pools[SwapImage].Buffer.Handle;
                         }
                         else
                             mprinte("Attempting to update an incorrect buffer type with a Descriptor!\n");
@@ -413,7 +427,7 @@ namespace mresource
                         DescriptorWrites[WriteInfo] = {};
                         DescriptorWrites[WriteInfo].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                         DescriptorWrites[WriteInfo].dstSet           =
-                            DescriptorResource.DescriptorSet.DescriptorSets[SwapImage].Handle;
+                            DescriptorResource->DescriptorSet.DescriptorSets[SwapImage].Handle;
                         DescriptorWrites[WriteInfo].dstBinding       =
                             Infos->WriteInfos[WriteInfo].DescriptorBinding;
                         DescriptorWrites[WriteInfo].dstArrayElement  = 0;
@@ -450,8 +464,12 @@ namespace mresource
                 gpu_vertex_buffer_create_info *VertexBufferCreateInfo = talloc<gpu_vertex_buffer_create_info>(1);
                 VertexBufferCreateInfo->BufferCreateInfo = vertex_buffer_info;
                 VertexBufferCreateInfo->VmaCreateInfo    = vertex_alloc_info;
-                VertexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Handle;
-                VertexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Memory;
+                
+                VertexBufferCreateInfo->BufferParams = &ResourceRegistry.Resources[Result]->VertexBuffer.Buffer;
+                
+                //VertexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Handle;
+                //VertexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Memory;
+                
                 VertexBufferCreateInfo->Data             = Info->Data;
                 VertexBufferCreateInfo->Size             = Info->Size;
                 
@@ -479,8 +497,8 @@ namespace mresource
                 gpu_index_buffer_create_info *IndexBufferCreateInfo = talloc<gpu_index_buffer_create_info>(1);
                 IndexBufferCreateInfo->BufferCreateInfo = index_buffer_info;
                 IndexBufferCreateInfo->VmaCreateInfo    = index_alloc_info;
-                IndexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].IndexBuffer.Buffer.Handle;
-                IndexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].IndexBuffer.Buffer.Memory;
+                IndexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result]->IndexBuffer.Buffer.Handle;
+                IndexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result]->IndexBuffer.Buffer.Memory;
                 IndexBufferCreateInfo->Data             = Info->Data;
                 IndexBufferCreateInfo->Size             = Info->Size;
                 
@@ -658,10 +676,10 @@ namespace mresource
                     talloc<VkDescriptorSetLayout>(Info->DescriptorLayoutsCount);
                 for (u32 Set = 0; Set < Info->DescriptorLayoutsCount; ++Set)
                 {
-                    resource ResourceLayout =
+                    resource *ResourceLayout =
                         ResourceRegistry.Resources[Info->DescriptorLayoutIds[Set]];
                     
-                    Layouts[Set] = ResourceLayout.DescriptorLayout.DescriptorLayout;
+                    Layouts[Set] = ResourceLayout->DescriptorLayout.DescriptorLayout;
                 }
                 
                 VkPipelineLayoutCreateInfo PipelineLayoutInfo = {};
@@ -782,7 +800,7 @@ namespace mresource
     
     void UpdateUniform(resource_id_t Uniform, void *Data, u64 Size, u32 ImageIdx, u32 Offset)
     {
-        resource *Resource = &ResourceRegistry.Resources[Uniform];
+        resource *Resource = ResourceRegistry.Resources[Uniform];
         
         // NOTE(Dustin): Two Type of uniforms currently supported:
         // 1. Uniform
@@ -819,23 +837,23 @@ namespace mresource
     // Gpu_ResetUniformBuffer
     void ResetDynamicUniformOffset(resource_id_t Uniform, u32 ImageIdx)
     {
-        resource Resource = ResourceRegistry.Resources[Uniform];
+        resource *Resource = ResourceRegistry.Resources[Uniform];
         
-        mm::dyn_uniform_pool *Pool = &Resource.DynamicUniformBuffer.Pools[ImageIdx];
+        mm::dyn_uniform_pool *Pool = &Resource->DynamicUniformBuffer.Pools[ImageIdx];
         Pool->Offset = 0;
     }
     
     resource GetResource(resource_id_t ResourceId)
     {
-        resource Resource = ResourceRegistry.Resources[ResourceId];
+        resource Resource = *ResourceRegistry.Resources[ResourceId];
         return Resource;
     }
     
     dyn_uniform_template GetDynamicUniformTemplate(resource_id_t Uniform)
     {
-        resource Resource = ResourceRegistry.Resources[Uniform];
+        resource *Resource = ResourceRegistry.Resources[Uniform];
         
-        mm::dyn_uniform_pool Pool = Resource.DynamicUniformBuffer.Pools[0];
+        mm::dyn_uniform_pool Pool = Resource->DynamicUniformBuffer.Pools[0];
         
         dyn_uniform_template Template = {};
         Template.Alignment   = Pool.Alignment;

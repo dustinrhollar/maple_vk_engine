@@ -32,8 +32,12 @@ struct gpu_vertex_buffer_create_info
 {
     VkBufferCreateInfo       BufferCreateInfo;
     VmaAllocationCreateInfo  VmaCreateInfo;
-    VkBuffer                *Buffer;
-    VmaAllocation           *Allocation;
+    
+    //VkBuffer                *Buffer;
+    //VmaAllocation           *Allocation;
+    
+    BufferParameters        *BufferParams;
+    
     void                    *Data;
     VkDeviceSize             Size;
 };

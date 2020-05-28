@@ -1,6 +1,12 @@
 
 namespace masset
 {
+    const char *MODEL_OUTPUT_FOLDER     = "data/models/models/";
+    const char *BINARY_OUTPUT_FOLDER    = "data/models/binaries/";
+    const char *MATERIAL_OUTPUT_FOLDER  = "data/materials/";
+    const char *BINARY_EXTENSION        = ".bin";
+    const char *MODEL_EXTENSION         = ".model";
+    
     file_internal i32 ConvertNode(mesh_converter *Converter, cgltf_node *CgNode);
     file_internal i32 ConvertScene(mesh_converter *Converter, cgltf_scene *CgScene);
     
@@ -8,6 +14,8 @@ namespace masset
     {
         primitive_serial Primitive = {};
         Primitive.PrimitiveIdx = Converter->PrimitiveIdx++;
+        Primitive.VertexStride = sizeof(Vertex);
+        Primitive.IndexStride  = sizeof(u32);
         
         if (CgPrimitive->indices)
         {
@@ -310,7 +318,7 @@ namespace masset
         else
         {
             Node.HasRotation = false;
-            Node.Rotation = {0.0f,0.0f,0.0f,0.0f};
+            Node.Rotation = {0.0f,0.0f,0.0f,1.0f};
         }
         
         if (CgNode->has_matrix)
@@ -358,20 +366,450 @@ namespace masset
     
     file_internal i32 ConvertScene(mesh_converter *Converter, cgltf_scene *CgScene)
     {
-        model_serial Model = {};
-        Model.ModelIdx     = Converter->ModelIdx++;
-        Model.NodesCount   = (u32)CgScene->nodes_count;
-        Model.NodesIdx     = talloc<i32>(Model.NodesCount);
+        scene_serial Scene = {};
+        Scene.SceneIdx     = Converter->SceneIdx++;
+        Scene.NodesCount   = (u32)CgScene->nodes_count;
+        Scene.NodesIdx     = talloc<i32>(Scene.NodesCount);
         
-        for (int i = 0; i < Model.NodesCount; ++i)
+        for (int i = 0; i < Scene.NodesCount; ++i)
         {
             i32 Idx = ConvertNode(Converter, CgScene->nodes[i]);
-            Model.NodesIdx[i] = Idx;
+            Scene.NodesIdx[i] = Idx;
         }
         
-        Converter->SerialModelList[Model.ModelIdx] = Model;
+        Converter->SerialSceneList[Scene.SceneIdx] = Scene;
         
-        return Model.ModelIdx;
+        return Scene.SceneIdx;
+    }
+    
+    file_internal bool CheckTextBufferResize(FileBuffer *Buffer, i32 WrittenChars)
+    {
+        bool Result = false;
+        if (WrittenChars > BufferUnusedSize(Buffer))
+        {
+            ResizeFileBuffer(Buffer, Buffer->cap * 2);
+            Result = true;
+        }
+        return Result;
+    }
+    
+    file_internal void SerializeTexture(FileBuffer *Buffer, texture_serial *Texture, const char *TextureHeader)
+    {
+        i32 Ret;
+        
+        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "{%s}\n", TextureHeader);
+        if (CheckTextBufferResize(Buffer, Ret))
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "{%s}\n", TextureHeader);
+        Buffer->brkp += Ret;
+        
+        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "Filename : str = \"%s\"\n",
+                                Texture->Filename.GetCStr());
+        if (CheckTextBufferResize(Buffer, Ret))
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), " : str = \"%s\"\n",
+                                    Texture->Filename.GetCStr());
+        Buffer->brkp += Ret;
+        
+        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MinFilter : i32 = %d\n",
+                                Texture->MinFilter);
+        if (CheckTextBufferResize(Buffer, Ret))
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MinFilter : i32 = %d\n",
+                                    Texture->MinFilter);
+        Buffer->brkp += Ret;
+        
+        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MagFilter : i32 = %d\n",
+                                Texture->MagFilter);
+        if (CheckTextBufferResize(Buffer, Ret))
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MagFilter : i32 = %d\n",
+                                    Texture->MagFilter);
+        Buffer->brkp += Ret;
+        
+        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeU : i32 = %d\n",
+                                Texture->AddressModeU);
+        if (CheckTextBufferResize(Buffer, Ret))
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeU : i32 = %d\n",
+                                    Texture->AddressModeU);
+        Buffer->brkp += Ret;
+        
+        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeV : i32 = %d\n",
+                                Texture->AddressModeV);
+        if (CheckTextBufferResize(Buffer, Ret))
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeV : i32 = %d\n",
+                                    Texture->AddressModeV);
+        Buffer->brkp += Ret;
+        
+        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeW : i32 = %d\n",
+                                Texture->AddressModeW);
+        if (CheckTextBufferResize(Buffer, Ret))
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeW : i32 = %d\n",
+                                    Texture->AddressModeW);
+        Buffer->brkp += Ret;
+        
+        { // spacing...
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "\n");
+            if (CheckTextBufferResize(Buffer, Ret))
+                Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "\n");
+            Buffer->brkp += Ret;
+        }
+    }
+    
+    file_internal void SerializeMaterial(mesh_converter *Converter, material_serial *Material)
+    {
+        jstring OutFile;
+        {
+            jstring Interim = MATERIAL_OUTPUT_FOLDER + Material->Name;
+            OutFile = Interim + ".mat";
+            Interim.Clear();
+        }
+        mprint("Material out file: %s\n", OutFile.GetCStr());
+        
+        FileBuffer Buffer;
+        CreateFileBuffer(&Buffer, sizeof(material_serial));
+        
+        i32 Ret;
+        { // write header for material
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Material}\n");
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Material}\n");
+            Buffer.brkp += Ret;
+        }
+        
+        { // name of the material
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Name : str = \"%s\"\n",
+                                    Material->Name.GetCStr());
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Name : str = \"%s\"\n",
+                                        Material->Name.GetCStr());
+            Buffer.brkp += Ret;
+        }
+        
+        { // the bools to the file
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRMetallicRoughness : i32 = %d\n",
+                                    Material->HasPBRMetallicRoughness);
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRMetallicRoughness : i32 = %d\n",
+                                        Material->HasPBRMetallicRoughness);
+            Buffer.brkp += Ret;
+            
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRSpecularGlossiness : i32 = %d\n",
+                                    Material->HasPBRSpecularGlossiness);
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRSpecularGlossiness : i32 = %d\n",
+                                        Material->HasPBRSpecularGlossiness);
+            Buffer.brkp += Ret;
+            
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasClearCoat : i32 = %d\n",
+                                    Material->HasClearCoat);
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasClearCoat : i32 = %d\n",
+                                        Material->HasClearCoat);
+            Buffer.brkp += Ret;
+        }
+        
+        { // misc. settings
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaMode : i32 = %d\n",
+                                    Material->AlphaMode);
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaMode : i32 = %d\n",
+                                        Material->AlphaMode);
+            Buffer.brkp += Ret;
+            
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaCutoff : r32 = %d\n",
+                                    Material->AlphaCutoff);
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaCutoff : r32 = %lf\n",
+                                        Material->AlphaCutoff);
+            Buffer.brkp += Ret;
+            
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "DoubleSided : i32 = %d\n",
+                                    Material->DoubleSided);
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "DoubleSided : i32 = %d\n",
+                                        Material->DoubleSided);
+            Buffer.brkp += Ret;
+            
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Unlit : i32 = %d\n",
+                                    Material->Unlit);
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Unlit : i32 = %d\n",
+                                        Material->Unlit);
+            Buffer.brkp += Ret;
+        }
+        
+        { // spacing...
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+            Buffer.brkp += Ret;
+        }
+        
+        { // Metallic Parameters...
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Metallic-Roughness}\n");
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Metallic-Roughness}\n");
+            Buffer.brkp += Ret;
+            
+            if (Material->HasPBRMetallicRoughness)
+            {
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                        "BaseColorFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
+                                        Material->BaseColorFactor.x,
+                                        Material->BaseColorFactor.y,
+                                        Material->BaseColorFactor.z,
+                                        Material->BaseColorFactor.w);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                            "BaseColorFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
+                                            Material->BaseColorFactor.x,
+                                            Material->BaseColorFactor.y,
+                                            Material->BaseColorFactor.z,
+                                            Material->BaseColorFactor.w);
+                Buffer.brkp += Ret;
+                
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "MetallicFactor : r32 = %lf\n",
+                                        Material->MetallicFactor);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "MetallicFactor : r32 = %lf\n",
+                                            Material->MetallicFactor);
+                Buffer.brkp += Ret;
+                
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "RoughnessFactor : r32 = %lf\n",
+                                        Material->RoughnessFactor);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "RoughnessFactor : r32 = %lf\n",
+                                            Material->RoughnessFactor);
+                Buffer.brkp += Ret;
+                
+                { // spacing...
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+                    if (CheckTextBufferResize(&Buffer, Ret))
+                        Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+                    Buffer.brkp += Ret;
+                }
+                
+                SerializeTexture(&Buffer, &Material->BaseColorTexture, "Base Color Texture");
+                SerializeTexture(&Buffer, &Material->MetallicRoughnessTexture, "Metallic Roughness Texture");
+            }
+            
+        }
+        
+        { // Specular Glossy Parameters...
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Specular-Glossy}\n");
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Specular-Glossy}\n");
+            Buffer.brkp += Ret;
+            
+            if (Material->HasPBRSpecularGlossiness)
+            {
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                        "DiffuseFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
+                                        Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z,
+                                        Material->DiffuseFactor.w);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                            "DiffuseFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
+                                            Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z,
+                                            Material->DiffuseFactor.w);
+                Buffer.brkp += Ret;
+                
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                        "SpecularFactor : vec3 = [%lf,%lf,%lf]\n",
+                                        Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                            "SpecularFactor : vec3 = [%lf,%lf,%lf]\n",
+                                            Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z);
+                Buffer.brkp += Ret;
+                
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                        "GlossinessFactor : r32 = %lf\n",
+                                        Material->GlossinessFactor);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                            "GlossinessFactor : r32 = %lf\n",
+                                            Material->GlossinessFactor);
+                Buffer.brkp += Ret;
+                
+                { // spacing...
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+                    if (CheckTextBufferResize(&Buffer, Ret))
+                        Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+                    Buffer.brkp += Ret;
+                }
+                
+                SerializeTexture(&Buffer, &Material->DiffuseTexture, "Diffuse Texture");
+                SerializeTexture(&Buffer, &Material->SpecularGlossinessTexture, "Specular Glossiness Texture");
+            }
+        }
+        
+        { // spacing...
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+            Buffer.brkp += Ret;
+        }
+        
+        { // Specular Glossy Parameters...
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Clear Coat}\n");
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Clear Coat}\n");
+            Buffer.brkp += Ret;
+            
+            if (Material->HasClearCoat)
+            {
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                        "ClearCoatFactor : r32 = %lf\n",
+                                        Material->ClearCoatFactor);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                            "ClearCoatFactor : r32 = %lf\n",
+                                            Material->ClearCoatFactor);
+                Buffer.brkp += Ret;
+                
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                        "ClearCoarRoughnessFactor : r32 = %lf\n",
+                                        Material->ClearCoarRoughnessFactor);
+                if (CheckTextBufferResize(&Buffer, Ret))
+                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
+                                            "ClearCoarRoughnessFactor : r32 = %lf\n",
+                                            Material->ClearCoarRoughnessFactor);
+                Buffer.brkp += Ret;
+                
+                SerializeTexture(&Buffer, &Material->ClearCoatTexture, "Clear Coat Texture");
+                SerializeTexture(&Buffer, &Material->ClearCoatRoughnessTexture, "Clear Coat Roughness Texture");
+                SerializeTexture(&Buffer, &Material->ClearCoatNormalTexture, "Clear Coat Normal Texture");
+            }
+        }
+        
+        { // spacing...
+            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+            if (CheckTextBufferResize(&Buffer, Ret))
+                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
+            Buffer.brkp += Ret;
+        }
+        
+        SerializeTexture(&Buffer, &Material->NormalTexture, "Normal Texture");
+        SerializeTexture(&Buffer, &Material->OcclusionTexture, "Occlusion Texture");
+        SerializeTexture(&Buffer, &Material->EmissiveTexture, "Emissive Texture");
+        
+        PlatformWriteBufferToFile(OutFile, Buffer.start, Buffer.brkp - Buffer.start);
+    }
+    
+    file_internal void ConvertTexture(mesh_converter *Converter, cgltf_texture *CgTexture, texture_serial *Texture)
+    {
+        if (CgTexture->sampler) {
+            Texture->MagFilter = CgTexture->sampler->mag_filter; // store?
+            Texture->MinFilter = CgTexture->sampler->min_filter; // store?
+            
+            Texture->AddressModeU = CgTexture->sampler->wrap_s; // wrapS
+            Texture->AddressModeV = CgTexture->sampler->wrap_t; // wrapT
+            Texture->AddressModeW = CgTexture->sampler->wrap_s; // ??
+        }
+        // Load the CgTexture
+        jstring Fullpath = InitJString(((u32)strlen(CgTexture->image->uri)) + Converter->Directory.len);
+        AddJString(Fullpath, Converter->Directory, CgTexture->image->uri);
+        
+        // TODO(Dustin): Copy the texture to the build/data/textures/ directory
+        
+        
+        // TODO(Dustin): Assgin the texture path to be the new directory
+        Texture->Filename = Fullpath; // use the old path...for now
+    }
+    
+    file_internal void ConvertMaterials(mesh_converter *Converter)
+    {
+        u32 MaterialCount = Converter->Data->materials_count;
+        for (u32 MaterialIdx = 0; MaterialIdx < MaterialCount; ++MaterialIdx)
+        {
+            cgltf_material CgMaterial = Converter->Data->materials[MaterialIdx];
+            material_serial Material = {};
+            
+            if (CgMaterial.name) {
+                Material.Name = InitJString(CgMaterial.name);
+                printf("Material %s.\n", Material.Name.GetCStr());
+            }
+            
+            Material.HasPBRMetallicRoughness  = CgMaterial.has_pbr_metallic_roughness;
+            Material.HasPBRSpecularGlossiness = CgMaterial.has_pbr_specular_glossiness;
+            Material.HasClearCoat             = CgMaterial.has_clearcoat;
+            
+            // NOTE(Dustin): This is a very silly if-statement, but I want to be able to detect
+            // if there will ever be a combination of these settings
+            if (Material.HasPBRMetallicRoughness  && Material.HasPBRSpecularGlossiness ||
+                Material.HasPBRMetallicRoughness  && Material.HasClearCoat ||
+                Material.HasPBRSpecularGlossiness && Material.HasClearCoat ||
+                Material.HasPBRMetallicRoughness  && Material.HasPBRSpecularGlossiness && Material.HasClearCoat)
+            {
+                printf("%s Meterial has a combination of material types!\n", Material.Name.GetCStr());
+            }
+            
+            if (Material.HasPBRMetallicRoughness) {
+                cgltf_pbr_metallic_roughness cmr = CgMaterial.pbr_metallic_roughness;
+                
+                cgltf_texture_view bctv = cmr.base_color_texture;
+                cgltf_texture_view mrtv = cmr.metallic_roughness_texture;
+                
+                if (bctv.texture) {
+                    cgltf_texture *bct = bctv.texture;
+                    ConvertTexture(Converter, bct, &Material.BaseColorTexture);
+                }
+                
+                if (mrtv.texture) {
+                    cgltf_texture *mrt = mrtv.texture;
+                    ConvertTexture(Converter, mrt, &Material.MetallicRoughnessTexture);
+                }
+                
+                Material.BaseColorFactor = MakeVec4(cmr.base_color_factor); // Will this always be a vec4?
+                Material.MetallicFactor  = cmr.metallic_factor;
+                Material.RoughnessFactor = cmr.roughness_factor;
+            }
+            else if (Material.HasPBRSpecularGlossiness) {
+                cgltf_pbr_specular_glossiness csg = CgMaterial.pbr_specular_glossiness;
+                
+                cgltf_texture_view dv = csg.diffuse_texture;
+                cgltf_texture_view sgtv = csg.specular_glossiness_texture;
+                
+                if (dv.texture) {
+                    cgltf_texture *dt = dv.texture;
+                    ConvertTexture(Converter, dt, &Material.DiffuseTexture);
+                }
+                
+                if (sgtv.texture) {
+                    cgltf_texture *sgt = sgtv.texture;
+                    ConvertTexture(Converter, sgt, &Material.SpecularGlossinessTexture);
+                }
+                
+                Material.DiffuseFactor    = MakeVec4(csg.diffuse_factor);
+                Material.SpecularFactor   = MakeVec3(csg.specular_factor);
+                Material.GlossinessFactor = csg.glossiness_factor;;
+            }
+            else if (Material.HasClearCoat) {
+                cgltf_clearcoat cc = CgMaterial.clearcoat;
+                
+                cgltf_texture_view cctv = cc.clearcoat_texture;
+                cgltf_texture_view ccrtv = cc.clearcoat_roughness_texture;
+                cgltf_texture_view ccntv = cc.clearcoat_normal_texture;
+                
+                if (cctv.texture) {
+                    cgltf_texture *cct = cctv.texture;
+                    ConvertTexture(Converter, cct, &Material.ClearCoatTexture);
+                }
+                
+                if (ccrtv.texture) {
+                    cgltf_texture *ccrt = ccrtv.texture;
+                    ConvertTexture(Converter, ccrt, &Material.ClearCoatRoughnessTexture);
+                }
+                
+                if (ccntv.texture) {
+                    cgltf_texture *ccnt = ccrtv.texture;
+                    ConvertTexture(Converter, ccnt, &Material.ClearCoatNormalTexture);
+                }
+                
+                Material.ClearCoatFactor = cc.clearcoat_factor;
+                Material.ClearCoarRoughnessFactor = cc.clearcoat_roughness_factor;
+            }
+            
+            SerializeMaterial(Converter, &Material);
+        }
     }
     
     void ConvertGlTF(jstring Filename)
@@ -385,6 +823,7 @@ namespace masset
             
             if (ptr == nullptr) {
                 mprinte("Could not find directory!\n");
+                return;
             }
         }
         
@@ -396,8 +835,50 @@ namespace masset
         
         Converter.Directory = InitJString(dirname, (u32)len);
         
+        const char* Extension = strrchr(cfile, '.');
+        if (ptr == nullptr) {
+            mprinte("Could not find the extensions!\n");
+            return;
+        }
+        
+        Extension++;
+        
+        jstring CorrectExtension = InitJString("gltf");
+        
+        if (!(CorrectExtension == Extension))
+        {
+            mprinte("File extension for a model is not a glTF file!\n");
+            return;
+        }
+        
+        const char *ModelName = Filename.GetCStr() + len;
+        u32 FilenameLen =  Extension - ModelName - 1;
+        jstring ModelFilename = InitJString(ModelName, FilenameLen);;
+        
+        jstring OutputModelFilename;
+        jstring OutputBinaryFilename;
+        {
+            jstring TempModelPath = MODEL_OUTPUT_FOLDER + ModelFilename;
+            jstring TempBinPath   = BINARY_OUTPUT_FOLDER + ModelFilename;
+            
+            OutputModelFilename  = TempModelPath + MODEL_EXTENSION;
+            OutputBinaryFilename = TempBinPath   + BINARY_EXTENSION;
+            
+            TempModelPath.Clear();
+            TempBinPath.Clear();
+        }
+        
+        CorrectExtension.Clear();
+        ModelFilename.Clear();
+        
+#if 0
         PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Filename %s\n", cfile);
         PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Directory %s\n", Converter.Directory.GetCStr());
+        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Out model file %s\n",
+                             OutputModelFilename.GetCStr());
+        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Out binary file %s\n",
+                             OutputBinaryFilename.GetCStr());
+#endif
         
         cgltf_options options = {0};
         Converter.Data = nullptr;
@@ -417,13 +898,16 @@ namespace masset
             return;
         }
         
+        //~ Parse and Serialize Materials
+        ConvertMaterials(&Converter);
+        
         //~ Convert the Scene
         
         Converter.NodeIdx         = 0;
         Converter.MeshIdx         = 0;
         Converter.PrimitiveIdx    = 0;
         Converter.SerialNodeList  = talloc<model_node_serial>(Converter.Data->nodes_count);
-        Converter.SerialModelList = talloc<model_serial>(Converter.Data->scenes_count);
+        Converter.SerialSceneList = talloc<scene_serial>(Converter.Data->scenes_count);
         Converter.SerialMeshList  = talloc<mesh_serial>(Converter.Data->meshes_count);
         CreateFileBuffer(&Converter.PrimitiveDataBlock);
         
@@ -436,7 +920,8 @@ namespace masset
         
         Converter.SerialPrimitiveList = talloc<primitive_serial>(PrimitivesCount);
         
-        ConvertScene(&Converter, &Converter.Data->scenes[0]);
+        for (u32 Scene = 0; Scene < Converter.Data->scenes_count; ++Scene)
+            ConvertScene(&Converter, &Converter.Data->scenes[Scene]);
         
         //~ Serialize the mesh
         
@@ -447,10 +932,7 @@ namespace masset
         FileBuffer Buffer;
         CreateFileBuffer(&Buffer, ExpectedFileSize);
         
-        // Serialize the binary buffer
-        u64 BufferSize = Converter.PrimitiveDataBlock.brkp - Converter.PrimitiveDataBlock.start;
-        UInt64ToBinaryBuffer(&Buffer, &BufferSize, 1);
-        CharToBinaryBuffer(&Buffer, Converter.PrimitiveDataBlock.start, BufferSize);
+        JStringToBinaryBuffer(&Buffer, OutputBinaryFilename);
         
         // Serialize primitives
         Int32ToBinaryBuffer(&Buffer, &Converter.PrimitiveIdx, 1);
@@ -490,7 +972,6 @@ namespace masset
         for (u32 Node = 0; Node < Converter.NodeIdx; ++Node)
         {
             JStringToBinaryBuffer(&Buffer, Converter.SerialNodeList[Node].Name);
-            JStringToBinaryBuffer(&Buffer, Converter.SerialNodeList[Node].MeshName);
             
             Int32ToBinaryBuffer(&Buffer, &Converter.SerialNodeList[Node].ParentIdx, 1);
             
@@ -502,137 +983,38 @@ namespace masset
             FloatToBinaryBuffer(&Buffer, Converter.SerialNodeList[Node].Scale.data, 3);
             FloatToBinaryBuffer(&Buffer, Converter.SerialNodeList[Node].Rotation.data, 4);
             
+            Int32ToBinaryBuffer(&Buffer, &Converter.SerialNodeList[Node].MeshIdx, 1);
+            //JStringToBinaryBuffer(&Buffer, Converter.SerialNodeList[Node].MeshName);
+            
             Converter.SerialNodeList[Node].Name.Clear();
             Converter.SerialNodeList[Node].MeshName.Clear();
         }
         
+        // serialize the disjoint set
+        Int32ToBinaryBuffer(&Buffer, &Converter.SceneIdx, 1);
+        for (u32 Scene = 0; Scene < Converter.SceneIdx; ++Scene)
+        {
+            UInt32ToBinaryBuffer(&Buffer, &Converter.SerialSceneList[Scene].NodesCount, 1);
+            Int32ToBinaryBuffer(&Buffer, Converter.SerialSceneList[Scene].NodesIdx,
+                                Converter.SerialSceneList[Scene].NodesCount);
+        }
+        
         // Finally...write to the file
-        jstring BinaryFilename = InitJString("fox.model");
+        PlatformWriteBufferToFile(OutputModelFilename, Buffer.start, Buffer.brkp - Buffer.start);
         
-        PlatformWriteBufferToFile(BinaryFilename, Buffer.start, Buffer.brkp - Buffer.start);
+        // Serialize the binary buffer
+        // NOTE(Dustin): Go back and check this actually works :)
+        PlatformWriteBufferToFile(OutputBinaryFilename,
+                                  Converter.PrimitiveDataBlock.start,
+                                  Converter.PrimitiveDataBlock.brkp - Converter.PrimitiveDataBlock.start);
         
-        // Clean Resources
+        //~ Clean Resources
+        
         DestroyFileBuffer(&Converter.PrimitiveDataBlock);
         DestroyFileBuffer(&Buffer);
-        BinaryFilename.Clear();
         Converter.Directory.Clear();
-        
-#if 0
-        //~ As a test, let's read the file back in to see if it wrote correctly...
-        jstring FileContents = PlatformLoadFile(File);
-        Buffer.cap   = FileContents.len;
-        Buffer.start = FileContents.GetCStr();
-        Buffer.brkp  = Buffer.start;
-        
-        i32 ReadNodeCount;
-        ReadInt32FromBinaryBuffer(&Buffer, &ReadNodeCount);
-        assert(ReadNodeCount == Converter.NodeIdx);
-        
-        model_node_serial *ReadNodeList = talloc<model_node_serial>(ReadNodeCount);
-        for (u32 Node = 0; Node < ReadNodeCount; ++Node)
-        {
-            ReadJStringFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Name);
-            ReadJStringFromBinaryBuffer(&Buffer, &ReadNodeList[Node].MeshName);
-            
-            ReadInt32FromBinaryBuffer(&Buffer, &ReadNodeList[Node].ParentIdx);
-            
-            ReadUInt64FromBinaryBuffer(&Buffer, &ReadNodeList[Node].ChildrenCount);
-            ReadNodeList[Node].ChildrenIndices = talloc<i32>(ReadNodeList[Node].ChildrenCount);
-            
-            for (i32 Idx = 0; Idx < ReadNodeList[Node].ChildrenCount; ++Idx)
-            {
-                ReadInt32FromBinaryBuffer(&Buffer, &ReadNodeList[Node].ChildrenIndices[Idx]);
-            }
-            
-            // Tranlation vec
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Translation.x);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Translation.y);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Translation.z);
-            
-            // Scaling
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Scale.x);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Scale.y);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Scale.z);
-            
-            // Quaternion Rotation
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Rotation.x);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Rotation.y);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Rotation.z);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadNodeList[Node].Rotation.w);
-        }
-        
-        FileContents.Clear();
-        File.Clear();
-        
-        //~ As a test, let's read the mesh file back in to see if it wrote correctly...
-        
-        FileContents = PlatformLoadFile(File);
-        Buffer.cap   = FileContents.len;
-        Buffer.start = FileContents.GetCStr();
-        Buffer.brkp  = Buffer.start;
-        
-        i32 ReadMeshCount;
-        ReadInt32FromBinaryBuffer(&Buffer, &ReadMeshCount);
-        assert(ReadMeshCount == Converter.MeshIdx);
-        
-        mesh_serial *ReadMeshList = talloc<mesh_serial>(ReadMeshCount);
-        for (u32 Mesh = 0; Mesh < ReadMeshCount; ++Mesh)
-        {
-            ReadJStringFromBinaryBuffer(&Buffer, &ReadMeshList[Mesh].MeshName);
-            
-            ReadUInt64FromBinaryBuffer(&Buffer, &ReadMeshList[Mesh].PrimitivesCount);
-            ReadMeshList[Mesh].PrimitivesIdx = talloc<i32>(ReadMeshList[Mesh].PrimitivesCount);
-            
-            for (i32 Idx = 0; Idx < ReadMeshList[Mesh].PrimitivesCount; ++Idx)
-            {
-                ReadInt32FromBinaryBuffer(&Buffer, &ReadMeshList[Mesh].PrimitivesIdx[Idx]);
-            }
-        }
-        
-        FileContents.Clear();
-        File.Clear();
-        
-        //~ As a test, let's read the mesh file back in to see if it wrote correctly...
-        
-        FileContents = PlatformLoadFile(File);
-        Buffer.cap   = FileContents.len;
-        Buffer.start = FileContents.GetCStr();
-        Buffer.brkp  = Buffer.start;
-        
-        
-        i32 ReadPrimitiveCount;
-        ReadInt32FromBinaryBuffer(&Buffer, &ReadPrimitiveCount);
-        assert(ReadPrimitiveCount == Converter.PrimitiveIdx);
-        
-        primitive_serial *ReadPrimitiveList = talloc<primitive_serial>(ReadPrimitiveCount);
-        for (u32 Primitive = 0; Primitive < ReadPrimitiveCount; ++Primitive)
-        {
-            //ReadJStringFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].BinaryFilename);
-            
-            // Data info
-            ReadUInt64FromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].Offset);
-            ReadUInt32FromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].IndexCount);
-            ReadUInt32FromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].VertexCount);
-            ReadBoolFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].IsSkinned);
-            
-            
-            // Min/Max data for the primitve
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].Min.x);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].Min.y);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].Min.z);
-            
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].Max.x);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].Max.y);
-            ReadFloatFromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].Max.z);
-            
-            // Vertex/Index Stride
-            ReadUInt32FromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].VertexStride);
-            ReadUInt32FromBinaryBuffer(&Buffer, &ReadPrimitiveList[Primitive].IndexStride);
-        }
-        
-        FileContents.Clear();
-        File.Clear();
-#endif
+        OutputModelFilename.Clear();
+        OutputBinaryFilename.Clear();
     }
     
 } // masset

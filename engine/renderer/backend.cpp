@@ -292,8 +292,8 @@ void GpuStageEntry(frame_params *FrameParams)
                 vk::CreateVmaBufferWithStaging(CommandPool,
                                                Info->BufferCreateInfo,
                                                Info->VmaCreateInfo,
-                                               *(Info->Buffer),
-                                               *(Info->Allocation),
+                                               (Info->BufferParams->Handle),
+                                               (Info->BufferParams->Memory),
                                                Info->Data,
                                                Info->Size);
             } break;

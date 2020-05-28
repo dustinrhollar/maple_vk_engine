@@ -163,15 +163,33 @@ void GameStageInit(frame_params* FrameParams)
     
     GlobalPipeline = mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
     
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo); // used mem goes from 976 -> 1000 here
+    
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo); // used mem goes from 1000 -> 984 here
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
+    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
+    
     //~ Asset Loading
-    jstring ExampleModel = InitJString("data/models/Fox/glTF/fox.gltf");
+    
+#if 1
+    //jstring ExampleGltfModel = InitJString("data/glTF/Fox/glTF/fox.gltf");
+    jstring ExampleGltfModel = InitJString("data/glTF/Lantern/Lantern.gltf");
+    
+    masset::ConvertGlTF(ExampleGltfModel);
+    ExampleGltfModel.Clear();
+#endif
+    
+    //jstring ExampleModel = InitJString("data/models/models/fox.model");
+    jstring ExampleModel = InitJString("data/models/models/Lantern.model");
     
     model_create_info *ModelCreateInfo = talloc<model_create_info>(1);
-    ModelCreateInfo->Filename    = ExampleModel;
-    ModelCreateInfo->FrameParams = FrameParams;
+    ModelCreateInfo->Filename          = ExampleModel;
+    ModelCreateInfo->FrameParams       = FrameParams;
     ModelAsset = masset::Load(Asset_Model, ModelCreateInfo);
-    
-    masset::ConvertGlTF(ExampleModel);
     
     ExampleModel.Clear();
     
@@ -244,7 +262,7 @@ void GameStageEntry(frame_params* FrameParams)
     AddRenderCommand(FrameParams, { RenderCmd_BindDescriptorSet, BindDescriptor });
     
     // TODO(Dustin): Parse assets*
-    dyn_uniform_template PerObjectTemplate = mresource::GetDynamicUniformTemplate(GlobalObjectDescriptorSet);
+    dyn_uniform_template PerObjectTemplate = mresource::GetDynamicUniformTemplate(GlobalModelBuffer);
     
     RenderAllAssets(FrameParams, &PerObjectTemplate);
 }
@@ -284,21 +302,21 @@ file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 M
     
     for (int i = 0; i < Mesh->PrimitivesCount; ++i)
     {
-        primitive Primitive = Mesh->Primitives[i];
+        primitive *Primitive = Mesh->Primitives[i];
         
         resource_id_t *VBuffers = talloc<resource_id_t>(1);
         u64*VOffsets = talloc<u64>(1);
         
-        VBuffers[0] = Primitive.VertexBuffer;
+        VBuffers[0] = Primitive->VertexBuffer;
         VOffsets[0] = 0;
         
         render_draw_command *DrawCommand = talloc<render_draw_command>(1);
         DrawCommand->VertexBuffers      = VBuffers;
         DrawCommand->VertexBuffersCount = 1;
         DrawCommand->Offsets            = VOffsets;
-        DrawCommand->IsIndexed          = Primitive.IsIndexed;
-        DrawCommand->IndexBuffer        = Primitive.IndexBuffer;
-        DrawCommand->Count              = (Primitive.IsIndexed) ? Primitive.IndexCount : Primitive.VertexCount;
+        DrawCommand->IsIndexed          = Primitive->IsIndexed;
+        DrawCommand->IndexBuffer        = Primitive->IndexBuffer;
+        DrawCommand->Count              = (Primitive->IsIndexed) ? Primitive->IndexCount : Primitive->VertexCount;
         AddRenderCommand(FrameParams, { RenderCmd_Draw, DrawCommand });
     }
 }
@@ -308,40 +326,33 @@ file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, 
 {
     mat4 NodeMatrix = mat4(1.0f);
     
-    if (Node->HasMatrix)
+    mat4 TranslationMatrix = mat4(1.0f);
+    mat4 ScaleMatrix       = mat4(1.0f);
+    mat4 RotationMatrix    = mat4(1.0f);
+    
+    //if (Node->HasTranslation)
     {
-        NodeMatrix = Node->Matrix;
+        TranslationMatrix = Translate(Node->Translation);
     }
-    else
+    
+    //if (Node->HasScale)
     {
-        mat4 TranslationMatrix = mat4(1.0f);
-        mat4 ScaleMatrix       = mat4(1.0f);
-        mat4 RotationMatrix    = mat4(1.0f);
-        
-        if (Node->HasTranslation)
-        {
-            TranslationMatrix = Translate(Node->Translation);
-        }
-        
-        if (Node->HasScale)
-        {
-            ScaleMatrix = Scale(Node->Scale.x, Node->Scale.y, Node->Scale.z);
-        }
-        
-        if (Node->HasRotation)
-        {
-            vec3 axis = Node->Rotation.xyz;
-            float theta = Node->Rotation.w;
-            
-            Quaternion rotation = MakeQuaternion(axis.x,axis.y,axis.z,theta);
-            RotationMatrix = GetQuaternionRotationMatrix(rotation);
-        }
-        
-        // Multiplication order = T * R * S
-        NodeMatrix = Mul(NodeMatrix, ScaleMatrix);
-        NodeMatrix = Mul(NodeMatrix, RotationMatrix);
-        NodeMatrix = Mul(NodeMatrix, TranslationMatrix);
+        ScaleMatrix = Scale(Node->Scale.x, Node->Scale.y, Node->Scale.z);
     }
+    
+    //if (Node->HasRotation)
+    {
+        vec3 axis = Node->Rotation.xyz;
+        float theta = Node->Rotation.w;
+        
+        Quaternion rotation = MakeQuaternion(axis.x,axis.y,axis.z,theta);
+        RotationMatrix = GetQuaternionRotationMatrix(rotation);
+    }
+    
+    // Multiplication order = T * R * S
+    NodeMatrix = Mul(NodeMatrix, ScaleMatrix);
+    NodeMatrix = Mul(NodeMatrix, RotationMatrix);
+    NodeMatrix = Mul(NodeMatrix, TranslationMatrix);
     
     mat4 ModelMatrix = Mul(Matrix, NodeMatrix);
     
@@ -352,7 +363,7 @@ file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, 
     
     for (int i = 0; i < Node->ChildrenCount; ++i)
     {
-        RenderAssetNode(FrameParams, Node->Children + i, ModelMatrix, PerObjectTemplate);
+        RenderAssetNode(FrameParams, Node->Children[i], ModelMatrix, PerObjectTemplate);
     }
 }
 
@@ -364,9 +375,9 @@ file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_templa
         
         if (Asset.Type == Asset_Model)
         {
-            for (u32 DisjointNode = 0; DisjointNode < Asset.Model.Model.NodesCount; ++DisjointNode)
+            for (u32 DisjointNode = 0; DisjointNode < Asset.Model.RootModelNodesCount; ++DisjointNode)
             {
-                model_node *RootNode = Asset.Model.Model.Nodes + DisjointNode;
+                model_node *RootNode = Asset.Model.RootModelNodes[DisjointNode];
                 RenderAssetNode(FrameParams, RootNode, mat4(1.0f), PerObjectTemplate);
             }
         }

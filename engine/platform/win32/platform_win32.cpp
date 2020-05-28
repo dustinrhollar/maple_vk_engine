@@ -785,8 +785,6 @@ void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size)
     
     if (handle == INVALID_HANDLE_VALUE)
     {
-        DisplayError(TEXT("CreateFile"));
-        
         handle = CreateFileA(abs_path.GetCStr(), GENERIC_WRITE, 0, 0, CREATE_NEW,
                              FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
     }
@@ -1183,13 +1181,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         // Collect this frame's parameters
         // NOTE(Dustin): Copy assets, create a frame_params init function
         frame_params FrameParams = {};
-        FrameParams.RenderCommands      = talloc<render_command>(10);
-        FrameParams.RenderCommandsCount = 0;
-        FrameParams.RenderCommandsCap   = 10;
-        FrameParams.GpuCommands         = talloc<gpu_command>(10);
-        FrameParams.GpuCommandsCount    = 0;
-        FrameParams.GpuCommandsCap      = 10;
+        InitFrameParams(&FrameParams);
         
+        masset::Init();
         mresource::Init(&FrameParams);
         GpuStageInit(&FrameParams);
         RenderStageInit(&FrameParams);

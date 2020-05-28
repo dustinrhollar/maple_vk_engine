@@ -3,297 +3,147 @@ namespace masset
     // TODO(Dustin): After memory manager has been refactored, have a pool here for
     // model memory rather than just allocating from global storage.
     
-    file_global const u32  MaxAssets = 100;
-    file_global asset      AssetRegistry[MaxAssets];
-    file_global asset      AssetModelRegistry[MaxAssets];
-    file_global asset_id_t NextAssetId  = 0;
-    file_global u32        NextModelIdx = 0;
+    file_global const u32              MaxAssets = 100;
+    file_global mm::resource_allocator AssetAllocator;
+    
+    struct asset_registry
+    {
+        asset **Assets;
+        u32     NextIdx;
+        u32     Count;
+        u32     Cap;
+    } file_global AssetRegistry;
+    
+    struct mesh_loader
+    {
+        cgltf_data   *Data;
+        jstring       Filename;
+        jstring       BinaryFilename;
+        frame_params *FrameParams;
+        
+        FileBuffer    Buffer;
+        char         *BinaryData;
+        asset_model  *Asset;
+    };
+    
+    file_internal void InitRegistry(asset_registry *Registry, u32 Cap);
+    file_internal void FreeRegistry(asset_registry *Registry);
+    file_internal void RegistryResize(asset_registry *Registry, u32 NewSize);
+    file_internal asset_id_t RegistryAdd(asset_registry *Registry, asset Asset);
+    file_internal void RegistryRemove(asset_registry *Registry, u32 AssetIdx);
+    file_internal inline bool RegistryIsValidAsset(asset_registry *Registry, asset_id_t Id);
+    
+    file_internal void FreeAsset(asset *Asset);
+    //file_internal void FreeModel(model Model);
+    file_internal void ShutdownNode(model_node *Node);
+    file_internal void ShutdownMesh(mesh *Mesh);
+    file_internal void LoadPrimitives(mesh_loader *Loader);
+    file_internal void LoadMeshes(mesh_loader *Loader);
+    file_internal void LoadNodes(mesh_loader *Loader);
+    file_internal asset LoadModel(frame_params *FrameParams, jstring Filename);
+    
+    
+    //~ Asset Registry functionality
+    
+    file_internal void InitRegistry(asset_registry *Registry, u32 Cap)
+    {
+        Registry->NextIdx = 0;
+        Registry->Count   = 0;
+        Registry->Cap     = Cap;
+        Registry->Assets  = palloc<asset*>(Registry->Cap);
+        
+        mm::InitResourceAllocator(&AssetAllocator, sizeof(asset), Cap);
+        
+        for (u32 i = 0; i < Registry->Cap; ++i)
+            Registry->Assets[i] = nullptr;
+    }
+    
+    file_internal void FreeRegistry(asset_registry *Registry)
+    {
+        for (u32 i = 0; i < Registry->Cap; ++i)
+        {
+            if (Registry->Assets[i])
+            {
+                FreeResource(Registry->Assets[i]);
+                Registry->Assets[i] = nullptr;
+            }
+        }
+        
+        pfree(Registry->Assets);
+        Registry->Count   = 0;
+        Registry->Cap     = 0;
+        Registry->NextIdx = 0;
+    }
+    
+    file_internal void RegistryResize(asset_registry *Registry, u32 NewSize)
+    {
+        asset **NewRegistry = palloc<asset*>(NewSize);
+        
+        for (u32 Idx = 0; Idx < Registry->Count; Idx++)
+            NewRegistry[Idx] = Registry->Assets[Idx];
+        
+        // Mark empty slots as invalid resources
+        for (u32 Idx = Registry->Count; Idx < NewSize; ++Idx)
+            NewRegistry[Idx] = nullptr;
+        
+        pfree(Registry->Assets);
+        Registry->Assets = NewRegistry;
+        Registry->Cap    = NewSize;
+    }
+    
+    file_internal asset_id_t RegistryAdd(asset_registry *Registry, asset Asset)
+    {
+        if (Registry->NextIdx + 1 >= Registry->Cap)
+            RegistryResize(Registry, (Registry->Cap>0) ? Registry->Cap*2 : 20);
+        
+        asset *NewAsset = (asset*)ResourceAllocatorAlloc(&AssetAllocator);
+        *NewAsset = Asset;
+        
+        asset_id_t Result = Registry->NextIdx;
+        NewAsset->Id = Result;
+        Registry->Assets[Registry->NextIdx++] = NewAsset;
+        Registry->Count++;
+        
+        return Result;
+    }
+    
+    file_internal void RegistryRemove(asset_registry *Registry, u32 AssetIdx)
+    {
+        asset *Asset = Registry->Assets[AssetIdx];
+        FreeAsset(Asset);
+        ResourceAllocatorFree(&AssetAllocator, Asset);
+        Registry->Assets[AssetIdx]->Id = -1;
+        Registry->Count--;
+    }
+    
+    file_internal inline bool RegistryIsValidAsset(asset_registry *Registry,
+                                                   asset_id_t Id)
+    {
+        return Id < Registry->Count && Registry->Assets[Id] && Registry->Assets[Id]->Id == Id;
+    }
     
     
     //~  Model Asset Functionality
     
-    struct mesh_loader
+    file_internal void LoadVertexData(mesh_loader *Loader)
     {
-        // NOTE(Dustin): THIS IS TEMPORARY UNTIL STAGES HAVE BEEN SPLIT
-        //VkCommandPool CommandPool;
-        
-        cgltf_data   *Data;
-        jstring       Filename;
-        jstring       Directory;
-        frame_params *FrameParams;
-    };
-    
-    //void ParseTexture(mesh_loader *Loader, cgltf_texture *Texture, texture_parameters *TexParam);
-    //void ParseMaterial(mesh_loader *Loader, cgltf_material *cg_material, material_parameters *Material);
-    file_internal void ParsePrimitive(mesh_loader *Loader, cgltf_primitive *cg_primitive, primitive *Primitive);
-    file_internal void ParseMesh(mesh_loader *Loader, cgltf_mesh *CgMesh, mesh *Mesh);
-    file_internal void ParseNode(mesh_loader *Loader, cgltf_node *CgNode, model_node  *Node);
-    file_internal void ParseScene(mesh_loader *Loader, cgltf_scene *CgScene, model *Model);
-    file_internal asset_id_t LoadModel(jstring Filename);
-    
-    file_internal void FreeModel(model Model);
-    file_internal void ShutdownNode(model_node *Node);
-    file_internal void ShutdownMesh(mesh *Mesh);
-    
-    file_internal void RenderModelAsset(asset *Asset);
-    file_internal void RenderModelMesh(mesh *Mesh, mat4 Matrix);
-    file_internal void RenderModelNode(model_node *Node, mat4 Matrix);
-    
-    file_internal void ParsePrimitive(mesh_loader *Loader, cgltf_primitive *CgPrimitive, primitive *Primitive)
-    {
-        
-        /* Create a new Material Entity ???
-        // parse the material
-        if (CgPrimitive->material) {
-            MaterialParameters mat_param = {};
-            ParseMaterial(CgPrimitive->material, &mat_param);
-            
-            Pritimive->MaterialId = CreateMaterial(mat_param);
-        }
-        */
-        
-        if (CgPrimitive->indices)
+        for (i32 PrimitiveIdx = 0; PrimitiveIdx < Loader->Asset->PrimitivesCount; PrimitiveIdx++)
         {
-            Primitive->IndexCount = CgPrimitive->indices->count;
-            Primitive->IsIndexed  = true;
-        }
-        else
-        {
-            Primitive->IndexCount  = 0;
-            Primitive->IsIndexed   = false;
-            Primitive->IndexBuffer = -1;
-        }
-        
-        // figure out the vertex count
-        for (size_t k = 0; k < CgPrimitive->attributes_count; ++k)
-        { // find the position attribute
-            cgltf_attribute attrib = CgPrimitive->attributes[k];
+            primitive *Primitive = &Loader->Asset->Primitives[PrimitiveIdx];
             
-            if (attrib.type == cgltf_attribute_type_position)
+            if (Primitive->IsIndexed)
             {
-                cgltf_accessor *accessor = attrib.data;
+                index_buffer_create_info *IndexBufferCreatInfo = talloc<index_buffer_create_info>(1);
+                IndexBufferCreatInfo->Size = Primitive->IndexStride * Primitive->IndexCount;
+                IndexBufferCreatInfo->Data = (char*)Loader->BinaryData + Primitive->IndicesOffset;
                 
-                Primitive->VertexCount = attrib.data->count;
-                
-                // TODO(Dustin): If the Min/Max is not provided need to manually
-                // track the min/max points while copying over the vertex data.
-                if (accessor->has_min)
-                {
-                    Primitive->Min = MakeVec3(accessor->min);
-                }
-                
-                if (accessor->has_max)
-                {
-                    Primitive->Max = MakeVec3(accessor->max);
-                }
-                
-                break;
+                Primitive->IndexBuffer  = mresource::Load(Loader->FrameParams,
+                                                          Resource_IndexBuffer, IndexBufferCreatInfo);
             }
-        }
-        
-        
-        size_t data_size = sizeof(u32) * Primitive->IndexCount + sizeof(Vertex) * Primitive->VertexCount;
-        
-        Primitive->IndicesOffset = 0;
-        Primitive->VerticesOffset = sizeof(u32) * Primitive->IndexCount;
-        
-        Primitive->DataBlock = (char*)palloc(data_size);
-        
-        bool HasPosition = false;
-        bool HasNormals  = false;
-        bool HasColor    = false;
-        bool HasUVs      = false;
-        bool HasWeights  = false;
-        bool HasJoints   = false;
-        
-        float *position_buffer = nullptr;
-        float *normal_buffer   = nullptr;
-        float *color_buffer    = nullptr;
-        float *uv0_buffer      = nullptr;
-        float *weights_buffer  = nullptr;
-        float *joints_buffer   = nullptr;
-        
-        // Determine the attributes and get the ptr to their buffers
-        for (size_t k = 0; k < CgPrimitive->attributes_count; ++k)
-        { // find the position attribute
-            cgltf_attribute attrib = CgPrimitive->attributes[k];
-            
-            cgltf_accessor *accessor = attrib.data;
-            cgltf_buffer_view *buffer_view = accessor->buffer_view;
-            
-            // NOTE(Dustin): Might have to use top level buffer rather than buffer view
-            char *buffer = (char*)buffer_view->buffer->data;
-            
-            switch (attrib.type)
-            {
-                case cgltf_attribute_type_position:
-                {
-                    HasPosition = true;
-                    position_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
-#if 0
-                    printf("Copied Positions:\n----------------------------------------\n");
-                    float *iter = position_buffer;
-                    for (int i = 0; i < Primitive->VertexCount; ++i)
-                    {
-                        printf("Vertex %d\n", i);
-                        printf("\tPosition %lf %lf %lf\n", (*iter), (*iter), (*iter));
-                        iter += 3;
-                    }
-                    printf("----------------------------------------\n");
-#endif
-                } break;
-                
-                case cgltf_attribute_type_normal:
-                {
-                    HasNormals = true;
-                    normal_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
-                    
-#if 0
-                    printf("Copied Normals:\n----------------------------------------\n");
-                    float *iter = normal_buffer;
-                    for (int i = 0; i < Primitive->VertexCount; ++i)
-                    {
-                        printf("Vertex %d\n", i);
-                        printf("\tNormals  %lf %lf %lf\n", (*iter), (*iter), (*iter));
-                        
-                        iter += 3;
-                    }
-                    printf("----------------------------------------\n");
-#endif
-                } break;
-                
-                case cgltf_attribute_type_color:
-                {
-                    HasColor = true;
-                    color_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
-                } break;
-                
-                case cgltf_attribute_type_texcoord:
-                {
-                    HasUVs = true;
-                    uv0_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
-                } break;
-                
-                case cgltf_attribute_type_weights:
-                {
-                    HasUVs = true;
-                    weights_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
-                } break;
-                
-                case cgltf_attribute_type_joints:
-                {
-                    HasUVs = true;
-                    joints_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
-                } break;
-                
-                // TODO(Dustin): tangents,
-                default: break;
-            }
-        }
-        
-        if (!HasPosition || !HasNormals)
-        { /* TODO(Dustin): LOG */ }
-        
-        // Retrieve the index buffer data
-        u32 *indices = nullptr;
-        if (Primitive->IndexCount > 0)
-        {
-            indices = (u32*)Primitive->DataBlock + Primitive->IndicesOffset;
-            cgltf_accessor *indices_accessor = CgPrimitive->indices;
-            cgltf_buffer_view *indices_buffer_view = indices_accessor->buffer_view;
-            
-            // NOTE(Dustin): Might have to use top level buffer rather than buffer view
-            char *unknown_indices_buffer = (char*)indices_buffer_view->buffer->data;
-            
-            // Copy the indices over
-            // NOTE(Dustin): It is possible that the index type is not u16, so need
-            // to verify its type
-            switch (indices_accessor->component_type)
-            {
-                case cgltf_component_type_r_16u:
-                {
-                    u16 *indices_buffer = (u16*)(unknown_indices_buffer +
-                                                 //indices_accessor->offset +
-                                                 indices_buffer_view->offset);
-                    for (int i = 0; i < Primitive->IndexCount; ++i)
-                    {
-                        indices[i] = (u32)indices_buffer[i];
-                    }
-                } break;
-                
-                case cgltf_component_type_r_8u:
-                {
-                    u8 *indices_buffer = (u8*)unknown_indices_buffer;
-                    
-                    for (int i = 0; i < Primitive->IndexCount; ++i)
-                    {
-                        indices[i] = (u32)indices_buffer[i];
-                    }
-                } break;
-                
-                case cgltf_component_type_r_32u:
-                {
-                    u32 *indices_buffer = (u32*)unknown_indices_buffer;
-                    
-                    for (int i = 0; i < Primitive->IndexCount; ++i)
-                    {
-                        indices[i] = (u32)indices_buffer[i];
-                    }
-                } break;
-                
-                default:
-                { /* TODO(Dustin): Might want to Log the invalid index size */ } break;
-            }
-            
-#if 0
-            // TEST CODE
-            u16 *iter = (u16*)((char*)Primitive->DataBlock + Primitive->IndicesOffset);
-            for (int i = 0; i < Primitive->IndexCount; i += 3)
-            {
-                printf("%d %d %d\n", *(iter+0), *(iter+1), *(iter+3));
-                
-                iter += 3;
-            }
-            printf("----------------------------------------\n");
-#endif
-            
-            index_buffer_create_info *IndexBufferCreatInfo = talloc<index_buffer_create_info>(1);
-            IndexBufferCreatInfo->Size = sizeof(u32) * Primitive->IndexCount;
-            IndexBufferCreatInfo->Data = (char*)Primitive->DataBlock + Primitive->IndicesOffset;
-            
-            Primitive->IndexBuffer  = mresource::Load(Loader->FrameParams,
-                                                      Resource_IndexBuffer, IndexBufferCreatInfo);
-        }
-        
-        
-        // Copy the vertex data over to its memory block
-        {
-            Vertex *vertices = (Vertex*)((char*)Primitive->DataBlock + sizeof(u32) * Primitive->IndexCount);
-            
-            vec2 dummy_vec2 = { 0.0f, 0.0f };
-            vec3 dummy_vec3 = { 0.f, 0.0f, 0.0f };
-            vec4 dummy_vec4 = { 0.5f, 0.5f, 0.5f, 1.0f };
-            
-            for (size_t idx = 0; idx < Primitive->VertexCount; ++idx)
-            {
-                vertices[idx].Position = MakeVec3(position_buffer + idx * 3);
-                vertices[idx].Normals  = (normal_buffer) ? MakeVec3(normal_buffer + idx * 3) : dummy_vec3;
-                vertices[idx].Color    = (color_buffer)  ? MakeVec4(color_buffer + idx * 4)  : dummy_vec4;
-                vertices[idx].Tex0     = (uv0_buffer)    ? MakeVec2(uv0_buffer + idx * 2)    : dummy_vec2;
-                
-#if 0
-                printf("Vertex %d\n", i);
-                printf("\tPosition %lf %lf %lf\n", vertices[idx].Position.x, vertices[idx].Position.y, vertices[idx].Position.z);
-                printf("\tNormals  %lf %lf %lf\n", vertices[idx].Normals.x, vertices[idx].Normals.y, vertices[idx].Normals.z);
-                printf("\tColor    %lf %lf %lf %lf\n", vertices[idx].Color.x, vertices[idx].Color.y, vertices[idx].Color.z, vertices[i].Color.w);
-                printf("\tTex0     %lf %lf\n", vertices[idx].Tex0.x, vertices[idx].Tex0.y);
-#endif
-            }
-            
             
             vertex_buffer_create_info *VertexBufferCreatInfo = talloc<vertex_buffer_create_info>(1);
-            VertexBufferCreatInfo->Size = sizeof(Vertex) * Primitive->VertexCount;
-            VertexBufferCreatInfo->Data = (char*)Primitive->DataBlock + Primitive->VerticesOffset;
+            VertexBufferCreatInfo->Size = Primitive->VertexStride * Primitive->VertexCount;
+            VertexBufferCreatInfo->Data = (char*)Loader->BinaryData + Primitive->VerticesOffset;
             
             Primitive->VertexBuffer = mresource::Load(Loader->FrameParams,
                                                       Resource_VertexBuffer,
@@ -301,195 +151,255 @@ namespace masset
         }
     }
     
-    file_internal void ParseMesh(mesh_loader *Loader, cgltf_mesh *CgMesh, mesh *Mesh)
+    file_internal void LoadPrimitives(mesh_loader *Loader)
     {
-        Mesh->Entity      = ecs::CreateEntity();
-        
-        Mesh->PrimitivesCount = CgMesh->primitives_count;
-        Mesh->Primitives      = palloc<primitive>(Mesh->PrimitivesCount);
-        
-        for (int i = 0; i < CgMesh->primitives_count; ++i)
+        for (i32 PrimitiveIdx = 0; PrimitiveIdx < Loader->Asset->PrimitivesCount; PrimitiveIdx++)
         {
-            ParsePrimitive(Loader, CgMesh->primitives + i, Mesh->Primitives + i);
+            /*
+Primitive List has the following format:
+---- u64  -> base Offset into the Data Block
+ ---- u32  -> Number of Indices
+---- u32  -> Index Stride
+---- u32  -> Number of Vertices
+---- u32  -> Vertex Stride
+---- bool -> whether or not it is a skinned vertex
+---- vec3 -> Minimum vertex position..
+ ---- vec3 -> Maximum vertex position
+
+*/
+            primitive Primitive = {};
+            
+            // Data info
+            u64 Offset;
+            ReadUInt64FromBinaryBuffer(&Loader->Buffer, &Offset);
+            ReadUInt32FromBinaryBuffer(&Loader->Buffer, &Primitive.IndexCount);
+            ReadUInt32FromBinaryBuffer(&Loader->Buffer, &Primitive.IndexStride);
+            ReadUInt32FromBinaryBuffer(&Loader->Buffer, &Primitive.VertexCount);
+            ReadUInt32FromBinaryBuffer(&Loader->Buffer, &Primitive.VertexStride);
+            ReadBoolFromBinaryBuffer(&Loader->Buffer, &Primitive.IsSkinned);
+            
+            // Min/Max data for the primitve
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Primitive.Min.x);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Primitive.Min.y);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Primitive.Min.z);
+            
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Primitive.Max.x);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Primitive.Max.y);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Primitive.Max.z);
+            
+            Primitive.IndicesOffset  = Offset;
+            Primitive.VerticesOffset = Primitive.IndicesOffset + Primitive.IndexCount * Primitive.IndexStride;
+            
+            Primitive.IsIndexed = Primitive.IndexCount > 0;
+            
+            Loader->Asset->Primitives[PrimitiveIdx] = Primitive;
         }
     }
     
-    file_internal void ParseNode(mesh_loader *Loader, cgltf_node *CgNode, model_node *Node)
+    file_internal void LoadMeshes(mesh_loader *Loader)
     {
-        if (CgNode->name)
+        for (i32 MeshIdx = 0; MeshIdx < Loader->Asset->MeshesCount; ++MeshIdx)
         {
-            Node->Name = pstring(CgNode->name);
-        }
-        
-        if (CgNode->has_translation)
-        {
-            Node->HasTranslation = true;
-            Node->Translation = MakeVec3(CgNode->translation);
-        }
-        else
-        {
-            Node->HasTranslation = false;
-            Node->Translation = {0.0f,0.0f,0.0f};
-        }
-        
-        if (CgNode->has_scale)
-        {
-            Node->HasScale = true;
-            Node->Scale = MakeVec3(CgNode->scale);
-        }
-        else
-        {
-            Node->HasScale = false;
-            Node->Scale = {1.0f,1.0f,1.0f};
-        }
-        
-        if (CgNode->has_rotation)
-        {
-            Node->HasRotation = true;
-            Node->Rotation = MakeVec4(CgNode->rotation);
-        }
-        else
-        {
-            Node->HasRotation = false;
-            Node->Rotation = {0.0f,0.0f,0.0f,0.0f};
-        }
-        
-        if (CgNode->has_matrix)
-        {
-            Node->HasMatrix = true;
-            Node->Matrix = MakeMat4(CgNode->matrix);
-        }
-        else
-        {
-            Node->HasMatrix = false;
-            Node->Matrix = mat4(1.0f);
-        }
-        
-        // Pointer to a mesh, if one exists
-        if (CgNode->mesh)
-        {
-            cgltf_mesh *cg_mesh = CgNode->mesh;
+            /*
+    Mesh List
+    ---- str  -> Mesh Name
+    ---- u64  -> Number of Primitives
+    ---- Primitive Idx List
+    -------- i32 -> Index into the primitive array
+    */
             
-            Node->Mesh = palloc<mesh>(1);
-            ParseMesh(Loader, cg_mesh, Node->Mesh);
-        }
-        else
-        {
-            Node->Mesh = nullptr;
-        }
-        
-        // Recurse down the set to parse all child nodes
-        Node->ChildrenCount = CgNode->children_count;
-        Node->Children = palloc<model_node>(Node->ChildrenCount);
-        
-        for (int i = 0; i < CgNode->children_count; ++i)
-        {
-            cgltf_node *ChildCgNode = CgNode->children[i];
+            mesh Mesh = {};
             
-            Node->Children[i] = {};
-            ParseNode(Loader, ChildCgNode, Node->Children + i);
+            ReadJStringFromBinaryBuffer(&Loader->Buffer, &Mesh.Name);
+            ReadUInt64FromBinaryBuffer(&Loader->Buffer, &Mesh.PrimitivesCount);
+            Mesh.Primitives = palloc<primitive*>(Mesh.PrimitivesCount);
+            
+            for (i64 PrimIdx = 0; PrimIdx < Mesh.PrimitivesCount; PrimIdx++)
+            {
+                i32 Idx;
+                ReadInt32FromBinaryBuffer(&Loader->Buffer, &Idx);
+                
+                Mesh.Primitives[PrimIdx] = Loader->Asset->Primitives + Idx;
+            }
+            
+            Loader->Asset->Meshes[MeshIdx] = Mesh;
         }
     }
     
-    file_internal void ParseScene(mesh_loader *Loader, cgltf_scene *CgScene, asset_model *ModelAsset)
+    file_internal void LoadNodes(mesh_loader *Loader)
     {
-        // Initialize model  memory
-        ModelAsset->Model.NodesCount = (u32)CgScene->nodes_count;
-        ModelAsset->Model.Nodes      = palloc<model_node>(ModelAsset->Model.NodesCount);
-        
-        // parse each disjoint set in this model
-        for (int i = 0; i < CgScene->nodes_count; ++i)
+        for (i32 NodeIdx = 0; NodeIdx < Loader->Asset->NodesCount; NodeIdx++)
         {
-            *(ModelAsset->Model.Nodes + i) = {};
-            (ModelAsset->Model.Nodes + i)->Parent = nullptr;
+            /*
+Node List
+---- str  -> Name of the node
+---- str  -> Name of the mesh. If one is not attached, then a single u32 with value of 0 has been written
+---- i32  -> Index of the parent node
+---- u64  -> Number of Children the node has
+---- Children Index List
+-------- i32 -> Index into the Node array
+---- vec3 -> vector for translation
+---- vec3 -> vector for scale
+---- vec4 -> vector for rotation
+*/
             
-            // Parse the node and its descendents
-            ParseNode(Loader, CgScene->nodes[i], ModelAsset->Model.Nodes + i);
+            model_node Node = {};
+            
+            ReadJStringFromBinaryBuffer(&Loader->Buffer, &Node.Name);
+            
+            i32 Idx;
+            ReadInt32FromBinaryBuffer(&Loader->Buffer, &Idx);
+            
+            if (Idx != -1)
+                Node.Parent = Loader->Asset->Nodes + Idx;
+            
+            else
+                Node.Parent = nullptr;
+            
+            ReadUInt64FromBinaryBuffer(&Loader->Buffer, &Node.ChildrenCount);
+            Node.Children = palloc<model_node*>(Node.ChildrenCount);
+            
+            for (u32 ChildIdx = 0; ChildIdx < Node.ChildrenCount; ++ChildIdx)
+            {
+                ReadInt32FromBinaryBuffer(&Loader->Buffer, &Idx);
+                Node.Children[ChildIdx] = Loader->Asset->Nodes + Idx;
+            }
+            
+            
+            // Tranlation vec
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Translation.x);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Translation.y);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Translation.z);
+            
+            // Scaling
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Scale.x);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Scale.y);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Scale.z);
+            
+            // Quaternion Rotation
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Rotation.x);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Rotation.y);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Rotation.z);
+            ReadFloatFromBinaryBuffer(&Loader->Buffer, &Node.Rotation.w);
+            
+            // NOTE(Dustin): Remove this?
+            ReadInt32FromBinaryBuffer(&Loader->Buffer, &Idx);
+            if (Idx != -1)
+                Node.Mesh = Loader->Asset->Meshes + Idx;
+            
+            else
+                Node.Mesh = nullptr;
+            
+            Loader->Asset->Nodes[NodeIdx] = Node;
         }
     }
     
-    file_internal asset_id_t LoadModel(frame_params *FrameParams, jstring Filename)
+    file_internal asset LoadModel(frame_params *FrameParams, jstring Filename)
     {
-        // TODO(Dustin): In the future, determine the file extension, if the extension
-        // is not ".model" format, then do glTF loading/conversion on the model
+        
+        asset ModelAsset = {};
+        ModelAsset.Type = Asset_Model;
+        
         mesh_loader Loader = {};
         Loader.Filename    = Filename;
         Loader.FrameParams = FrameParams;
+        Loader.Asset       = &ModelAsset.Model;
         
-        const char *cfile = Filename.GetCStr();
-        const char* ptr = strrchr(cfile, '/');
-        if (ptr == nullptr) {
-            ptr = strrchr(cfile, '\\');
+        jstring ModelFile = PlatformLoadFile(Filename);
+        
+        Loader.Buffer.start = ModelFile.GetCStr();
+        Loader.Buffer.brkp  = Loader.Buffer.start;
+        Loader.Buffer.cap   = ModelFile.len;
+        
+        ReadJStringFromBinaryBuffer(&Loader.Buffer, &Loader.BinaryFilename);
+        
+        //~ Parse the primitives
+        ReadInt32FromBinaryBuffer(&Loader.Buffer, &Loader.Asset->PrimitivesCount);
+        Loader.Asset->Primitives = palloc<primitive>(Loader.Asset->PrimitivesCount);
+        
+        LoadPrimitives(&Loader);
+        
+        //~ Parse the Meshes
+        ReadInt32FromBinaryBuffer(&Loader.Buffer, &Loader.Asset->MeshesCount);
+        Loader.Asset->Meshes = palloc<mesh>(Loader.Asset->MeshesCount);
+        
+        LoadMeshes(&Loader);
+        
+        //~ Parse the Scene Nodes
+        ReadInt32FromBinaryBuffer(&Loader.Buffer, &Loader.Asset->NodesCount);
+        Loader.Asset->Nodes = palloc<model_node>(Loader.Asset->NodesCount);
+        
+        LoadNodes(&Loader);
+        
+        //~ Parse the Models
+        i32 SceneCount;
+        ReadInt32FromBinaryBuffer(&Loader.Buffer, &SceneCount);
+        
+        char *Rewind = Loader.Buffer.brkp;
+        
+        i32 ModelCount = 0;
+        for (i32 SceneIdx = 0; SceneIdx < SceneCount; SceneIdx++)
+        {
+            u32 NumDisjoint;
+            ReadUInt32FromBinaryBuffer(&Loader.Buffer, &NumDisjoint);
+            ModelCount += NumDisjoint;
             
-            if (ptr == nullptr) {
-                mprinte("Could not find directory!\n");
+            for (u32 di = 0; di < NumDisjoint; di++)
+            {
+                i32 Dummy;
+                ReadInt32FromBinaryBuffer(&Loader.Buffer, &Dummy);
+            }
+        }
+        Loader.Buffer.brkp = Rewind;
+        
+        Loader.Asset->RootModelNodesCount = ModelCount;
+        Loader.Asset->RootModelNodes = palloc<model_node*>(ModelCount);
+        
+        for (i32 SceneIdx = 0; SceneIdx < SceneCount; SceneIdx++)
+        {
+            u32 NumDisjoint;
+            ReadUInt32FromBinaryBuffer(&Loader.Buffer, &NumDisjoint);
+            
+            for (u32 di = 0; di < NumDisjoint; di++)
+            {
+                i32 NodeIdx;
+                ReadInt32FromBinaryBuffer(&Loader.Buffer, &NodeIdx);
+                
+                Loader.Asset->RootModelNodes[di] = Loader.Asset->Nodes + NodeIdx;
             }
         }
         
-        ptr++;
+        //~ Load the data file and upload primitive buffers
         
-        size_t len = ptr - cfile;
-        char *dirname = (char*)talloc(len);
-        strncpy(dirname, cfile, len);
+        jstring BinaryFile = PlatformLoadFile(Loader.BinaryFilename);
         
-        Loader.Directory = InitJString(dirname, (u32)len);
+        Loader.BinaryData = talloc<char>(BinaryFile.len);
+        memcpy(Loader.BinaryData, BinaryFile.GetCStr(), BinaryFile.len);
         
-        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Filename %s\n", cfile);
-        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Directory %s\n", Loader.Directory.GetCStr());
+        LoadVertexData(&Loader);
         
-        cgltf_options options = {0};
-        Loader.Data = nullptr;
-        cgltf_result result = cgltf_parse_file(&options, Loader.Filename.GetCStr(), &Loader.Data);
-        if (result != cgltf_result_success)
-        {
-            mprinte("Failed to load mesh %s!\n", Filename.GetCStr());
-            return -1;
-        }
+        //~ Clean Resources
         
-        // load the buffers
-        // NOTE(Dustin): Maybe in the future, stream the data directly to the gpu?
-        result = cgltf_load_buffers(&options, Loader.Data, Filename.GetCStr());
-        if (result != cgltf_result_success)
-        {
-            mprinte("Failed to load mesh buffers %s!\n", Filename.GetCStr());
-            return -1;
-        }
+        BinaryFile.Clear();
+        Loader.BinaryFilename.Clear();
+        ModelFile.Clear();
         
-        if (NextAssetId + 1 >= MaxAssets)
-        {
-            mprinte("Asset registry is full!\n");
-            return -1;
-        }
         
-        asset *ModelAsset = &AssetRegistry[NextAssetId++];
-        ModelAsset->Type = Asset_Model;
-        ModelAsset->Id   = NextAssetId - 1;
-        
-        // NOTE(Dustin): Hard limit on the scenes imported from
-        // a glTF file.
-        assert(Loader.Data->scenes_count == 1 && "glTF File being loaded has more than one scene!");
-        ParseScene(&Loader, &Loader.Data->scenes[0], &ModelAsset->Model);
-        
-        // TODO(Dustin): Animations, Textures (?), and Materials (?)...
-        
-        cgltf_free(Loader.Data);
-        Loader.Directory.Clear();
-        
-        return ModelAsset->Id;
+        return ModelAsset;
     }
     
     asset_id_t Load(asset_type Type, void *Data)
     {
         asset_id_t Result = -1;
         
+        asset Asset = {};
+        
         switch (Type)
         {
             case Asset_Model:
             {
                 model_create_info *Info = static_cast<model_create_info*>(Data);
-                Result = LoadModel(Info->FrameParams, Info->Filename);
-                
-                AssetModelRegistry[NextModelIdx++] = AssetRegistry[Result];
+                Asset = LoadModel(Info->FrameParams, Info->Filename);
             } break;
             
             case Asset_Texture:
@@ -506,79 +416,108 @@ namespace masset
             } break;
         }
         
+        // TODO(Dustin): Error check?
+        Result = RegistryAdd(&AssetRegistry, Asset);
+        
         return Result;
     }
     
     void GetModelAssets(asset **Assets, u32 *Count)
     {
-        *Assets = AssetModelRegistry;
-        *Count = NextModelIdx;
-    }
-    
-    file_internal void FreeModel(model Model)
-    {
-        for (u32 j = 0; j < Model.NodesCount; ++j)
+        *Assets = talloc<asset>(AssetRegistry.Count);
+        
+        u32 Iter = 0;
+        for (u32 AssetIdx = 0; AssetIdx < AssetRegistry.NextIdx; ++AssetIdx)
         {
-            model_node *Node = Model.Nodes + j;
-            ShutdownNode(Node);
+            if (AssetRegistry.Assets[AssetIdx])
+            {
+                (*Assets)[Iter++] = *AssetRegistry.Assets[AssetIdx];
+            }
         }
         
-        pfree(Model.Nodes);
+        *Count = Iter;
     }
     
     file_internal void ShutdownMesh(mesh *Mesh)
     {
-        for (int i = 0; i < Mesh->PrimitivesCount; ++i)
-        {
-            pfree(Mesh->Primitives[i].DataBlock);
-        }
-        
         pfree(Mesh->Primitives);
+        Mesh->Primitives      = nullptr;
+        Mesh->PrimitivesCount = 0;
+        Mesh->Name.Clear();
     }
     
     file_internal void ShutdownNode(model_node *Node)
     {
-        Node->Name.Clear();
-        
-        if (Node->Mesh)
-        {
-            ShutdownMesh(Node->Mesh);
-            pfree(Node->Mesh);
-        }
-        
-        for (int i = 0; i < Node->ChildrenCount; ++i) {
-            ShutdownNode(Node->Children + i);
-        }
-        
         if (Node->ChildrenCount > 0)
             pfree(Node->Children);
+        
+        Node->Children      = nullptr;
+        Node->Mesh          = nullptr;
+        Node->Parent        = nullptr;
+        Node->ChildrenCount = 0;
+        Node->Name.Clear();
+    }
+    
+    void Init()
+    {
+        InitRegistry(&AssetRegistry, 10);
+    }
+    
+    file_internal void FreeAsset(asset *Asset)
+    {
+        switch (Asset->Type)
+        {
+            case Asset_Model:
+            {
+                for (u32 NodeIdx = 0; NodeIdx < Asset->Model.NodesCount; ++NodeIdx)
+                    ShutdownNode(&Asset->Model.Nodes[NodeIdx]);
+                
+                pfree(Asset->Model.Nodes);
+                Asset->Model.Nodes = nullptr;
+                Asset->Model.NodesCount = 0;
+                
+                for (u32 MeshIdx = 0; MeshIdx < Asset->Model.MeshesCount; ++MeshIdx)
+                    ShutdownMesh(&Asset->Model.Meshes[MeshIdx]);
+                
+                pfree(Asset->Model.Meshes);
+                Asset->Model.Meshes = nullptr;
+                Asset->Model.MeshesCount = 0;
+                
+                pfree(Asset->Model.Primitives);
+                Asset->Model.Primitives = nullptr;
+                Asset->Model.PrimitivesCount = 0;
+                
+                pfree(Asset->Model.RootModelNodes);
+                Asset->Model.RootModelNodes = nullptr;
+                Asset->Model.RootModelNodesCount = 0;
+            } break;
+            
+            case Asset_Texture:
+            {
+            } break;
+            
+            case Asset_Material:
+            {
+            } break;
+            
+            default:
+            {
+                mprinte("Unknown asset type for load \"%d\"!\n", Asset->Type);
+            } break;
+        }
     }
     
     void Free()
     {
-        for (u32 Asset = 0; Asset < NextAssetId; ++Asset)
+        for (u32 Asset = 0; Asset < AssetRegistry.NextIdx; ++Asset)
         {
-            switch (AssetRegistry[Asset].Type)
+            if (AssetRegistry.Assets[Asset])
             {
-                case Asset_Model:
-                {
-                    FreeModel(AssetRegistry[Asset].Model.Model);
-                } break;
-                
-                case Asset_Texture:
-                {
-                } break;
-                
-                case Asset_Material:
-                {
-                } break;
-                
-                default:
-                {
-                    mprinte("Unknown asset type for load \"%d\"!\n", AssetRegistry[Asset].Type);
-                } break;
+                FreeAsset(AssetRegistry.Assets[Asset]);
             }
         }
+        
+        mm::FreeResourceAllocator(&AssetAllocator);
     }
     
     
@@ -588,92 +527,4 @@ namespace masset
     
     //~ Texture Asset Functionality
     
-    
-    //~ Render Command
-#if 0
-    file_internal void RenderModelMesh(mesh *Mesh, mat4 Matrix)
-    {
-        
-    }
-    
-    file_internal void RenderModelNode(model_node *Node, mat4 Matrix)
-    {
-        mat4 NodeMatrix = mat4(1.0f);
-        
-        if (Node->HasMatrix)
-        {
-            NodeMatrix = Node->Matrix;
-        }
-        else
-        {
-            mat4 TranslationMatrix = mat4(1.0f);
-            mat4 ScaleMatrix       = mat4(1.0f);
-            mat4 RotationMatrix    = mat4(1.0f);
-            
-            if (Node->HasTranslation)
-            {
-                TranslationMatrix = Translate(Node->Translation);
-            }
-            
-            if (Node->HasScale)
-            {
-                ScaleMatrix = Scale(Node->Scale.x, Node->Scale.y, Node->Scale.z);
-            }
-            
-            if (Node->HasRotation)
-            {
-                vec3 axis = Node->Rotation.xyz;
-                float theta = Node->Rotation.w;
-                
-                Quaternion rotation = MakeQuaternion(axis.x,axis.y,axis.z,theta);
-                RotationMatrix = GetQuaternionRotationMatrix(rotation);
-            }
-            
-            // Multiplication order = T * R * S
-            NodeMatrix = Mul(NodeMatrix, ScaleMatrix);
-            NodeMatrix = Mul(NodeMatrix, RotationMatrix);
-            NodeMatrix = Mul(NodeMatrix, TranslationMatrix);
-        }
-        
-        mat4 ModelMatrix = Mul(Matrix, NodeMatrix);
-        
-        if (Node->Mesh)
-        {
-            RenderModelMesh(Node->Mesh, ModelMatrix);
-        }
-        
-        for (int i = 0; i < Node->ChildrenCount; ++i)
-        {
-            RenderModelNode(Node->Children + i, ModelMatrix);
-        }
-        
-    }
-    
-    file_internal void RenderModelAsset(asset *Asset)
-    {
-        for (u32 DisjointNode = 0; DisjointNode < Asset->Model.Model.NodesCount; ++DisjointNode)
-        {
-            model_node *RootNode = Asset->Model.Model.Nodes + DisjointNode;
-            RenderModelNode(RootNode, mat4(1.0f));
-        }
-    }
-    
-    void Render(asset_id_t AssetId)
-    {
-        asset *Asset = &AssetRegistry[AssetId];
-        assert(Asset && "Attempted to retrieve an asset but it was null!");
-        
-        switch (Asset->Type)
-        {
-            case Asset_Model:
-            {
-                RenderModelAsset(Asset);
-            } break;
-            
-            case Asset_Texture:
-            case Asset_Material:
-            default: break;
-        }
-    }
-#endif
 }; // masset
