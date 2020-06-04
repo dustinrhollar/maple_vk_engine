@@ -1,11 +1,12 @@
 
 namespace masset
 {
-    const char *MODEL_OUTPUT_FOLDER     = "data/models/models/";
-    const char *BINARY_OUTPUT_FOLDER    = "data/models/binaries/";
-    const char *MATERIAL_OUTPUT_FOLDER  = "data/materials/";
-    const char *BINARY_EXTENSION        = ".bin";
-    const char *MODEL_EXTENSION         = ".model";
+    const char *MODEL_OUTPUT_FOLDER      = "data/models/models/";
+    const char *BINARY_OUTPUT_FOLDER     = "data/models/binaries/";
+    const char *MATERIAL_OUTPUT_FOLDER   = "data/materials/";
+    const char *REFLECTION_OUTPUT_FOLDER = "data/mat_refl/";
+    const char *BINARY_EXTENSION         = ".bin";
+    const char *MODEL_EXTENSION          = ".model";
     
     file_internal i32 ConvertNode(mesh_converter *Converter, cgltf_node *CgNode);
     file_internal i32 ConvertScene(mesh_converter *Converter, cgltf_scene *CgScene);
@@ -78,7 +79,6 @@ namespace masset
         float *uv0_buffer      = nullptr;
         float *weights_buffer  = nullptr;
         float *joints_buffer   = nullptr;
-        
         
         // Determine the attributes and get the ptr to their buffers
         for (size_t k = 0; k < CgPrimitive->attributes_count; ++k)
@@ -405,7 +405,7 @@ namespace masset
         Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "Filename : str = \"%s\"\n",
                                 Texture->Filename.GetCStr());
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), " : str = \"%s\"\n",
+            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "Filename : str = \"%s\"\n",
                                     Texture->Filename.GetCStr());
         Buffer->brkp += Ret;
         
@@ -450,14 +450,22 @@ namespace masset
                 Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "\n");
             Buffer->brkp += Ret;
         }
+        
+        Texture->Filename.Clear();
     }
     
     file_internal void SerializeMaterial(mesh_converter *Converter, material_serial *Material)
     {
         jstring OutFile;
+        jstring CmdReflFile;
         {
             jstring Interim = MATERIAL_OUTPUT_FOLDER + Material->Name;
             OutFile = Interim + ".mat";
+            Interim.Clear();
+            
+            Interim = REFLECTION_OUTPUT_FOLDER + Material->Name;
+            CmdReflFile = Interim + ".refl";
+            
             Interim.Clear();
         }
         mprint("Material out file: %s\n", OutFile.GetCStr());
@@ -466,232 +474,100 @@ namespace masset
         CreateFileBuffer(&Buffer, sizeof(material_serial));
         
         i32 Ret;
-        { // write header for material
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Material}\n");
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Material}\n");
-            Buffer.brkp += Ret;
+        
+        WriteToFileBuffer(&Buffer, "{Material}\n");
+        WriteToFileBuffer(&Buffer, "ReflectionFile : str = \"%s\"\n", CmdReflFile.GetCStr());
+        WriteToFileBuffer(&Buffer, "Name : str = \"%s\"\n", Material->Name.GetCStr());
+        WriteToFileBuffer(&Buffer, "HasPBRMetallicRoughness : i32 = %d\n", Material->HasPBRMetallicRoughness);
+        WriteToFileBuffer(&Buffer, "HasPBRSpecularGlossiness : i32 = %d\n", Material->HasPBRSpecularGlossiness);
+        WriteToFileBuffer(&Buffer, "HasClearCoat : i32 = %d\n", Material->HasClearCoat);
+        WriteToFileBuffer(&Buffer, "AlphaMode : i32 = %d\n", Material->AlphaMode);
+        WriteToFileBuffer(&Buffer, "AlphaCutoff : r32 = %d\n", Material->AlphaCutoff);
+        WriteToFileBuffer(&Buffer, "DoubleSided : i32 = %d\n", Material->DoubleSided);
+        WriteToFileBuffer(&Buffer, "Unlit : i32 = %d\n\n", Material->Unlit);
+        
+        WriteToFileBuffer(&Buffer, "{Metallic-Roughness}\n");
+        if (Material->HasPBRMetallicRoughness)
+        {
+            WriteToFileBuffer(&Buffer, "BaseColorFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
+                              Material->BaseColorFactor.x,
+                              Material->BaseColorFactor.y,
+                              Material->BaseColorFactor.z,
+                              Material->BaseColorFactor.w);
+            WriteToFileBuffer(&Buffer, "MetallicFactor : r32 = %lf\n", Material->MetallicFactor);
+            WriteToFileBuffer(&Buffer, "RoughnessFactor : r32 = %lf\n\n", Material->RoughnessFactor);
+            
+            SerializeTexture(&Buffer, &Material->BaseColorTexture, "Base Color Texture");
+            SerializeTexture(&Buffer, &Material->MetallicRoughnessTexture, "Metallic Roughness Texture");
         }
         
-        { // name of the material
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Name : str = \"%s\"\n",
-                                    Material->Name.GetCStr());
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Name : str = \"%s\"\n",
-                                        Material->Name.GetCStr());
-            Buffer.brkp += Ret;
+        WriteToFileBuffer(&Buffer, "{Specular-Glossy}\n");
+        if (Material->HasPBRSpecularGlossiness)
+        {
+            WriteToFileBuffer(&Buffer, "DiffuseFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
+                              Material->DiffuseFactor.x,
+                              Material->DiffuseFactor.y,
+                              Material->DiffuseFactor.z,
+                              Material->DiffuseFactor.w);
+            WriteToFileBuffer(&Buffer, "SpecularFactor : vec3 = [%lf,%lf,%lf]\n",
+                              Material->DiffuseFactor.x,
+                              Material->DiffuseFactor.y,
+                              Material->DiffuseFactor.z);
+            WriteToFileBuffer(&Buffer, "GlossinessFactor : r32 = %lf\n\n", Material->GlossinessFactor);
+            
+            SerializeTexture(&Buffer, &Material->DiffuseTexture, "Diffuse Texture");
+            SerializeTexture(&Buffer, &Material->SpecularGlossinessTexture, "Specular Glossiness Texture");
         }
         
-        { // the bools to the file
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRMetallicRoughness : i32 = %d\n",
-                                    Material->HasPBRMetallicRoughness);
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRMetallicRoughness : i32 = %d\n",
-                                        Material->HasPBRMetallicRoughness);
-            Buffer.brkp += Ret;
+        WriteToFileBuffer(&Buffer, "{Clear Coat}\n");
+        if (Material->HasClearCoat)
+        {
+            WriteToFileBuffer(&Buffer, "ClearCoatFactor : r32 = %lf\n", Material->ClearCoatFactor);
+            WriteToFileBuffer(&Buffer, "ClearCoarRoughnessFactor : r32 = %lf\n\n", Material->ClearCoarRoughnessFactor);
             
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRSpecularGlossiness : i32 = %d\n",
-                                    Material->HasPBRSpecularGlossiness);
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasPBRSpecularGlossiness : i32 = %d\n",
-                                        Material->HasPBRSpecularGlossiness);
-            Buffer.brkp += Ret;
-            
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasClearCoat : i32 = %d\n",
-                                    Material->HasClearCoat);
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "HasClearCoat : i32 = %d\n",
-                                        Material->HasClearCoat);
-            Buffer.brkp += Ret;
-        }
-        
-        { // misc. settings
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaMode : i32 = %d\n",
-                                    Material->AlphaMode);
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaMode : i32 = %d\n",
-                                        Material->AlphaMode);
-            Buffer.brkp += Ret;
-            
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaCutoff : r32 = %d\n",
-                                    Material->AlphaCutoff);
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "AlphaCutoff : r32 = %lf\n",
-                                        Material->AlphaCutoff);
-            Buffer.brkp += Ret;
-            
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "DoubleSided : i32 = %d\n",
-                                    Material->DoubleSided);
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "DoubleSided : i32 = %d\n",
-                                        Material->DoubleSided);
-            Buffer.brkp += Ret;
-            
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Unlit : i32 = %d\n",
-                                    Material->Unlit);
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "Unlit : i32 = %d\n",
-                                        Material->Unlit);
-            Buffer.brkp += Ret;
-        }
-        
-        { // spacing...
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-            Buffer.brkp += Ret;
-        }
-        
-        { // Metallic Parameters...
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Metallic-Roughness}\n");
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Metallic-Roughness}\n");
-            Buffer.brkp += Ret;
-            
-            if (Material->HasPBRMetallicRoughness)
-            {
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                        "BaseColorFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
-                                        Material->BaseColorFactor.x,
-                                        Material->BaseColorFactor.y,
-                                        Material->BaseColorFactor.z,
-                                        Material->BaseColorFactor.w);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                            "BaseColorFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
-                                            Material->BaseColorFactor.x,
-                                            Material->BaseColorFactor.y,
-                                            Material->BaseColorFactor.z,
-                                            Material->BaseColorFactor.w);
-                Buffer.brkp += Ret;
-                
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "MetallicFactor : r32 = %lf\n",
-                                        Material->MetallicFactor);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "MetallicFactor : r32 = %lf\n",
-                                            Material->MetallicFactor);
-                Buffer.brkp += Ret;
-                
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "RoughnessFactor : r32 = %lf\n",
-                                        Material->RoughnessFactor);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "RoughnessFactor : r32 = %lf\n",
-                                            Material->RoughnessFactor);
-                Buffer.brkp += Ret;
-                
-                { // spacing...
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-                    if (CheckTextBufferResize(&Buffer, Ret))
-                        Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-                    Buffer.brkp += Ret;
-                }
-                
-                SerializeTexture(&Buffer, &Material->BaseColorTexture, "Base Color Texture");
-                SerializeTexture(&Buffer, &Material->MetallicRoughnessTexture, "Metallic Roughness Texture");
-            }
-            
-        }
-        
-        { // Specular Glossy Parameters...
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Specular-Glossy}\n");
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Specular-Glossy}\n");
-            Buffer.brkp += Ret;
-            
-            if (Material->HasPBRSpecularGlossiness)
-            {
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                        "DiffuseFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
-                                        Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z,
-                                        Material->DiffuseFactor.w);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                            "DiffuseFactor : vec4 = [%lf,%lf,%lf,%lf]\n",
-                                            Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z,
-                                            Material->DiffuseFactor.w);
-                Buffer.brkp += Ret;
-                
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                        "SpecularFactor : vec3 = [%lf,%lf,%lf]\n",
-                                        Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                            "SpecularFactor : vec3 = [%lf,%lf,%lf]\n",
-                                            Material->DiffuseFactor.x, Material->DiffuseFactor.y, Material->DiffuseFactor.z);
-                Buffer.brkp += Ret;
-                
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                        "GlossinessFactor : r32 = %lf\n",
-                                        Material->GlossinessFactor);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                            "GlossinessFactor : r32 = %lf\n",
-                                            Material->GlossinessFactor);
-                Buffer.brkp += Ret;
-                
-                { // spacing...
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-                    if (CheckTextBufferResize(&Buffer, Ret))
-                        Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-                    Buffer.brkp += Ret;
-                }
-                
-                SerializeTexture(&Buffer, &Material->DiffuseTexture, "Diffuse Texture");
-                SerializeTexture(&Buffer, &Material->SpecularGlossinessTexture, "Specular Glossiness Texture");
-            }
-        }
-        
-        { // spacing...
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-            Buffer.brkp += Ret;
-        }
-        
-        { // Specular Glossy Parameters...
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Clear Coat}\n");
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "{Clear Coat}\n");
-            Buffer.brkp += Ret;
-            
-            if (Material->HasClearCoat)
-            {
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                        "ClearCoatFactor : r32 = %lf\n",
-                                        Material->ClearCoatFactor);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                            "ClearCoatFactor : r32 = %lf\n",
-                                            Material->ClearCoatFactor);
-                Buffer.brkp += Ret;
-                
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                        "ClearCoarRoughnessFactor : r32 = %lf\n",
-                                        Material->ClearCoarRoughnessFactor);
-                if (CheckTextBufferResize(&Buffer, Ret))
-                    Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer),
-                                            "ClearCoarRoughnessFactor : r32 = %lf\n",
-                                            Material->ClearCoarRoughnessFactor);
-                Buffer.brkp += Ret;
-                
-                SerializeTexture(&Buffer, &Material->ClearCoatTexture, "Clear Coat Texture");
-                SerializeTexture(&Buffer, &Material->ClearCoatRoughnessTexture, "Clear Coat Roughness Texture");
-                SerializeTexture(&Buffer, &Material->ClearCoatNormalTexture, "Clear Coat Normal Texture");
-            }
-        }
-        
-        { // spacing...
-            Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-            if (CheckTextBufferResize(&Buffer, Ret))
-                Ret = Win32FormatString(Buffer.brkp, BufferUnusedSize(&Buffer), "\n");
-            Buffer.brkp += Ret;
+            SerializeTexture(&Buffer, &Material->ClearCoatTexture, "Clear Coat Texture");
+            SerializeTexture(&Buffer, &Material->ClearCoatRoughnessTexture, "Clear Coat Roughness Texture");
+            SerializeTexture(&Buffer, &Material->ClearCoatNormalTexture, "Clear Coat Normal Texture");
         }
         
         SerializeTexture(&Buffer, &Material->NormalTexture, "Normal Texture");
         SerializeTexture(&Buffer, &Material->OcclusionTexture, "Occlusion Texture");
         SerializeTexture(&Buffer, &Material->EmissiveTexture, "Emissive Texture");
         
+        WriteToFileBuffer(&Buffer, "{Shaders}\n");
+        WriteToFileBuffer(&Buffer, "Vertex : str = \"data/shaders/shader.vert.spv\"\n");
+        WriteToFileBuffer(&Buffer, "Fragment : str = \"data/shaders/shader.frag.spv\"\n");
+        
         PlatformWriteBufferToFile(OutFile, Buffer.start, Buffer.brkp - Buffer.start);
+        
+        //~ Generate reflections files
+        {
+            jstring MatGenCmd;
+            { // build the exe cmd
+                jstring MatGenExe = pstring("mat_gen.exe ");
+                jstring InterimA = MatGenExe + OutFile;
+                jstring InterimB = InterimA + " ";
+                jstring InterimC = InterimB + CmdReflFile;
+                jstring InterimD = InterimC + " > ";
+                jstring InterimE = InterimD + Material->Name;
+                
+                MatGenCmd = InterimE + "ReflLog.txt";
+                
+                MatGenExe.Clear();
+                InterimA.Clear();
+                InterimB.Clear();
+                InterimC.Clear();
+                InterimD.Clear();
+                InterimE.Clear();
+            }
+            PlatformExecuteCommand(MatGenCmd);
+            MatGenCmd.Clear();
+        }
+        
+        CmdReflFile.Clear();
+        OutFile.Clear();
+        Material->Name.Clear();
+        DestroyFileBuffer(&Buffer);
     }
     
     file_internal void ConvertTexture(mesh_converter *Converter, cgltf_texture *CgTexture, texture_serial *Texture)
@@ -739,7 +615,7 @@ namespace masset
                 Material.HasPBRSpecularGlossiness && Material.HasClearCoat ||
                 Material.HasPBRMetallicRoughness  && Material.HasPBRSpecularGlossiness && Material.HasClearCoat)
             {
-                printf("%s Meterial has a combination of material types!\n", Material.Name.GetCStr());
+                printf("%s Material has a combination of material types!\n", Material.Name.GetCStr());
             }
             
             if (Material.HasPBRMetallicRoughness) {
@@ -809,6 +685,8 @@ namespace masset
             }
             
             SerializeMaterial(Converter, &Material);
+            
+            Material.Name.Clear();
         }
     }
     
@@ -870,15 +748,6 @@ namespace masset
         
         CorrectExtension.Clear();
         ModelFilename.Clear();
-        
-#if 0
-        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Filename %s\n", cfile);
-        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Directory %s\n", Converter.Directory.GetCStr());
-        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Out model file %s\n",
-                             OutputModelFilename.GetCStr());
-        PlatformPrintMessage(EConsoleColor::Yellow, EConsoleColor::DarkGrey, "Out binary file %s\n",
-                             OutputBinaryFilename.GetCStr());
-#endif
         
         cgltf_options options = {0};
         Converter.Data = nullptr;
@@ -1009,12 +878,10 @@ namespace masset
                                   Converter.PrimitiveDataBlock.brkp - Converter.PrimitiveDataBlock.start);
         
         //~ Clean Resources
-        
         DestroyFileBuffer(&Converter.PrimitiveDataBlock);
         DestroyFileBuffer(&Buffer);
         Converter.Directory.Clear();
         OutputModelFilename.Clear();
         OutputBinaryFilename.Clear();
     }
-    
 } // masset

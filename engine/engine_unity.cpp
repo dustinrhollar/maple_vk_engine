@@ -188,7 +188,6 @@ void *VulkanLibrary;
 #include "ecs/system.cpp"
 #include "ecs/ecs.cpp"
 
-
 //~ Vulkan Source Files
 #include "vk/vulkan_functions.cpp"
 #include "vk/maple_vulkan.cpp"

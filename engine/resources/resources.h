@@ -200,6 +200,8 @@ struct resource_image
 
 struct resource_pipeline
 {
+    //shader_data ShaderData;
+    
     VkPipelineLayout Layout;
     VkPipeline       Pipeline;
 };

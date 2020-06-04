@@ -186,7 +186,7 @@ void DynamicArray<T>::Add(unsigned int idx, T& element)
         return;
     }
     
-    if (size + 1 >= cap)
+    if (size + 1 > cap)
     {
         Resize((cap>0) ? cap * 2 : 10);
     }
@@ -204,7 +204,7 @@ void DynamicArray<T>::Add(unsigned int idx, T& element)
 template<typename T>
 void DynamicArray<T>::Push(T& element)
 {
-    if (size + 1 >= cap)
+    if (size + 1 > cap)
     {
         // amortized O(1) add
         Resize((cap>0) ? cap * 2 : 10);
@@ -223,7 +223,7 @@ void DynamicArray<T>::Push(T& element)
 template<typename T>
 void DynamicArray<T>::PushBack(T& element)
 {
-    if (size + 1 >= cap)
+    if (size + 1 > cap)
     {
         // amortized add
         Resize((cap>0) ? cap * 2 : 10);

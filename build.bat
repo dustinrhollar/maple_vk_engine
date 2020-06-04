@@ -43,6 +43,10 @@ IF NOT EXIST build\data\materials\ (
     1>NUL MKDIR build\data\materials\
 )
 
+IF NOT EXIST build\data\mat_refl\ (
+    1>NUL MKDIR build\data\mat_refl\
+)
+
 pushd %BUILD_DIR%\%GAME%
 	
 	echo Building platform...

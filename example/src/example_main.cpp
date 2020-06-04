@@ -18,8 +18,6 @@ file_global jstring FRAG_SHADER;
 
 file_global PerspectiveCamera Camera;
 
-file_global asset_id_t ModelAsset;
-
 file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix,
                                    dyn_uniform_template *PerObjectTemplate);
 file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix,
@@ -163,19 +161,9 @@ void GameStageInit(frame_params* FrameParams)
     
     GlobalPipeline = mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
     
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo); // used mem goes from 976 -> 1000 here
-    
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo); // used mem goes from 1000 -> 984 here
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
-    mresource::Load(FrameParams, Resource_Pipeline, &PipelineCreateInfo);
-    
     //~ Asset Loading
     
-#if 1
+#if 0
     //jstring ExampleGltfModel = InitJString("data/glTF/Fox/glTF/fox.gltf");
     jstring ExampleGltfModel = InitJString("data/glTF/Lantern/Lantern.gltf");
     
@@ -189,7 +177,7 @@ void GameStageInit(frame_params* FrameParams)
     model_create_info *ModelCreateInfo = talloc<model_create_info>(1);
     ModelCreateInfo->Filename          = ExampleModel;
     ModelCreateInfo->FrameParams       = FrameParams;
-    ModelAsset = masset::Load(Asset_Model, ModelCreateInfo);
+    masset::Load(Asset_Model, ModelCreateInfo);
     
     ExampleModel.Clear();
     
@@ -369,17 +357,14 @@ file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, 
 
 file_internal void RenderAllAssets(frame_params *FrameParams, dyn_uniform_template *PerObjectTemplate)
 {
-    for (u32 AssetIdx = 0; AssetIdx < FrameParams->AssetsCount; ++AssetIdx)
+    for (u32 AssetIdx = 0; AssetIdx < FrameParams->ModelAssetsCount; ++AssetIdx)
     {
-        asset Asset = FrameParams->Assets[AssetIdx];
+        asset Asset = FrameParams->ModelAssets[AssetIdx];
         
-        if (Asset.Type == Asset_Model)
+        for (u32 DisjointNode = 0; DisjointNode < Asset.Model.RootModelNodesCount; ++DisjointNode)
         {
-            for (u32 DisjointNode = 0; DisjointNode < Asset.Model.RootModelNodesCount; ++DisjointNode)
-            {
-                model_node *RootNode = Asset.Model.RootModelNodes[DisjointNode];
-                RenderAssetNode(FrameParams, RootNode, mat4(1.0f), PerObjectTemplate);
-            }
+            model_node *RootNode = Asset.Model.RootModelNodes[DisjointNode];
+            RenderAssetNode(FrameParams, RootNode, mat4(1.0f), PerObjectTemplate);
         }
     }
 }

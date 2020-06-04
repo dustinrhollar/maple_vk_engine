@@ -18,6 +18,7 @@ void FreeConfigMemberTable(config_member_table *Table)
         if (!Table->Entries[EntryIdx].IsEmpty)
         {
             FreeConfigVar(&Table->Entries[EntryIdx].Value);
+            Table->Entries[EntryIdx].Key.Clear();
         }
     }
     
@@ -56,7 +57,7 @@ file_internal config_member_table_entry* ConfigMemberTableFindEntry(config_membe
     }
 }
 
-void ConfigMemberTableInsert(config_member_table *Table, jstring Key, config_var Var)
+void ConfigMemberTableInsert(config_member_table *Table, const char* Key, config_var Var)
 {
     // Do we need to resize?
     u32 max_allowed_entry = Table->Cap * Table->LoadFactor;
@@ -65,29 +66,29 @@ void ConfigMemberTableInsert(config_member_table *Table, jstring Key, config_var
         ConfigMemberTableResize(Table, Table->Cap * 2);
     }
     
-    u128 HashedKey = Hash<jstring>(Key);
+    u128 HashedKey = HashCharArray(Key);
     config_member_table_entry *Entry = ConfigMemberTableFindEntry(Table, HashedKey);
     
     if (Entry->IsEmpty)
     {
         Entry->IsEmpty   = false;
-        Entry->Key       = Key;
+        Entry->Key       = pstring(Key);
         Entry->Value     = Var;
         
         Table->Count++;
     }
     else
     {
-        mprinte("Key \"%s\" is already in the entry table!\n", Key.GetCStr());
+        mprinte("Key \"%s\" is already in the entry table!\n", Key);
     }
 }
 
-config_var ConfigMemberTableGet(config_member_table *Table, jstring Key)
+config_var ConfigMemberTableGet(config_member_table *Table, const char* Key)
 {
     config_var result = {};
     result.Type = Config_Unknown;
     
-    u128 HashedKey = Hash<jstring>(Key);
+    u128 HashedKey = HashCharArray(Key);
     config_member_table_entry *Entry = ConfigMemberTableFindEntry(Table, HashedKey);
     
     if (!Entry->IsEmpty)
@@ -96,7 +97,7 @@ config_var ConfigMemberTableGet(config_member_table *Table, jstring Key)
     }
     else
     {
-        mprinte("Key \"%s\" does not exist in the table!\n", Key.GetCStr());
+        mprinte("Key \"%s\" does not exist in the table!\n", Key);
     }
     
     return result;
@@ -104,21 +105,27 @@ config_var ConfigMemberTableGet(config_member_table *Table, jstring Key)
 void ConfigMemberTableResize(config_member_table *Table, u32 Cap)
 {
     u32 OldCap = Table->Cap;
+    u32 OldSize = Table->Count;
     config_member_table_entry *OldEntries = Table->Entries;
     
     // allocate new entry storage and zero the mem
     Table->Entries = palloc<config_member_table_entry>(Cap);
-    for (u32 entry = 0; entry < Table->Cap; ++entry)
+    Table->Cap     = Cap;
+    Table->Count   = 0;
+    for (u32 entry = 0; entry < Cap; ++entry)
         Table->Entries[entry].IsEmpty = true;
     
     for (u32 Entry = 0; Entry < OldCap; ++Entry)
     {
-        ConfigMemberTableInsert(Table, OldEntries[Entry].Key, OldEntries[Entry].Value);
+        if (!OldEntries[Entry].IsEmpty)
+        {
+            ConfigMemberTableInsert(Table, OldEntries[Entry].Key.GetCStr(), OldEntries[Entry].Value);
+            OldEntries[Entry].Key.Clear();
+        }
     }
     
     pfree(OldEntries);
 }
-
 
 //~ Config Obj HashTable
 
@@ -140,6 +147,7 @@ void FreeConfigObjTable(config_obj_table *Table)
         if (!Table->Entries[EntryIdx].IsEmpty)
         {
             FreeConfigObj(&Table->Entries[EntryIdx].Value);
+            Table->Entries[EntryIdx].Key.Clear();
         }
     }
     
@@ -178,7 +186,7 @@ file_internal config_obj_table_entry* ConfigObjTableFindEntry(config_obj_table *
     }
 }
 
-void ConfigObjTableInsert(config_obj_table *Table, jstring Key, config_obj Var)
+void ConfigObjTableInsert(config_obj_table *Table, const char* Key, config_obj Var)
 {
     // Do we need to resize?
     u32 max_allowed_entry = Table->Cap * Table->LoadFactor;
@@ -187,28 +195,28 @@ void ConfigObjTableInsert(config_obj_table *Table, jstring Key, config_obj Var)
         ConfigObjTableResize(Table, Table->Cap * 2);
     }
     
-    u128 HashedKey = Hash<jstring>(Key);
+    u128 HashedKey = HashCharArray(Key);
     config_obj_table_entry *Entry = ConfigObjTableFindEntry(Table, HashedKey);
     
     if (Entry->IsEmpty)
     {
         Entry->IsEmpty   = false;
-        Entry->Key       = Key;
+        Entry->Key       = pstring(Key);
         Entry->Value     = Var;
         
         Table->Count++;
     }
     else
     {
-        mprinte("Key \"%s\" is already in the entry table!\n", Key.GetCStr());
+        mprinte("Key \"%s\" is already in the entry table!\n", Key);
     }
 }
 
-config_obj ConfigObjTableGet(config_obj_table *Table, jstring Key)
+config_obj ConfigObjTableGet(config_obj_table *Table, const char* Key)
 {
     config_obj result = {};
     
-    u128 HashedKey = Hash<jstring>(Key);
+    u128 HashedKey = HashCharArray(Key);
     config_obj_table_entry *Entry = ConfigObjTableFindEntry(Table, HashedKey);
     
     if (!Entry->IsEmpty)
@@ -217,8 +225,8 @@ config_obj ConfigObjTableGet(config_obj_table *Table, jstring Key)
     }
     else
     {
-        result.Name = InitJString(); // return an empty name
-        mprinte("Key \"%s\" does not exist in the table!\n", Key.GetCStr());
+        result.Name = pstring(); // return an empty name
+        mprinte("Key \"%s\" does not exist in the table!\n", Key);
     }
     
     return result;
@@ -226,16 +234,25 @@ config_obj ConfigObjTableGet(config_obj_table *Table, jstring Key)
 void ConfigObjTableResize(config_obj_table *Table, u32 Cap)
 {
     u32 OldCap = Table->Cap;
+    u32 OldSize = Table->Count;
     config_obj_table_entry *OldEntries = Table->Entries;
     
     // allocate new entry storage and zero the mem
     Table->Entries = palloc<config_obj_table_entry>(Cap);
+    Table->Cap     = Cap;
+    Table->Count   = 0;
+    
+    // allocate new entry storage and zero the mem
     for (u32 entry = 0; entry < Table->Cap; ++entry)
         Table->Entries[entry].IsEmpty = true;
     
     for (u32 Entry = 0; Entry < OldCap; ++Entry)
     {
-        ConfigObjTableInsert(Table, OldEntries[Entry].Key, OldEntries[Entry].Value);
+        if (!OldEntries[Entry].IsEmpty)
+        {
+            ConfigObjTableInsert(Table, OldEntries[Entry].Key.GetCStr(), OldEntries[Entry].Value);
+            OldEntries[Entry].Key.Clear();
+        }
     }
     
     pfree(OldEntries);
@@ -1033,7 +1050,11 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
         }
         
         (*TreeIdx)++;
-        ConfigMemberTableInsert(&Obj->ObjMembers, Var.Name, Var);
+        
+        //jstring Key = InitJString(VarNameNode->Token.Start, VarNameNode->Token.Len);
+        ConfigMemberTableInsert(&Obj->ObjMembers, Var.Name.GetCStr(), Var);
+        
+        //Var.Name.Clear();
     }
 }
 
@@ -1060,7 +1081,8 @@ file_internal void BuildObjTable(config_obj_table *ObjTable, syntax_tree_list *S
         ++TreeIdx;
         BuildObjMemberTable(&Obj, SyntaxTrees, &TreeIdx);
         
-        ConfigObjTableInsert(ObjTable, Obj.Name, Obj);
+        ConfigObjTableInsert(ObjTable, Obj.Name.GetCStr(), Obj);
+        //Obj.Name.Clear();
         
         // if we are still within the syntax tree list, and if the current
         // tree is an object node, then need to decrement the indx because
@@ -1077,6 +1099,12 @@ file_internal void BuildObjTable(config_obj_table *ObjTable, syntax_tree_list *S
 config_obj_table LoadConfigFile(jstring filename)
 {
     jstring FileData = PlatformLoadFile(filename);
+    
+    if (FileData.len == 0)
+    {
+        mprinte("Unable to load config file \"%s\"!\n", filename);
+        return {};
+    }
     
     mscanner Scanner = {};
     Scanner.Buffer     = (FileData.heap) ? FileData.hptr : FileData.sptr;
@@ -1134,7 +1162,7 @@ void SaveConfigFile()
 
 //~ Getters for a config obj
 
-i32 GetConfigI32(config_obj *Obj, jstring VarName)
+i32 GetConfigI32(config_obj *Obj, const char* VarName)
 {
     i32 Result = {};
     
@@ -1142,7 +1170,7 @@ i32 GetConfigI32(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_I32)
     {
         mprinte("Requested i32 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1152,7 +1180,7 @@ i32 GetConfigI32(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-i64 GetConfigI64(config_obj *Obj, jstring VarName)
+i64 GetConfigI64(config_obj *Obj, const char* VarName)
 {
     i64 Result = {};
     
@@ -1160,7 +1188,7 @@ i64 GetConfigI64(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_I64)
     {
         mprinte("Requested i64 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1170,7 +1198,7 @@ i64 GetConfigI64(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-u32 GetConfigU32(config_obj *Obj, jstring VarName)
+u32 GetConfigU32(config_obj *Obj, const char* VarName)
 {
     u32 Result = {};
     
@@ -1178,7 +1206,7 @@ u32 GetConfigU32(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_U32)
     {
         mprinte("Requested u32 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1188,7 +1216,7 @@ u32 GetConfigU32(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-u64 GetConfigU64(config_obj *Obj, jstring VarName)
+u64 GetConfigU64(config_obj *Obj, const char* VarName)
 {
     u64 Result = {};
     
@@ -1196,7 +1224,7 @@ u64 GetConfigU64(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_U64)
     {
         mprinte("Requested u64 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1206,7 +1234,7 @@ u64 GetConfigU64(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-r32 GetConfigR32(config_obj *Obj, jstring VarName)
+r32 GetConfigR32(config_obj *Obj, const char* VarName)
 {
     r32 Result = {};
     
@@ -1214,7 +1242,7 @@ r32 GetConfigR32(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_R32)
     {
         mprinte("Requested r32 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1224,7 +1252,7 @@ r32 GetConfigR32(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-ivec2 GetConfigIVec2(config_obj *Obj, jstring VarName)
+ivec2 GetConfigIVec2(config_obj *Obj, const char* VarName)
 {
     ivec2 Result = {};
     
@@ -1232,7 +1260,7 @@ ivec2 GetConfigIVec2(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_IVec2)
     {
         mprinte("Requested ivec2 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1242,7 +1270,7 @@ ivec2 GetConfigIVec2(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-ivec3 GetConfigIVec3(config_obj *Obj, jstring VarName)
+ivec3 GetConfigIVec3(config_obj *Obj, const char* VarName)
 {
     ivec3 Result = {};
     
@@ -1250,7 +1278,7 @@ ivec3 GetConfigIVec3(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_IVec3)
     {
         mprinte("Requested ivec3 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1260,7 +1288,7 @@ ivec3 GetConfigIVec3(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-ivec4 GetConfigIVec4(config_obj *Obj, jstring VarName)
+ivec4 GetConfigIVec4(config_obj *Obj, const char* VarName)
 {
     ivec4 Result = {};
     
@@ -1268,7 +1296,7 @@ ivec4 GetConfigIVec4(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_IVec4)
     {
         mprinte("Requested ivec4 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1278,7 +1306,7 @@ ivec4 GetConfigIVec4(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-vec2 GetConfigVec2(config_obj *Obj, jstring VarName)
+vec2 GetConfigVec2(config_obj *Obj, const char* VarName)
 {
     vec2 Result = {};
     
@@ -1286,7 +1314,7 @@ vec2 GetConfigVec2(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_Vec2)
     {
         mprinte("Requested vec2 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1296,7 +1324,7 @@ vec2 GetConfigVec2(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-vec3 GetConfigVec3(config_obj *Obj, jstring VarName)
+vec3 GetConfigVec3(config_obj *Obj, const char* VarName)
 {
     vec3 Result = {};
     
@@ -1304,7 +1332,7 @@ vec3 GetConfigVec3(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_Vec3)
     {
         mprinte("Requested vec3 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1314,7 +1342,7 @@ vec3 GetConfigVec3(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-vec4 GetConfigVec4(config_obj *Obj, jstring VarName)
+vec4 GetConfigVec4(config_obj *Obj, const char* VarName)
 {
     vec4 Result = {};
     
@@ -1322,7 +1350,7 @@ vec4 GetConfigVec4(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_Vec4)
     {
         mprinte("Requested vec4 variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1333,7 +1361,7 @@ vec4 GetConfigVec4(config_obj *Obj, jstring VarName)
 }
 
 // Returns a COPY of the string
-jstring GetConfigStr(config_obj *Obj, jstring VarName)
+jstring GetConfigStr(config_obj *Obj, const char* VarName)
 {
     jstring Result;
     
@@ -1341,7 +1369,7 @@ jstring GetConfigStr(config_obj *Obj, jstring VarName)
     if (Var.Type != Config_Str)
     {
         mprinte("Requested string variable \"%s\" from object \"%s\", but it does not exist!\n",
-                Obj->Name.GetCStr(), VarName.GetCStr());
+                Obj->Name.GetCStr(), VarName);
     }
     else
     {
@@ -1351,13 +1379,13 @@ jstring GetConfigStr(config_obj *Obj, jstring VarName)
     return Result;
 }
 
-config_obj GetConfigObj(config_obj_table *Table, jstring ObjName)
+config_obj GetConfigObj(config_obj_table *Table, const char* ObjName)
 {
     config_obj Result = ConfigObjTableGet(Table, ObjName);
     
     if (Result.Name.len == 0)
     {
-        mprinte("Could not find an Object with the name \"%s\"\n", ObjName.GetCStr());
+        mprinte("Could not find an Object with the name \"%s\"\n", ObjName);
     }
     
     return Result;

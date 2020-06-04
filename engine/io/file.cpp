@@ -416,12 +416,33 @@ inline void ResizeIfPossible(FileBuffer *buffer, u32 req_size)
         ResizeFileBuffer(buffer, (buffer->cap * 2 > req_size) ? buffer->cap * 2 : req_size * 2);
 }
 
-i32 BufferUnusedSize(FileBuffer *buffer)
+inline i32 BufferUnusedSize(FileBuffer *buffer)
 {
     u32 used_space = buffer->brkp - buffer->start;
     return buffer->cap - used_space;
 }
 
+void WriteToFileBuffer(FileBuffer *Buffer, char *Fmt, ...)
+{
+    va_list Args;
+    va_start(Args, Fmt);
+    
+    int CharsRead = vsnprintf(NULL, 0, Fmt, Args);
+    if (CharsRead < 0)
+    {
+        mprinte("Encoding error when writing to a buffer. The format was \"%s\"! Unused space in the buffer was %d\n", Fmt, BufferUnusedSize(Buffer));
+        return;
+    }
+    
+    if (CharsRead > BufferUnusedSize(Buffer))
+    { // buffer wasn't big enough, so resize and try again
+        ResizeIfPossible(Buffer, CharsRead);
+    }
+    
+    CharsRead = vsnprintf(Buffer->brkp, BufferUnusedSize(Buffer), Fmt, Args);
+    
+    Buffer->brkp += CharsRead;
+}
 
 //~ Write Routines
 void Int32ToBinaryBuffer(FileBuffer *buffer, i32 *data, u32 count)
@@ -550,11 +571,6 @@ void JStringToBinaryBuffer(FileBuffer *buffer, jstring &str)
     CharToBinaryBuffer(buffer, str.GetCStr(), str.len);
 }
 
-void EntityToBinaryBuffer(FileBuffer *buffer, ecs::Entity entity)
-{
-    UInt64ToBinaryBuffer(buffer, &entity.id, 1);
-}
-
 // NOTE(Dustin): Prints a head for the array - not the array itself!
 template<class T>
 void DynamicArrayToBinaryBuffer(FileBuffer *buffer, DynamicArray<T> *array)
@@ -672,11 +688,6 @@ void ReadUInt64FromBinaryBuffer(FileBuffer *buffer, u64 *result)
         *result = ReadInt64(buffer->brkp);
         buffer->brkp += req_size;
     }
-}
-
-void ReadEntityFromBinaryBuffer(FileBuffer *buffer, ecs::Entity *entity)
-{
-    ReadUInt64FromBinaryBuffer(buffer, &entity->id);
 }
 
 template<class T>

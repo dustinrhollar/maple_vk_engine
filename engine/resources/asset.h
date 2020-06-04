@@ -52,7 +52,22 @@ struct Vertex
     
 };
 
-typedef i64 asset_id_t;
+enum asset_type
+{
+    Asset_Invalid    = BIT(0),
+    Asset_Model      = BIT(1),
+    Asset_Texture    = BIT(2),
+    Asset_Material   = BIT(3),
+};
+
+struct asset_id
+{
+    u64 Type:8;
+    u64 Gen:16;
+    u64 Index:40;
+};
+
+typedef asset_id asset_id_t;
 
 struct model_create_info
 {
@@ -126,13 +141,6 @@ struct model_node
     jstring     MeshName;
 };
 
-enum asset_type
-{
-    Asset_Model,
-    Asset_Texture,
-    Asset_Material,
-};
-
 struct asset_model
 {
     ecs::Entity Entity;
@@ -161,7 +169,7 @@ struct asset_material
 struct asset
 {
     asset_id_t Id;
-    asset_type Type;
+    asset_type Type; // TODO(Dustin): Remove this. It is encoded in the Id.
     union
     {
         asset_model    Model;
@@ -180,9 +188,8 @@ namespace masset
     void Render(asset_id_t AssetId);
     
     asset* GetAsset(asset_id_t Id);
-    // uh...yea, that's a triple pointer.
-    // an asset array is an array of asset pointers...
-    void GetModelAssets(asset **Assets, u32 *Count);
+    void GetAssetList(asset **Assets, u32 *Count);
+    void FilterAssets(asset **Assets, u32 *Count, asset *AssetList, u32 AssetListCount, asset_type Type);
     
     // Retrieves a list of assets of the specified type
     DynamicArray<asset*> Filter(asset_type Type);

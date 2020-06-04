@@ -7,6 +7,12 @@ void Hash128(const T* key, void *out) {
     Hash128((void*)key, sizeof(T), out);
 }
 
+u128 HashCharArray(const char* str)
+{
+    u128 result = {};
+    Hash128(str, strlen(str), &result);
+    return result;
+}
 
 inline u128 hash_char_array(const char *str, size_t len);
 inline bool compare_hash(u128 lhs, u128 rhs);

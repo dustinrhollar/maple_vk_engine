@@ -1068,40 +1068,23 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     // Temporarily Create a Memory Manager with a small footprint
     mm::InitializeMemoryManager(_KB(10), _KB(1));
     
-    jstring EngineConf = InitJString("data/configs/engine.conf");
-    
-    jstring EngineSetttingsName = InitJString("Engine Settings");
-    jstring ClientSetttingsName = InitJString("Client Settings");
-    
-    jstring MemoryUsageName     = InitJString("MemoryUsage");
-    jstring TransientMemoryName = InitJString("TransientMemory");
-    jstring AppNameName         = InitJString("AppName");
+    jstring EngineConf = pstring("data/configs/engine.conf");
     
     config_obj_table Table = LoadConfigFile(EngineConf);
     
-    config_obj EngineSettingsObj = GetConfigObj(&Table, EngineSetttingsName);
+    config_obj EngineSettingsObj = GetConfigObj(&Table, "Engine Settings");
     
-    mprint("Object: %s\n", EngineSettingsObj.Name.GetCStr());
-    mprint("\tHas %d members\n", EngineSettingsObj.ObjMembers.Count);
+    u64 MemoryUsage     = GetConfigU64(&EngineSettingsObj, "MemoryUsage");
+    u64 TransientMemory = GetConfigU64(&EngineSettingsObj, "TransientMemory");
     
-    u64 MemoryUsage     = GetConfigU64(&EngineSettingsObj, MemoryUsageName);
-    u64 TransientMemory = GetConfigU64(&EngineSettingsObj, TransientMemoryName);
-    
-    mprint("\tMemory Usage is %d\n", MemoryUsage);
-    mprint("\tTransient Memory is %d\n", TransientMemory);
-    
-    config_obj ClientSettingsObj = GetConfigObj(&Table, ClientSetttingsName);
-    jstring JAppName = GetConfigStr(&ClientSettingsObj, AppNameName);
+    config_obj ClientSettingsObj = GetConfigObj(&Table, "Client Settings");
+    jstring JAppName = GetConfigStr(&ClientSettingsObj, "AppName");
     strncpy(AppName, JAppName.GetCStr(), JAppName.len);
     AppName[JAppName.len] = 0;
-    mprint("Application name is %s\n", AppName);
     
     FreeConfigObjTable(&Table);
+    
     JAppName.Clear();
-    MemoryUsageName.Clear();
-    TransientMemoryName.Clear();
-    EngineSetttingsName.Clear();
-    ClientSetttingsName.Clear();
     EngineConf.Clear();
     
     mm::ShutdownMemoryManager();
@@ -1148,7 +1131,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (!vk::InitializeVulkan())
     {
         mprinte("Unable to initialize Vulkan!\n");
-        //glfwTerminate();
         ecs::ShutdownECS();
         mm::ShutdownMemoryManager();
         
@@ -1179,7 +1161,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         mm::ResetTransientMemory();
         
         // Collect this frame's parameters
-        // NOTE(Dustin): Copy assets, create a frame_params init function
         frame_params FrameParams = {};
         InitFrameParams(&FrameParams);
         
@@ -1294,24 +1275,52 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         mm::ResetTransientMemory();
         
         // Collect this frame's parameters
-        // TODO(Dustin): Copy assets, create a frame_params init function
         // TODO(Dustin): Set frame timers, frame number, etc...
         frame_params FrameParams = {};
         InitFrameParams(&FrameParams);
+        FrameParams.Frame = FrameCount;
+        FrameParams.FrameStartTime = Win32GetWallClock();
         CopyModelAssets(&FrameParams);
-        
-        // TODO(Dustin):Copy assets into frame memory
         
         // TODO(Dustin): Have the game define a callback function
         // that will be "GameStageEntry".
         GameStageEntry(&FrameParams);
+        FrameParams.GameStageEndTime = Win32GetWallClock();
+        
+        FrameParams.RenderStageStartTime = Win32GetWallClock();
         RenderStageEntry(&FrameParams);
+        FrameParams.RenderStageEndTime   = Win32GetWallClock();
+        
+        FrameParams.GpuStageStartTime = Win32GetWallClock();
         GpuStageEntry(&FrameParams);
+        FrameParams.GpuStageEndTime = Win32GetWallClock();
+        
+#if 1
+        local_persist r32 FrameAccumulator = 0.0f;
+        
+        r32 GameElapsed   = Win32GetSecondsElapsed(FrameParams.FrameStartTime, FrameParams.GameStageEndTime);
+        r32 RenderElapsed = Win32GetSecondsElapsed(FrameParams.RenderStageStartTime, FrameParams.RenderStageEndTime);
+        r32 GpuElapsed    = Win32GetSecondsElapsed(FrameParams.GpuStageStartTime, FrameParams.GpuStageEndTime);;
+        
+        u32 Fps = static_cast<u32>(1.0f / (GameElapsed + RenderElapsed + GpuElapsed));
+        
+        // Prints the ms for each stage in the frame
+        Win32PrintMessage(EConsoleColor::Red, EConsoleColor::DarkGrey, "Frame: %ld\n", FrameParams.Frame);
+        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tGame Stage Time:  \t%f ms\n",
+                          GameElapsed * 1000.0f);
+        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tRender Stage Time:\t%f ms\n",
+                          RenderElapsed * 1000.0f);
+        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tGpu Stage Time:   \t%f ms\n",
+                          GpuElapsed * 1000.0f);
+        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tFPS:              \t%d\n", Fps);
+        
+#endif
         
         GlobalFrameInput.TimeElapsed = seconds_elapsed_per_frame;
+        
+        FrameCount++;
     }
     
-    //GameShutdown();
     {
         mm::ResetTransientMemory();
         

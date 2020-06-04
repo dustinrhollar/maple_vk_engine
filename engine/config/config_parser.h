@@ -232,33 +232,33 @@ struct syntax_tree_list
 
 void InitConfigMemberTable(config_member_table *Table);
 void FreeConfigMemberTable(config_member_table *Table);
-void ConfigMemberTableInsert(config_member_table *Table, jstring Key, config_var Var);
-config_var ConfigMemberTableGet(config_member_table *Table, jstring Key);
+void ConfigMemberTableInsert(config_member_table *Table, const char* Key, config_var Var);
+config_var ConfigMemberTableGet(config_member_table *Table, const char* Key);
 void ConfigMemberTableResize(config_member_table *Table, u32 Cap);
 
 void InitConfigObjTable(config_obj_table *Table);
 void FreeConfigObjTable(config_obj_table *Table);
-void ConfigObjTableInsert(config_obj_table *Table, jstring Key, config_obj Var);
-config_obj ConfigObjTableGet(config_obj_table *Table, jstring Key);
+void ConfigObjTableInsert(config_obj_table *Table, const char* Key, config_obj Var);
+config_obj ConfigObjTableGet(config_obj_table *Table, const char* Key);
 void ConfigObjTableResize(config_obj_table *Table, u32 Cap);
 
 void InitConfigObj(config_obj *Obj, const char *Name, u32 NameLen);
 void FreeConfigObj(config_obj *Obj);
 
-i32 GetConfigI32(config_obj *Obj, jstring VarName);
-i64 GetConfigI64(config_obj *Obj, jstring VarName);
-u32 GetConfigU32(config_obj *Obj, jstring VarName);
-u64 GetConfigU64(config_obj *Obj, jstring VarName);
-r32 GetConfigR32(config_obj *Obj, jstring VarName);
-ivec2 GetConfigIVec2(config_obj *Obj, jstring VarName);
-ivec3 GetConfigIVec3(config_obj *Obj, jstring VarName);
-ivec4 GetConfigIVec4(config_obj *Obj, jstring VarName);
-vec2 GetConfigVec2(config_obj *Obj, jstring VarName);
-vec3 GetConfigVec3(config_obj *Obj, jstring VarName);
-vec4 GetConfigVec4(config_obj *Obj, jstring VarName);
+i32 GetConfigI32(config_obj *Obj, const char* VarName);
+i64 GetConfigI64(config_obj *Obj, const char* VarName);
+u32 GetConfigU32(config_obj *Obj, const char* VarName);
+u64 GetConfigU64(config_obj *Obj, const char* VarName);
+r32 GetConfigR32(config_obj *Obj, const char* VarName);
+ivec2 GetConfigIVec2(config_obj *Obj, const char* VarName);
+ivec3 GetConfigIVec3(config_obj *Obj, const char* VarName);
+ivec4 GetConfigIVec4(config_obj *Obj, const char* VarName);
+vec2 GetConfigVec2(config_obj *Obj, const char* VarName);
+vec3 GetConfigVec3(config_obj *Obj, const char* VarName);
+vec4 GetConfigVec4(config_obj *Obj, const char* VarName);
 // Returns a COPY of the string
-jstring GetConfigStr(config_obj *Obj, jstring VarName);
-config_obj GetConfigObj(config_obj_table *Table, jstring ObjName);
+jstring GetConfigStr(config_obj *Obj, const char* VarName);
+config_obj GetConfigObj(config_obj_table *Table, const char* ObjName);
 
 // size is needed for when the Data Type is a string. Need to know the length
 // of the string.
