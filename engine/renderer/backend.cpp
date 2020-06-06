@@ -251,6 +251,21 @@ void GpuStageEntry(frame_params *FrameParams)
                     vk::BeginRenderPass(CommandBuffer, clear_values, 1, Framebuffer, RenderPass);
                 }
                 
+                // Upload the GlobalShaderData to its corresponding Uniform for this frame...
+                global_shader_data GlobalShaderData;
+                mresource::UpdateGlobalFrameData(&Info->GlobalShaderData,
+                                                 FrameImageIndex);
+                
+                // HACK(Dustin): Get the Descriptor for the Global Frame Shader Data
+                resource DefaultPipelineResource = mresource::GetDefaultPipeline();
+                resource GlobalFrameDescriptor   = mresource::GetDefaultFrameDescriptor();
+                VkDescriptorSet DescriptorSet    = GlobalFrameDescriptor.DescriptorSet.DescriptorSets[FrameImageIndex].Handle;
+                
+                vk::BindDescriptorSets(CommandBuffer, DefaultPipelineResource.Pipeline.Layout,
+                                       GLOBAL_SET, 1,
+                                       &DescriptorSet, 0,
+                                       nullptr);
+                
                 FrameActive = true;
             } break;
             

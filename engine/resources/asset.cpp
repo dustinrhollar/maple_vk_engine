@@ -252,10 +252,9 @@ namespace masset
     
     file_internal void LoadReflectionData(jstring ReflectionFile)
     {
-        mprint("Reflection file \"%s\"\n", ReflectionFile.GetCStr());
-        
         jstring Data = PlatformLoadFile(ReflectionFile);
         
+        DynamicArray<shader_data_serial> ReflectionData = DynamicArray<shader_data_serial>(0);
         if (Data.len > 0)
         {
             FileBuffer Buffer = {};
@@ -265,10 +264,14 @@ namespace masset
             
             u32 ShaderCount;
             ReadUInt32FromBinaryBuffer(&Buffer, &ShaderCount);
-            DynamicArray<shader_data_serial> ReflectionData = DynamicArray<shader_data_serial>(ShaderCount);
+            ReflectionData.Resize(ShaderCount);
             for (u32 Idx = 0; Idx < ShaderCount; ++Idx)
             {
                 shader_data_serial ShaderData = {};
+                
+                u32 ShaderType;
+                ReadUInt32FromBinaryBuffer(&Buffer, &ShaderType);
+                ShaderData.Type = static_cast<shader_type>(ShaderType);
                 
                 ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.DynamicSetSize);
                 ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.StaticSetSize);
@@ -320,7 +323,89 @@ namespace masset
         }
         
         // TODO(Dustin): Do something with the data
+        /*
+
+Need to collect each unique Descriptor Set
+
+For each descriptor set, need to collect the Bindings that Create the Layout
+
+After creating the Layout, we can create the descriptor sets
+
+Need to make sure there are no gaps in the descriptor sets
+
+*/
         
+        struct mat_descriptor_set
+        {
+            u32 Set;
+            
+            // hard limit of 10 bindings
+            VkDescriptorSetLayoutBinding Bindings[10];
+            u32                          BindingsCount;
+        };
+        
+        DynamicArray<mat_descriptor_set> SetList = DynamicArray<mat_descriptor_set>(5);
+        
+        // Step 1: Collect the unique descriptor sets.
+        for (u32 Idx = 0; Idx < ReflectionData.size; ++Idx)
+        {
+            shader_data_serial ShaderData = ReflectionData[Idx];
+            
+            // TODO(Dustin): Push Constants...
+            
+            for (u32 SetIdx = 0; SetIdx < ShaderData.DescriptorSets.size; SetIdx++)
+            {
+                input_block_serial InputBlock = ShaderData.DescriptorSets[SetIdx];
+                
+                // Search for duplicate sets
+                for (u32 SetListIdx = 0; SetListIdx < SetList.size; ++SetListIdx)
+                {
+                    if (SetList[SetListIdx].Set == InputBlock.Set)
+                    {
+                        
+                        
+                        // Add the binding...
+                        // There are currently three types of bindings:
+                        // 1. Uniform Block
+                        // 2. Dynamic Uniform Block
+                        // 3. Texture
+                        // To distinguish 1 & 2:
+                        // 1. "GlobalData" -> Use the default global data
+                        // 2. "ObjectData" -> Use global object data
+                        
+                        // TODO(Dustin):
+                        // For generic buffer types, I will assume that when i
+                        // get to that point, I will be able to edit the data from
+                        // a GUI.
+                        
+                        // TODO(Dustin):
+                        // Textures are relatively simple:
+                        // Check if the block is a texture, check if the texture is already
+                        // created, then create the texture (if needed of course)
+                        
+                        if (InputBlock.Name == "ObjectData")
+                        {
+                            
+                        }
+                        else if (InputBlock.Name == "GlobalData")
+                        {
+                            
+                        }
+                        else if (InputBlock.IsTextureBlock)
+                        {
+                            
+                        }
+                        else
+                        {
+                            // TODO(Dustin):
+                            // Generic descriptor bind, need to handle assigning data
+                        }
+                        
+                        continue;
+                    }
+                }
+            }
+        }
         
         // Clean up
         Data.Clear();

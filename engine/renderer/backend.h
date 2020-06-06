@@ -22,6 +22,9 @@ struct gpu_begin_frame_info
     bool HasDepth;
     r32  Depth;
     u32  Stencil;
+    
+    // Global Frame Data to set
+    global_shader_data GlobalShaderData;
 };
 
 struct gpu_end_frame_info
@@ -32,9 +35,6 @@ struct gpu_vertex_buffer_create_info
 {
     VkBufferCreateInfo       BufferCreateInfo;
     VmaAllocationCreateInfo  VmaCreateInfo;
-    
-    //VkBuffer                *Buffer;
-    //VmaAllocation           *Allocation;
     
     BufferParameters        *BufferParams;
     

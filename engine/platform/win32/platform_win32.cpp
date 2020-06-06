@@ -1164,10 +1164,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         frame_params FrameParams = {};
         InitFrameParams(&FrameParams);
         
-        masset::Init();
-        mresource::Init(&FrameParams);
         GpuStageInit(&FrameParams);
         RenderStageInit(&FrameParams);
+        masset::Init();
+        mresource::Init(&FrameParams);
         GameStageInit(&FrameParams);
         
         // Game Init will probably init some render/gpu commands...

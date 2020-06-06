@@ -97,7 +97,7 @@ file_internal void SerializeInputBlock(FileBuffer *Buffer, input_block *Block)
     }
 }
 
-void GenerateReflectionInfo(DynamicArray<jstring> Shaders, jstring ReflFile)
+void GenerateReflectionInfo(DynamicArray<shader> &Shaders, jstring ReflFile)
 {
     //~ Generate Reflection info
     DynamicArray<shader_data> ReflectionData = DynamicArray<shader_data>(Shaders.Size());
@@ -105,6 +105,7 @@ void GenerateReflectionInfo(DynamicArray<jstring> Shaders, jstring ReflFile)
     for (u32 ShaderIdx = 0; ShaderIdx < Shaders.Size(); ++ShaderIdx)
     {
         shader_data ShaderData = {};
+        ShaderData.Type = Shaders[ShaderIdx].Type;
         
         // NOTE(Dustin):
         // Right now not using Win32 helpers because the
@@ -113,7 +114,7 @@ void GenerateReflectionInfo(DynamicArray<jstring> Shaders, jstring ReflFile)
         // implement a workaround yet.
         
         FILE* ShaderFile;
-        fopen_s(&ShaderFile, Shaders[ShaderIdx].GetCStr(), "rb");
+        fopen_s(&ShaderFile, Shaders[ShaderIdx].Filename.GetCStr(), "rb");
         assert(ShaderFile);
         
         fseek(ShaderFile, 0, SEEK_END);
@@ -225,6 +226,7 @@ void GenerateReflectionInfo(DynamicArray<jstring> Shaders, jstring ReflFile)
         shader_data ShaderData = ReflectionData[ReflectionIdx];
         
         u32 ShaderDataCount[] = {
+            static_cast<u32>(ShaderData.Type),
             ShaderData.DynamicSetSize,
             ShaderData.StaticSetSize,
             ShaderData.NumDynamicUniforms,

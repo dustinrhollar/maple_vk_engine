@@ -5,6 +5,7 @@ void RenderStageInit(frame_params *FrameParams)
 
 void RenderStageEntry(frame_params *FrameParams)
 {
+    dyn_uniform_template ObjectDynamicOffset = mresource::GetDynamicObjectUniformTemplate();
     
     for (u32 Cmd = 0; Cmd < FrameParams->RenderCommandsCount; ++Cmd)
     {
@@ -16,24 +17,70 @@ void RenderStageEntry(frame_params *FrameParams)
             {
                 render_draw_command *Info = static_cast<render_draw_command*>(RenderCmd.Data);
                 
-                VkBuffer *Buffers = talloc<VkBuffer>(Info->VertexBuffersCount);
-                for (u32 Buffer = 0; Buffer < Info->VertexBuffersCount; ++Buffer)
+                // TODO(Dustin): Do a prepass over the objects to collect the offsets into
+                // the uniform buffer in order to reduce descriptor offset binds
+                
+                // HACK(Dustin): Get the hard coded default resources...
+                // Will get removed when the material system is in place
+                resource DefaultPipelineResource = mresource::GetDefaultPipeline();
+                resource DefaultObjectResource   = mresource::GetObjectDescriptorSet();
+                resource DefaultObjectUniform    = mresource::GetObjectUniform();
+                
+                // HACK(Dustin): Bind the Engine Default pipeline...
+                gpu_bind_pipeline_info *PipelineBindInfo = talloc<gpu_bind_pipeline_info>(1);
+                PipelineBindInfo->Pipeline = DefaultPipelineResource.Pipeline.Pipeline;
+                
+                AddGpuCommand(FrameParams, { GpuCmd_BindPipeline, PipelineBindInfo });
+                
+                // Update the descriptor bind for these primitive draws...
+                u32 *ObjOffsets = talloc<u32>(1);
+                ObjOffsets[0] = (u32)mresource::DynUniformGetNextOffset(&ObjectDynamicOffset);
+                
+                // NOTE(Dustin): I don't like having to do this....
+                object_shader_data *ObjData = talloc<object_shader_data>(1);
+                *ObjData = Info->ObjectShaderData;
+                
+                gpu_update_buffer_info *BufferInfo = talloc<gpu_update_buffer_info>(1);
+                BufferInfo->Uniform        = DefaultObjectUniform.Id;
+                BufferInfo->Data           = ObjData;
+                BufferInfo->DataSize       = sizeof(object_shader_data);
+                BufferInfo->BufferOffset   = ObjOffsets[0];
+                
+                AddGpuCommand(FrameParams, { GpuCmd_UpdateBuffer, BufferInfo });
+                
+                gpu_descriptor_set_bind_info *BindInfo = talloc<gpu_descriptor_set_bind_info>(1);
+                BindInfo->PipelineLayout      = DefaultPipelineResource.Pipeline.Layout;
+                BindInfo->DescriptorId        = DefaultObjectResource.Id;
+                BindInfo->DynamicOffsets      = ObjOffsets;
+                BindInfo->DynamicOffsetsCount = 1;
+                BindInfo->FirstSet            = STATIC_SET; // set number of per-object set
+                
+                AddGpuCommand(FrameParams, { GpuCmd_BindDescriptorSet, BindInfo });
+                
+                // TODO(Dustin): Place primitives in a list to draw with similar materials...
+                for (int i = 0; i < Info->PrimitivesCount; ++i)
                 {
-                    resource Resource = mresource::GetResource(Info->VertexBuffers[Buffer]);
-                    Buffers[Buffer] = Resource.VertexBuffer.Buffer.Handle;
+                    primitive Primitive = Info->PrimitivesToDraw[i];
+                    
+                    VkBuffer VertexBuffer = mresource::GetResource(Primitive.VertexBuffer).VertexBuffer.Buffer.Handle;
+                    VkBuffer IndexBuffer  = mresource::GetResource(Primitive.IndexBuffer).IndexBuffer.Buffer.Handle;
+                    
+                    VkBuffer *Buffers       = talloc<VkBuffer>(1);
+                    Buffers[0]              = VertexBuffer;
+                    
+                    u64 *Offsets            = talloc<u64>(1);
+                    Offsets[0]              = 0;
+                    
+                    gpu_draw_info *DrawInfo = talloc<gpu_draw_info>(1);
+                    DrawInfo->VertexBuffers      = Buffers;
+                    DrawInfo->Offsets            = Offsets;
+                    DrawInfo->VertexBuffersCount = 1;
+                    DrawInfo->IsIndexed          = Primitive.IsIndexed;
+                    DrawInfo->IndexBuffer        = IndexBuffer;
+                    DrawInfo->Count              = (Primitive.IsIndexed) ? Primitive.IndexCount : Primitive.VertexCount;
+                    
+                    AddGpuCommand(FrameParams, { GpuCmd_Draw, DrawInfo });
                 }
-                
-                resource IResource = mresource::GetResource(Info->IndexBuffer);
-                
-                gpu_draw_info *DrawInfo = talloc<gpu_draw_info>(1);
-                DrawInfo->VertexBuffers      = Buffers;
-                DrawInfo->Offsets            = Info->Offsets;
-                DrawInfo->VertexBuffersCount = Info->VertexBuffersCount;
-                DrawInfo->IsIndexed          = Info->IsIndexed;
-                DrawInfo->IndexBuffer        = IResource.IndexBuffer.Buffer.Handle;
-                DrawInfo->Count              = Info->Count;
-                
-                AddGpuCommand(FrameParams, { GpuCmd_Draw, DrawInfo });
             } break;
             
             case RenderCmd_LoadAsset:

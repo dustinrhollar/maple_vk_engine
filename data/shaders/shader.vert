@@ -6,23 +6,23 @@ layout (location = 1) in vec3 normals;
 layout (location = 2) in vec4 color;
 layout (location = 3) in vec2 uv0;
 
-struct ViewProj {
+struct global_data {
     mat4 View;
     mat4 Projection;
 };
 
-struct ObjectData {
+struct object_data {
     mat4 Model;
 };
 
-layout (binding = 0, set=0) uniform VPBuffer {
-    ViewProj VP;
+layout (binding = 0, set = 0) uniform global_data_buffer {
+    global_data GlobalData;
 };
 
-layout (binding = 0, set=1) uniform ModelBuffer {
-    ObjectData Object;
+layout (binding = 0, set = 1) uniform object_buffer {
+    object_data ObjectData;
 };
 void main()
 {
-	gl_Position = VP.Projection * VP.View * Object.Model * vec4(position, 1.0);
+	gl_Position = GlobalData.Projection * GlobalData.View * ObjectData.Model * vec4(position, 1.0);
 }

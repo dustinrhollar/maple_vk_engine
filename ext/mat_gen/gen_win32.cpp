@@ -1013,12 +1013,15 @@ int main(int argc, char *argv[])
     jstring Vert = GetConfigStr(&ShaderObj, "Vertex");
     jstring Frag = GetConfigStr(&ShaderObj, "Fragment");
     
+    shader VertShader = { Vert, Shader_Vertex   };
+    shader FragShader = { Frag, Shader_Fragment };
+    
     mprinte("Name of the vertex file: %s\n", Vert.GetCStr());
     mprinte("Name of the fragment file: %s\n", Frag.GetCStr());
     
-    DynamicArray<jstring> ShaderList = DynamicArray<jstring>(2);
-    ShaderList.PushBack(Vert);
-    ShaderList.PushBack(Frag);
+    DynamicArray<shader> ShaderList = DynamicArray<shader>(2);
+    ShaderList.PushBack(VertShader);
+    ShaderList.PushBack(FragShader);
     
     GenerateReflectionInfo(ShaderList, ReflFile);
     

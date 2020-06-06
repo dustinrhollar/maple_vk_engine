@@ -98,6 +98,21 @@ namespace mresource
         resource **Resources;
         u32        Count;
         u32        Cap;
+        
+        // Default Global Descriptor, contains VP buffer
+        resource_id_t DefaultGlobalDescriptor;
+        resource_id_t DefaultGlobalDescriptorLayout;
+        
+        // Set = 1 is reserved for Model Descriptor
+        // All renderable objects that is not a compute
+        // material will use this descriptor.
+        resource_id_t ObjectDescriptor;
+        resource_id_t ObjectDescriptorLayout;
+        
+        resource_id_t DefaultGlobalBuffer;
+        resource_id_t ObjectDynamicBuffer;
+        
+        resource_id_t DefaultPipeline; // (Different from a default material)
     } file_global ResourceRegistry;
     
     file_global mm::resource_allocator ResourceAllocator;
@@ -287,6 +302,165 @@ namespace mresource
         DescriptorPoolListAdd(&PoolList, Pool);
         
         InitRegistry(&ResourceRegistry, 10);
+        
+        //~ Global Data Uniform Buffer
+        
+        // TODO(Dustin): Size is hardcoded right now...
+        buffer_create_info MvpBufferCreateInfo = {};
+        MvpBufferCreateInfo.BufferSize         = sizeof(mat4) * 2;
+        MvpBufferCreateInfo.PersistentlyMapped = true;
+        MvpBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        MvpBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        MvpBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        ResourceRegistry.DefaultGlobalBuffer = mresource::Load({},
+                                                               Resource_UniformBuffer,
+                                                               &MvpBufferCreateInfo);
+        
+        //~ Object Uniform Buffer
+        
+        // TODO(Dustin): Size is hard coded...
+        dynamic_buffer_create_info ModelBufferCreateInfo = {};
+        ModelBufferCreateInfo.ElementCount       = 50;
+        ModelBufferCreateInfo.ElementStride      = sizeof(mat4);
+        ModelBufferCreateInfo.PersistentlyMapped = true;
+        ModelBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        ModelBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        ModelBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        ResourceRegistry.ObjectDynamicBuffer = mresource::Load(FrameParams,
+                                                               Resource_DynamicUniformBuffer,
+                                                               &ModelBufferCreateInfo);
+        
+        //~ Default Global Descriptor, contains VP buffer
+        
+        VkDescriptorSetLayoutBinding Bindings[1]= {};
+        Bindings[0].binding            = 0;
+        Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        Bindings[0].descriptorCount    = 1;
+        Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+        Bindings[0].pImmutableSamplers = nullptr; // Optional
+        
+        descriptor_layout_create_info DescriptorLayoutCreateInfo = {};
+        DescriptorLayoutCreateInfo.BindingsCount = 1;
+        DescriptorLayoutCreateInfo.Bindings      = Bindings;
+        
+        ResourceRegistry.DefaultGlobalDescriptorLayout = mresource::Load(FrameParams,
+                                                                         Resource_DescriptorSetLayout,
+                                                                         &DescriptorLayoutCreateInfo);
+        
+        descriptor_create_info DescriptorCreateInfo = {};
+        DescriptorCreateInfo.DescriptorLayouts = &ResourceRegistry.DefaultGlobalDescriptorLayout;
+        DescriptorCreateInfo.SetCount          = 1;
+        
+        ResourceRegistry.DefaultGlobalDescriptor = mresource::Load(FrameParams,
+                                                                   Resource_DescriptorSet,
+                                                                   &DescriptorCreateInfo);
+        
+        //~ Object Descriptor Info
+        
+        Bindings[0].binding            = 0;
+        Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        Bindings[0].descriptorCount    = 1;
+        Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+        Bindings[0].pImmutableSamplers = nullptr; // Optional
+        
+        DescriptorLayoutCreateInfo.BindingsCount = 1;
+        DescriptorLayoutCreateInfo.Bindings      = Bindings;
+        
+        ResourceRegistry.ObjectDescriptorLayout = mresource::Load(FrameParams,
+                                                                  Resource_DescriptorSetLayout,
+                                                                  &DescriptorLayoutCreateInfo);
+        
+        DescriptorCreateInfo.DescriptorLayouts = &ResourceRegistry.ObjectDescriptorLayout;
+        DescriptorCreateInfo.SetCount          = 1;
+        
+        ResourceRegistry.ObjectDescriptor = mresource::Load(FrameParams, Resource_DescriptorSet,
+                                                            &DescriptorCreateInfo);
+        
+        //~ Update the descriptor write info for both sets of descriptors
+        
+        descriptor_write_info WriteInfos[2] = {
+            {
+                ResourceRegistry.DefaultGlobalBuffer,
+                ResourceRegistry.DefaultGlobalDescriptor,
+                0,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+            },
+            {
+                ResourceRegistry.ObjectDynamicBuffer,
+                ResourceRegistry.ObjectDescriptor,
+                0,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC }
+        };
+        
+        descriptor_update_write_info DescriptorUpdateInfos = {};
+        DescriptorUpdateInfos.WriteInfos      = WriteInfos;
+        DescriptorUpdateInfos.WriteInfosCount = 2;
+        
+        mresource::Load(FrameParams, Resource_DescriptorSetWriteUpdate, &DescriptorUpdateInfos);
+        
+        //~ HACK(Dustin): Temporary material creation in order to allow for temp.
+        // default material
+        
+        jstring VERT_SHADER = InitJString("data/shaders/shader.vert.spv");
+        jstring FRAG_SHADER = InitJString("data/shaders/shader.frag.spv");
+        
+        shader_file_create_info Shaders[] = {
+            { VERT_SHADER, VK_SHADER_STAGE_VERTEX_BIT   },
+            { FRAG_SHADER, VK_SHADER_STAGE_FRAGMENT_BIT }
+        };
+        
+        VkVertexInputBindingDescription bindingDescription = Vertex::GetBindingDescription();
+        JTuple<VkVertexInputAttributeDescription*, int> attribs = Vertex::GetAttributeDescriptions();
+        
+        VkExtent2D swapchain_extent = vk::GetSwapChainExtent();
+        VkViewport viewport = {};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width  = (r32) swapchain_extent.width;
+        viewport.height = (r32) swapchain_extent.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        
+        VkRect2D scissor = {};
+        scissor.offset = {0, 0};
+        scissor.extent = swapchain_extent;
+        
+        resource_id_t Layouts[] = {
+            ResourceRegistry.DefaultGlobalDescriptorLayout,
+            ResourceRegistry.ObjectDescriptorLayout,
+        };
+        
+        pipeline_create_info PipelineCreateInfo = {};
+        PipelineCreateInfo.Shaders      = Shaders;
+        PipelineCreateInfo.ShadersCount = 2;
+        PipelineCreateInfo.VertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        PipelineCreateInfo.VertexInputInfo.vertexBindingDescriptionCount   = 1;
+        PipelineCreateInfo.VertexInputInfo.pVertexBindingDescriptions      = &bindingDescription;
+        PipelineCreateInfo.VertexInputInfo.vertexAttributeDescriptionCount = attribs.Second();
+        PipelineCreateInfo.VertexInputInfo.pVertexAttributeDescriptions    = attribs.First();
+        PipelineCreateInfo.Viewport               = &viewport;
+        PipelineCreateInfo.Scissor                = &scissor;
+        PipelineCreateInfo.ScissorCount           = 1;
+        PipelineCreateInfo.ViewportCount          = 1;
+        PipelineCreateInfo.PolygonMode            = VK_POLYGON_MODE_FILL;
+        PipelineCreateInfo.FrontFace              = VK_FRONT_FACE_CLOCKWISE;
+        PipelineCreateInfo.HasMultisampling       = false;
+        PipelineCreateInfo.MuliSampleSamples      = VK_SAMPLE_COUNT_1_BIT; // optional
+        PipelineCreateInfo.HasDepthStencil        = true;
+        PipelineCreateInfo.DescriptorLayoutIds    = Layouts;
+        PipelineCreateInfo.DescriptorLayoutsCount = 2;
+        PipelineCreateInfo.PushConstants          = nullptr;
+        PipelineCreateInfo.PushConstantsCount     = 0;
+        PipelineCreateInfo.RenderPass             = GetPrimaryRenderPass();
+        
+        ResourceRegistry.DefaultPipeline = mresource::Load({},
+                                                           Resource_Pipeline,
+                                                           &PipelineCreateInfo);
+        
+        VERT_SHADER.Clear();
+        FRAG_SHADER.Clear();
     }
     
     void Free(frame_params *FrameParams)
@@ -380,7 +554,6 @@ namespace mresource
                     RDescriptorSet.DescriptorSets[Image].Handle = Sets[Image];;
                     RDescriptorSet.DescriptorSets[Image].Layout = Layout;
                     RDescriptorSet.DescriptorSets[Image].Pool   = DescriptorPool;
-                    
                 }
                 
                 Resource.DescriptorSet = RDescriptorSet;
@@ -832,6 +1005,25 @@ namespace mresource
         }
     }
     
+    // Updates the uniform memory for the global frame data for the shaders
+    void UpdateGlobalFrameData(global_shader_data *Data, u32 ImageIndex)
+    {
+        resource *Resource = ResourceRegistry.Resources[ResourceRegistry.DefaultGlobalBuffer];
+        
+        BufferParameters Buffer = Resource->UniformBuffer.Buffers[ImageIndex];
+        
+        void *BufferPtr = Buffer.AllocationInfo.pMappedData;
+        memcpy((char*)BufferPtr, Data, sizeof(global_shader_data));
+    }
+    
+    void UpdateObjectFrameData(object_shader_data *Data, u32 Offset, u32 ImageIndex)
+    {
+        resource *Resource = ResourceRegistry.Resources[ResourceRegistry.ObjectDynamicBuffer];
+        
+        mm::dyn_uniform_pool *Pool = &Resource->DynamicUniformBuffer.Pools[ImageIndex];
+        AllocDynUniformPool(Pool, Data, Offset, true);
+    }
+    
     // used for DynamicUniformBuffers to reset their internal allocator
     // Do not call directly! A Uniform reset should be done through the command
     // Gpu_ResetUniformBuffer
@@ -864,6 +1056,12 @@ namespace mresource
         return Template;
     }
     
+    dyn_uniform_template GetDynamicObjectUniformTemplate()
+    {
+        return GetDynamicUniformTemplate(ResourceRegistry.ObjectDynamicBuffer);
+    }
+    
+    
     i64 DynUniformGetNextOffset(dyn_uniform_template *DynUniformTemplate)
     {
         i64 Result = DynUniformTemplate->Offset;
@@ -878,4 +1076,26 @@ namespace mresource
         
         return Result;
     }
+    
+    resource GetDefaultPipeline()
+    {
+        return *ResourceRegistry.Resources[ResourceRegistry.DefaultPipeline];
+    }
+    
+    resource GetObjectDescriptorSet()
+    {
+        return *ResourceRegistry.Resources[ResourceRegistry.ObjectDescriptor];
+    }
+    
+    resource GetObjectUniform()
+    {
+        return *ResourceRegistry.Resources[ResourceRegistry.ObjectDynamicBuffer];
+    }
+    
+    resource GetDefaultFrameDescriptor()
+    {
+        return *ResourceRegistry.Resources[ResourceRegistry.DefaultGlobalDescriptor];
+    }
+    
+    
 }; // mresource
