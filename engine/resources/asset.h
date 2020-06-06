@@ -118,8 +118,6 @@ Three known types of nodes:
 - Joint Node          : DONT CARE
 - Mesh Node           : CHECK
 
-
-
 */
 
 struct model_node

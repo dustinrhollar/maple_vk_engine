@@ -17,6 +17,7 @@ namespace masset
         Primitive.PrimitiveIdx = Converter->PrimitiveIdx++;
         Primitive.VertexStride = sizeof(Vertex);
         Primitive.IndexStride  = sizeof(u32);
+        Primitive.MaterialFile = InitJString();
         
         if (CgPrimitive->indices)
         {
@@ -27,6 +28,23 @@ namespace masset
         {
             Primitive.IndexCount  = 0;
             Primitive.IsIndexed   = false;
+        }
+        
+        if (CgPrimitive->material)
+        {
+            Primitive.MaterialName = InitJString(CgPrimitive->material->name);
+            jstring *Filename = Converter->MaterialFilenameMap.Get(Primitive.MaterialName);
+            
+            if (Filename)
+            {
+                Primitive.MaterialFile = *Filename;
+            }
+            else
+                mprinte("Could not find a material with the name \"%s\"!\n", Primitive.MaterialName.GetCStr());
+        }
+        else
+        {
+            mprinte("Primitive does not have a material!\n");
         }
         
         // figure out the vertex count
@@ -523,7 +541,7 @@ namespace masset
         if (Material->HasClearCoat)
         {
             WriteToFileBuffer(&Buffer, "ClearCoatFactor : r32 = %lf\n", Material->ClearCoatFactor);
-            WriteToFileBuffer(&Buffer, "ClearCoarRoughnessFactor : r32 = %lf\n\n", Material->ClearCoarRoughnessFactor);
+            WriteToFileBuffer(&Buffer, "ClearCoatRoughnessFactor : r32 = %lf\n\n", Material->ClearCoatRoughnessFactor);
             
             SerializeTexture(&Buffer, &Material->ClearCoatTexture, "Clear Coat Texture");
             SerializeTexture(&Buffer, &Material->ClearCoatRoughnessTexture, "Clear Coat Roughness Texture");
@@ -564,8 +582,11 @@ namespace masset
             MatGenCmd.Clear();
         }
         
+        // insert the mapping of the mat name to filename...
+        Converter->MaterialFilenameMap.Insert(Material->Name, OutFile);
+        
         CmdReflFile.Clear();
-        OutFile.Clear();
+        //OutFile.Clear();
         Material->Name.Clear();
         DestroyFileBuffer(&Buffer);
     }
@@ -580,6 +601,7 @@ namespace masset
             Texture->AddressModeV = CgTexture->sampler->wrap_t; // wrapT
             Texture->AddressModeW = CgTexture->sampler->wrap_s; // ??
         }
+        
         // Load the CgTexture
         jstring Fullpath = InitJString(((u32)strlen(CgTexture->image->uri)) + Converter->Directory.len);
         AddJString(Fullpath, Converter->Directory, CgTexture->image->uri);
@@ -594,6 +616,10 @@ namespace masset
     file_internal void ConvertMaterials(mesh_converter *Converter)
     {
         u32 MaterialCount = Converter->Data->materials_count;
+        
+        // materials are inserted into the map during serialization - see "SerializeMaterial" function.
+        Converter->MaterialFilenameMap = HashTable<jstring, jstring>(MaterialCount);
+        
         for (u32 MaterialIdx = 0; MaterialIdx < MaterialCount; ++MaterialIdx)
         {
             cgltf_material CgMaterial = Converter->Data->materials[MaterialIdx];
@@ -601,7 +627,12 @@ namespace masset
             
             if (CgMaterial.name) {
                 Material.Name = InitJString(CgMaterial.name);
-                printf("Material %s.\n", Material.Name.GetCStr());
+                mprint("Material %s.\n", Material.Name.GetCStr());
+            }
+            else
+            {
+                mprinte("Material does not have a name!\n");
+                continue;
             }
             
             Material.HasPBRMetallicRoughness  = CgMaterial.has_pbr_metallic_roughness;
@@ -681,7 +712,7 @@ namespace masset
                 }
                 
                 Material.ClearCoatFactor = cc.clearcoat_factor;
-                Material.ClearCoarRoughnessFactor = cc.clearcoat_roughness_factor;
+                Material.ClearCoatRoughnessFactor = cc.clearcoat_roughness_factor;
             }
             
             SerializeMaterial(Converter, &Material);
@@ -819,6 +850,14 @@ namespace masset
             // Min/Max data for the primitve
             FloatToBinaryBuffer(&Buffer, Converter.SerialPrimitiveList[Primitive].Min.data, 3);
             FloatToBinaryBuffer(&Buffer, Converter.SerialPrimitiveList[Primitive].Max.data, 3);
+            
+            // Material Info
+            JStringToBinaryBuffer(&Buffer, Converter.SerialPrimitiveList[Primitive].MaterialFile);
+            JStringToBinaryBuffer(&Buffer, Converter.SerialPrimitiveList[Primitive].MaterialName);
+            
+            // The MaterialMapping Table owns the string memory, so don't have to clear it here...
+            //Converter.SerialPrimitiveList[Primitive].MaterialFile.Clear();
+            Converter.SerialPrimitiveList[Primitive].MaterialName.Clear();
         }
         
         // Serialize the meshes
@@ -878,6 +917,14 @@ namespace masset
                                   Converter.PrimitiveDataBlock.brkp - Converter.PrimitiveDataBlock.start);
         
         //~ Clean Resources
+        // ok, this is dumb...
+        HashTable<jstring, jstring>::Entry *MatEntries = Converter.MaterialFilenameMap.GetEntries();
+        for (u32 Idx = 0; Idx < Converter.MaterialFilenameMap.Capacity; ++Idx)
+        {
+            if (!MatEntries[Idx].IsEmpty) MatEntries[Idx].Value.Clear();
+        }
+        Converter.MaterialFilenameMap.Reset();
+        
         DestroyFileBuffer(&Converter.PrimitiveDataBlock);
         DestroyFileBuffer(&Buffer);
         Converter.Directory.Clear();

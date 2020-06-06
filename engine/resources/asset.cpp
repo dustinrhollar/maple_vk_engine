@@ -81,6 +81,11 @@ namespace masset
         // iterated over.
         asset_id_list ModelAssets;
         
+        // Useful for fast lookups for textures and materials
+        // necessary when loading materials/textures
+        HashTable<jstring, asset_id_t> MaterialMap;
+        HashTable<jstring, asset_id_t> TextureMap;
+        
         u32     NextIdx;
         u32     Count;
         u32     Cap;
@@ -112,6 +117,7 @@ namespace masset
     file_internal void LoadMeshes(mesh_loader *Loader);
     file_internal void LoadNodes(mesh_loader *Loader);
     file_internal asset LoadModel(frame_params *FrameParams, jstring Filename);
+    file_internal asset_id_t LoadMaterial(jstring MaterialFilename, jstring MaterialName);
     
     //~ Asset Registry functionality
     
@@ -146,6 +152,10 @@ namespace masset
         
         for (u32 i = 0; i < Registry->Cap; ++i)
             Registry->Assets[i] = nullptr;
+        
+        // NOTE(Dustin): these are not currently resizable, so keep that in mind...
+        Registry->MaterialMap = HashTable<jstring, asset_id_t>(50);
+        Registry->TextureMap  = HashTable<jstring, asset_id_t>(50);
     }
     
     file_internal void FreeRegistry(asset_registry *Registry)
@@ -154,7 +164,7 @@ namespace masset
         {
             if (Registry->Assets[i])
             {
-                FreeResource(Registry->Assets[i]);
+                FreeAsset(Registry->Assets[i]);
                 Registry->Assets[i] = nullptr;
             }
         }
@@ -164,6 +174,9 @@ namespace masset
         Registry->Count   = 0;
         Registry->Cap     = 0;
         Registry->NextIdx = 0;
+        
+        Registry->MaterialMap.Reset();
+        Registry->TextureMap.Reset();
     }
     
     file_internal void RegistryResize(asset_registry *Registry, u32 NewSize)
@@ -209,6 +222,311 @@ namespace masset
     
     
     //~  Model Asset Functionality
+    
+    file_internal input_block_serial LoadInputBlock(FileBuffer *Buffer)
+    {
+        input_block_serial Result = {};
+        
+        ReadUInt32FromBinaryBuffer(Buffer, &Result.Size);
+        ReadUInt32FromBinaryBuffer(Buffer, &Result.Set);
+        ReadUInt32FromBinaryBuffer(Buffer, &Result.Binding);
+        ReadBoolFromBinaryBuffer(Buffer, &Result.IsTextureBlock);
+        ReadJStringFromBinaryBuffer(Buffer, &Result.Name);
+        
+        u32 MemberCount;
+        ReadUInt32FromBinaryBuffer(Buffer, &MemberCount);
+        Result.Members = DynamicArray<block_member_serial>(MemberCount);
+        for (u32 Idx = 0; Idx < MemberCount; ++Idx)
+        {
+            block_member_serial Block = {};
+            
+            ReadUInt32FromBinaryBuffer(Buffer, &Block.Size);
+            ReadUInt32FromBinaryBuffer(Buffer, &Block.Offset);
+            ReadJStringFromBinaryBuffer(Buffer, &Block.Name);
+            
+            Result.Members.PushBack(Block);
+        }
+        
+        return Result;
+    }
+    
+    file_internal void LoadReflectionData(jstring ReflectionFile)
+    {
+        mprint("Reflection file \"%s\"\n", ReflectionFile.GetCStr());
+        
+        jstring Data = PlatformLoadFile(ReflectionFile);
+        
+        if (Data.len > 0)
+        {
+            FileBuffer Buffer = {};
+            Buffer.start = Data.GetCStr();
+            Buffer.brkp  = Buffer.start;
+            Buffer.cap   = Data.len;
+            
+            u32 ShaderCount;
+            ReadUInt32FromBinaryBuffer(&Buffer, &ShaderCount);
+            DynamicArray<shader_data_serial> ReflectionData = DynamicArray<shader_data_serial>(ShaderCount);
+            for (u32 Idx = 0; Idx < ShaderCount; ++Idx)
+            {
+                shader_data_serial ShaderData = {};
+                
+                ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.DynamicSetSize);
+                ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.StaticSetSize);
+                ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.NumDynamicUniforms);
+                ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.NumDynamicTextures);
+                ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.NumStaticUniforms);
+                ReadUInt32FromBinaryBuffer(&Buffer, &ShaderData.NumStaticTextures);
+                
+                ShaderData.PushConstants = LoadInputBlock(&Buffer);
+                
+                u32 DescriptorSetCount;
+                ReadUInt32FromBinaryBuffer(&Buffer, &DescriptorSetCount);
+                ShaderData.DescriptorSets = DynamicArray<input_block_serial>(DescriptorSetCount);
+                for (u32 SetIdx = 0; SetIdx < DescriptorSetCount; ++SetIdx)
+                {
+                    input_block_serial Input = LoadInputBlock(&Buffer);
+                    ShaderData.DescriptorSets.PushBack(Input);
+                }
+                
+                u32 DynamicSetCount, GlobalSetCount, StaticSetCount;
+                
+                ReadUInt32FromBinaryBuffer(&Buffer, &DynamicSetCount);
+                ShaderData.DynamicSets = DynamicArray<u32>(DynamicSetCount);
+                for (u32 SetIdx = 0; SetIdx < DynamicSetCount; ++SetIdx)
+                {
+                    u32 Set;
+                    ReadUInt32FromBinaryBuffer(&Buffer, &Set);
+                    ShaderData.DynamicSets.PushBack(Set);
+                }
+                
+                ReadUInt32FromBinaryBuffer(&Buffer, &GlobalSetCount);
+                ShaderData.GlobalSets = DynamicArray<u32>(GlobalSetCount);
+                for (u32 SetIdx = 0; SetIdx < GlobalSetCount; ++SetIdx)
+                {
+                    u32 Set;
+                    ReadUInt32FromBinaryBuffer(&Buffer, &Set);
+                    ShaderData.GlobalSets.PushBack(Set);
+                }
+                
+                ReadUInt32FromBinaryBuffer(&Buffer, &StaticSetCount);
+                ShaderData.StaticSets = DynamicArray<u32>(StaticSetCount);
+                for (u32 SetIdx = 0; SetIdx < StaticSetCount; ++SetIdx)
+                {
+                    u32 Set;
+                    ReadUInt32FromBinaryBuffer(&Buffer, &Set);
+                    ShaderData.StaticSets.PushBack(Set);
+                }
+            }
+        }
+        
+        // TODO(Dustin): Do something with the data
+        
+        
+        // Clean up
+        Data.Clear();
+    }
+    
+    struct texture
+    {
+        asset_id_t Id;
+        
+        VkFilter MagFilter;
+        VkFilter MinFilter;
+        
+        VkSamplerAddressMode AddressModeU;
+        VkSamplerAddressMode AddressModeV;
+        VkSamplerAddressMode AddressModeW;
+    };
+    
+    struct material_instance
+    {
+        bool HasPBRMetallicRoughness;
+        bool HasPBRSpecularGlossiness;
+        bool HasClearCoat;
+        
+        union {
+            // Metallic - Roughness Pipeline
+            struct
+            {
+                asset_id_t BaseColorTexture;
+                asset_id_t MetallicRoughnessTexture;
+                
+                vec4           BaseColorFactor; // Will this always be a vec4?
+                r32            MetallicFactor;
+                r32            RoughnessFactor;
+            };
+            
+            // Specilar - Glosiness Pipeline
+            struct
+            {
+                asset_id_t DiffuseTexture;
+                asset_id_t SpecularGlossinessTexture;
+                
+                vec4           DiffuseFactor;
+                vec3           SpecularFactor;
+                r32            GlossinessFactor;
+            };
+            
+            // ClearCoat Pipeline
+            struct
+            {
+                asset_id_t ClearCoatTexture;
+                asset_id_t ClearCoatRoughnessTexture;
+                asset_id_t ClearCoatNormalTexture;
+                
+                r32            ClearCoatFactor;
+                r32            ClearCoatRoughnessFactor;
+            };
+        };
+        
+        asset_id_t NormalTexture;
+        asset_id_t OcclusionTexture;
+        asset_id_t EmissiveTexture;
+        
+        // Alpha mode?
+        TextureAlphaMode AlphaMode;
+        r32              AlphaCutoff;
+        
+        bool DoubleSided;
+        bool Unlit;
+    };
+    
+    // A material is defined by its name and the resources attached to it.
+    struct material
+    {
+        jstring Name;
+        
+        shader_data       ShaderInfo;
+        
+        // while this data could be directly placed in the material struct
+        // i want to prep for multiple material instances...having the below
+        // instance struct, will allow for multiple instances to be attached
+        // to the struct
+        material_instance Instance;
+    };
+    
+    file_internal asset_id_t LoadTexture(config_obj *TextureObj)
+    {
+        asset_id_t Result = {};
+        
+        jstring Filename = GetConfigStr(TextureObj, "Filename");
+        
+        // check to see if the texture_asset has already been loaded
+        asset_id_t *Ret;
+        if ((Ret = AssetRegistry.TextureMap.Get(Filename)))
+        {
+            mprint("Material \"%s\" is already loaded...Returing loaded asset.\n", Filename.GetCStr());
+            Result = *Ret;
+        }
+        else
+        {
+            // Need to load the texture resources...
+            
+            // TODO(Dustin): Convert these to VK Objects
+            i32 MagFilter = GetConfigI32(TextureObj, "MagFilter");
+            i32 MinFilter = GetConfigI32(TextureObj, "MinFilter");
+            
+            i32 AddressModeU = GetConfigI32(TextureObj, "AddressModeU");
+            i32 AddressModeV = GetConfigI32(TextureObj, "AddressModeV");
+            i32 AddressModeW = GetConfigI32(TextureObj, "AddressModeW");
+        }
+        
+        return Result;
+    }
+    
+    file_internal asset_id_t LoadMaterial(jstring MaterialFilename, jstring MaterialName)
+    {
+        asset_id_t Result;
+        
+        asset_id_t *Ret;
+        if ((Ret = AssetRegistry.MaterialMap.Get(MaterialName)))
+        {
+            mprint("Material \"%s\" is already loaded...Returing loaded asset.\n", MaterialName.GetCStr());
+            Result = *Ret;
+        }
+        else
+        {
+            config_obj_table MaterialInfo = LoadConfigFile(MaterialFilename);
+            
+            config_obj MaterialSettings = GetConfigObj(&MaterialInfo, "Material");
+            config_obj ShaderSettings   = GetConfigObj(&MaterialInfo, "Shaders");
+            
+            material Material = {};
+            
+            jstring ReflFile = GetConfigStr(&MaterialSettings, "ReflectionFile");
+            LoadReflectionData(ReflFile);
+            
+            // TODO(Dustin): Handle other shader stages
+            jstring VertFile = GetConfigStr(&ShaderSettings, "Vertex");
+            jstring FragFile = GetConfigStr(&ShaderSettings, "Fragment");
+            
+            Material.Instance.HasPBRMetallicRoughness  = GetConfigI32(&MaterialSettings, "HasPBRMetallicRoughness");
+            Material.Instance.HasPBRSpecularGlossiness = GetConfigI32(&MaterialSettings, "HasPBRSpecularGlossiness");
+            Material.Instance.HasClearCoat             = GetConfigI32(&MaterialSettings, "HasClearCoat");
+            Material.Instance.AlphaMode                = static_cast<TextureAlphaMode>(GetConfigI32(&MaterialSettings,
+                                                                                                    "AlphaMode"));
+            Material.Instance.AlphaCutoff              = GetConfigI32(&MaterialSettings, "AlphaCutoff");
+            Material.Instance.DoubleSided              = GetConfigI32(&MaterialSettings, "DoubleSided");
+            Material.Instance.Unlit                    = GetConfigI32(&MaterialSettings, "Unlit");
+            
+            if (Material.Instance.HasPBRMetallicRoughness)
+            {
+                config_obj MetallicSettings = GetConfigObj(&MaterialInfo, "Metallic-Roughness");
+                
+                Material.Instance.BaseColorFactor = GetConfigVec4(&MetallicSettings, "BaseColorFactor");
+                Material.Instance.MetallicFactor  = GetConfigR32(&MetallicSettings, "MetallicFactor");
+                Material.Instance.RoughnessFactor = GetConfigR32(&MetallicSettings, "RoughnessFactor");
+                
+                config_obj BaseColorTextureObj         = GetConfigObj(&MaterialInfo, "Base Color Texture");
+                config_obj MetallicRoughnessTextureObj = GetConfigObj(&MaterialInfo, "Base Color Texture");
+                
+                Material.Instance.BaseColorTexture         = LoadTexture(&BaseColorTextureObj);
+                Material.Instance.MetallicRoughnessTexture = LoadTexture(&MetallicRoughnessTextureObj);
+            }
+            
+            if (Material.Instance.HasPBRSpecularGlossiness)
+            {
+                config_obj SpecularSettings = GetConfigObj(&MaterialInfo, "Specular-Glossy");
+                
+                Material.Instance.DiffuseFactor    = GetConfigVec4(&SpecularSettings, "DiffuseFactor");
+                Material.Instance.SpecularFactor   = GetConfigVec3(&SpecularSettings, "SpecularFactor");
+                Material.Instance.GlossinessFactor = GetConfigR32(&SpecularSettings, "GlossinessFactor");
+                
+                config_obj DiffuseTextureObj            = GetConfigObj(&MaterialInfo, "Diffuse Texture");
+                config_obj SpecularGlossinessTextureObj = GetConfigObj(&MaterialInfo, "Specular Glossiness Texture");
+                
+                Material.Instance.DiffuseTexture            = LoadTexture(&DiffuseTextureObj);
+                Material.Instance.SpecularGlossinessTexture = LoadTexture(&SpecularGlossinessTextureObj);
+            }
+            
+            if (Material.Instance.HasClearCoat)
+            {
+                config_obj ClearCoatSettings = GetConfigObj(&MaterialInfo, "Clear Coat");
+                
+                Material.Instance.ClearCoatFactor          = GetConfigR32(&ClearCoatSettings, "ClearCoatFactor");
+                Material.Instance.ClearCoatRoughnessFactor = GetConfigR32(&ClearCoatSettings, "ClearCoatRoughnessFactor");
+                
+                config_obj ClearCoatTextureObj          = GetConfigObj(&MaterialInfo, "Clear Coat Texture");
+                config_obj ClearCoatRoughnessTextureObj = GetConfigObj(&MaterialInfo, "Clear Coat Roughness Texture");
+                config_obj ClearCoatNormalTextureObj    = GetConfigObj(&MaterialInfo, "Clear Coat Normal Texture");
+                
+                Material.Instance.ClearCoatTexture          = LoadTexture(&ClearCoatTextureObj);
+                Material.Instance.ClearCoatRoughnessTexture = LoadTexture(&ClearCoatRoughnessTextureObj);
+                Material.Instance.ClearCoatNormalTexture    = LoadTexture(&ClearCoatNormalTextureObj);
+            }
+            
+            config_obj NormalTextureObj    = GetConfigObj(&MaterialInfo, "Normal Texture");
+            config_obj OcclusionTextureObj = GetConfigObj(&MaterialInfo, "Occlusion Texture");
+            config_obj EmissiveTextureObj  = GetConfigObj(&MaterialInfo, "Emissive Texture");
+            
+            Material.Instance.NormalTexture    = LoadTexture(&NormalTextureObj);
+            Material.Instance.OcclusionTexture = LoadTexture(&OcclusionTextureObj);
+            Material.Instance.EmissiveTexture  = LoadTexture(&EmissiveTextureObj);
+            
+        }
+        
+        return Result;
+    }
     
     file_internal void LoadVertexData(mesh_loader *Loader)
     {
@@ -276,6 +594,14 @@ Primitive List has the following format:
             Primitive.VerticesOffset = Primitive.IndicesOffset + Primitive.IndexCount * Primitive.IndexStride;
             
             Primitive.IsIndexed = Primitive.IndexCount > 0;
+            
+            jstring MaterialFilename;
+            ReadJStringFromBinaryBuffer(&Loader->Buffer, &MaterialFilename);
+            
+            jstring MaterialName;
+            ReadJStringFromBinaryBuffer(&Loader->Buffer, &MaterialName);
+            
+            asset_id_t MaterialId = LoadMaterial(MaterialFilename, MaterialName);
             
             Loader->Asset->Primitives[PrimitiveIdx] = Primitive;
         }
@@ -616,14 +942,7 @@ Node List
     
     void Free()
     {
-        for (u32 Asset = 0; Asset < AssetRegistry.NextIdx; ++Asset)
-        {
-            if (AssetRegistry.Assets[Asset])
-            {
-                FreeAsset(AssetRegistry.Assets[Asset]);
-            }
-        }
-        
+        FreeRegistry(&AssetRegistry);
         mm::FreeResourceAllocator(&AssetAllocator);
     }
     

@@ -263,7 +263,7 @@ config_obj GetConfigObj(config_obj_table *Table, const char* ObjName);
 // size is needed for when the Data Type is a string. Need to know the length
 // of the string.
 void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
-                   config_primitive_type Type, const char *Data, u32 size = 0);
+                   config_primitive_type Type, void *Data, u32 size = 0);
 void FreeConfigVar(config_var *Var);
 
 config_obj_table LoadConfigFile(jstring filename);

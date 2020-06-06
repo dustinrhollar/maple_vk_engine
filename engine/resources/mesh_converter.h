@@ -166,7 +166,7 @@ struct material_serial
             texture_serial ClearCoatNormalTexture;
             
             r32            ClearCoatFactor;
-            r32            ClearCoarRoughnessFactor;
+            r32            ClearCoatRoughnessFactor;
         };
     };
     
@@ -185,6 +185,9 @@ struct material_serial
 struct primitive_serial
 {
     i32 PrimitiveIdx;
+    
+    jstring MaterialFile;
+    jstring MaterialName;
     
     u64     Offset; // offset into the binary file
     
@@ -274,6 +277,9 @@ struct mesh_converter
     
     primitive_serial  *SerialPrimitiveList;
     i32                PrimitiveIdx;
+    
+    // maps a material name to its filename
+    HashTable<jstring, jstring> MaterialFilenameMap;
     
     // the binary block for the primitive data information
     FileBuffer         PrimitiveDataBlock;

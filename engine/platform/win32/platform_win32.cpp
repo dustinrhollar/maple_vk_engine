@@ -1295,7 +1295,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         GpuStageEntry(&FrameParams);
         FrameParams.GpuStageEndTime = Win32GetWallClock();
         
-#if 1
+#if 0
         local_persist r32 FrameAccumulator = 0.0f;
         
         r32 GameElapsed   = Win32GetSecondsElapsed(FrameParams.FrameStartTime, FrameParams.GameStageEndTime);

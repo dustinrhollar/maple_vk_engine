@@ -116,7 +116,6 @@ void GameStageEntry(frame_params* FrameParams);
 //~ Platform Specfic Functions
 #include "platform/platform.h"
 
-
 //~ ECS Headers
 #include "ecs/entity.h"
 #include "ecs/component.h"
@@ -129,6 +128,8 @@ void GameStageEntry(frame_params* FrameParams);
 #include "events/event_manager.h"
 
 #include "events/event_manager.cpp"
+
+//~ Shader related data
 
 //~ Vulkan Headers
 // TODO(Dustin): Find a better solution to this.
@@ -203,6 +204,8 @@ void *VulkanLibrary;
 
 #define CGLTF_IMPLEMENTATION
 #include "resources/cgltf.h"
+
+#include "resources/shader_data.h"
 #include "resources/resources.h"
 #include "resources/asset.h"
 #include "resources/mesh_converter.h"

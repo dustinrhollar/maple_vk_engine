@@ -163,7 +163,7 @@ void GameStageInit(frame_params* FrameParams)
     
     //~ Asset Loading
     
-#if 0
+#if 1
     //jstring ExampleGltfModel = InitJString("data/glTF/Fox/glTF/fox.gltf");
     jstring ExampleGltfModel = InitJString("data/glTF/Lantern/Lantern.gltf");
     

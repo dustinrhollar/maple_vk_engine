@@ -10,24 +10,24 @@
 
 
 // source: https://github.com/khalladay/VkMaterialSystem/blob/master/ShaderPipeline/shaderdata.h
-struct block_member
+struct block_member_serial
 {
 	u32     Size;
     u32     Offset;
     jstring Name;
 };
 
-struct input_block
+struct input_block_serial
 {
     u32                        Size;
     u32                        Set;
     u32                        Binding;
     bool                       IsTextureBlock;
     jstring                    Name;
-    DynamicArray<block_member> Members;
+    DynamicArray<block_member_serial> Members;
 };
 
-struct shader_data
+struct shader_data_serial
 {
     u32                       DynamicSetSize;
     u32                       StaticSetSize;
@@ -36,11 +36,15 @@ struct shader_data
     u32                       NumStaticUniforms;
     u32                       NumStaticTextures;
     
-    input_block               PushConstants;
-    DynamicArray<input_block> DescriptorSets;
+    input_block_serial              PushConstants;
+    DynamicArray<input_block_serial> DescriptorSets;
     DynamicArray<u32>         DynamicSets;
     DynamicArray<u32>         GlobalSets;
     DynamicArray<u32>         StaticSets;
+};
+
+struct shader_data
+{
 };
 
 #endif //ENGINE_RESOURCES_SHADER_DATA_H

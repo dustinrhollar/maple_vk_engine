@@ -277,7 +277,7 @@ void FreeConfigObj(config_obj *Obj)
 //~ Config Variable Implementation
 
 void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
-                   config_primitive_type Type, const char *Data, u32 Size)
+                   config_primitive_type Type, void *Data, u32 Size)
 {
     Var->Name = InitJString(Name, NameLen);
     Var->Type = Type;
@@ -294,7 +294,7 @@ void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
         case Config_Vec2:  Var->Vec2   = *((vec2*)Data);          break;
         case Config_Vec3:  Var->Vec3   = *((vec3*)Data);          break;
         case Config_Vec4:  Var->Vec4   = *((vec4*)Data);          break;
-        case Config_Str:   Var->Str    = InitJString(Data, Size); break;
+        case Config_Str:   Var->Str    = InitJString((char*)Data, Size); break;
         
         // NOTE(Dustin): These will require some special handling...
         case Config_Obj:
@@ -986,9 +986,9 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
         }
         else if (VarType == Config_R32)
         {
-            u64 Data = StrToR32(RightRootNode->Token.Start);
+            r32 Data = StrToR32(RightRootNode->Token.Start);
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
-                          VarType, (char*)&Data);
+                          VarType, (void*)&Data);
         }
         else if (VarType == Config_Str)
         {
@@ -1013,15 +1013,17 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
                 }
                 else if (VarType == Config_Vec3 && ElementCount != 3)
                 {
-                    mprinte("Variable type declared as vec3 but does not contain 2 elements!\n");
+                    mprinte("Variable type declared as vec3 but does not contain 3 elements!\n");
+                }
+                else if (VarType == Config_Vec4 && ElementCount != 4)
+                {
+                    mprinte("Variable type declared as vec4 but does not contain 4 elements!\n");
                 }
                 else
                 {
-                    mprinte("Variable type declared as vec4 but does not contain 2 elements!\n");
+                    InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                                  VarType, (char*)Data);
                 }
-                
-                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
-                              VarType, (char*)Data);
             }
             else
             {
