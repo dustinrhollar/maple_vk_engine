@@ -4,6 +4,7 @@ namespace masset
     const char *MODEL_OUTPUT_FOLDER      = "data/models/models/";
     const char *BINARY_OUTPUT_FOLDER     = "data/models/binaries/";
     const char *MATERIAL_OUTPUT_FOLDER   = "data/materials/";
+    const char *TEXTURE_OUTPUT_FOLDER    = "data/textures/";
     const char *REFLECTION_OUTPUT_FOLDER = "data/mat_refl/";
     const char *BINARY_EXTENSION         = ".bin";
     const char *MODEL_EXTENSION          = ".model";
@@ -500,7 +501,7 @@ namespace masset
         WriteToFileBuffer(&Buffer, "HasPBRSpecularGlossiness : i32 = %d\n", Material->HasPBRSpecularGlossiness);
         WriteToFileBuffer(&Buffer, "HasClearCoat : i32 = %d\n", Material->HasClearCoat);
         WriteToFileBuffer(&Buffer, "AlphaMode : i32 = %d\n", Material->AlphaMode);
-        WriteToFileBuffer(&Buffer, "AlphaCutoff : r32 = %d\n", Material->AlphaCutoff);
+        WriteToFileBuffer(&Buffer, "AlphaCutoff : r32 = %lf\n", Material->AlphaCutoff);
         WriteToFileBuffer(&Buffer, "DoubleSided : i32 = %d\n", Material->DoubleSided);
         WriteToFileBuffer(&Buffer, "Unlit : i32 = %d\n\n", Material->Unlit);
         
@@ -603,14 +604,21 @@ namespace masset
         }
         
         // Load the CgTexture
-        jstring Fullpath = InitJString(((u32)strlen(CgTexture->image->uri)) + Converter->Directory.len);
-        AddJString(Fullpath, Converter->Directory, CgTexture->image->uri);
+        jstring TexturePath = InitJString(strlen(TEXTURE_OUTPUT_FOLDER) + strlen(CgTexture->image->uri));
+        AddJString(TexturePath, TEXTURE_OUTPUT_FOLDER, CgTexture->image->uri);
         
         // TODO(Dustin): Copy the texture to the build/data/textures/ directory
-        
+        {
+            jstring OrigPath = InitJString(((u32)strlen(CgTexture->image->uri)) + Converter->Directory.len);
+            AddJString(OrigPath, Converter->Directory, CgTexture->image->uri);
+            
+            PlatformCopyFileIfChanged(TexturePath.GetCStr(), OrigPath.GetCStr());
+            
+            OrigPath.Clear();
+        }
         
         // TODO(Dustin): Assgin the texture path to be the new directory
-        Texture->Filename = Fullpath; // use the old path...for now
+        Texture->Filename = TexturePath; // use the old path...for now
     }
     
     file_internal void ConvertMaterials(mesh_converter *Converter)
@@ -655,12 +663,14 @@ namespace masset
                 cgltf_texture_view bctv = cmr.base_color_texture;
                 cgltf_texture_view mrtv = cmr.metallic_roughness_texture;
                 
-                if (bctv.texture) {
+                if (bctv.texture)
+                {
                     cgltf_texture *bct = bctv.texture;
                     ConvertTexture(Converter, bct, &Material.BaseColorTexture);
                 }
                 
-                if (mrtv.texture) {
+                if (mrtv.texture)
+                {
                     cgltf_texture *mrt = mrtv.texture;
                     ConvertTexture(Converter, mrt, &Material.MetallicRoughnessTexture);
                 }
@@ -669,18 +679,21 @@ namespace masset
                 Material.MetallicFactor  = cmr.metallic_factor;
                 Material.RoughnessFactor = cmr.roughness_factor;
             }
-            else if (Material.HasPBRSpecularGlossiness) {
+            else if (Material.HasPBRSpecularGlossiness)
+            {
                 cgltf_pbr_specular_glossiness csg = CgMaterial.pbr_specular_glossiness;
                 
                 cgltf_texture_view dv = csg.diffuse_texture;
                 cgltf_texture_view sgtv = csg.specular_glossiness_texture;
                 
-                if (dv.texture) {
+                if (dv.texture)
+                {
                     cgltf_texture *dt = dv.texture;
                     ConvertTexture(Converter, dt, &Material.DiffuseTexture);
                 }
                 
-                if (sgtv.texture) {
+                if (sgtv.texture)
+                {
                     cgltf_texture *sgt = sgtv.texture;
                     ConvertTexture(Converter, sgt, &Material.SpecularGlossinessTexture);
                 }
@@ -689,30 +702,58 @@ namespace masset
                 Material.SpecularFactor   = MakeVec3(csg.specular_factor);
                 Material.GlossinessFactor = csg.glossiness_factor;;
             }
-            else if (Material.HasClearCoat) {
+            else if (Material.HasClearCoat)
+            {
                 cgltf_clearcoat cc = CgMaterial.clearcoat;
                 
                 cgltf_texture_view cctv = cc.clearcoat_texture;
                 cgltf_texture_view ccrtv = cc.clearcoat_roughness_texture;
                 cgltf_texture_view ccntv = cc.clearcoat_normal_texture;
                 
-                if (cctv.texture) {
+                if (cctv.texture)
+                {
                     cgltf_texture *cct = cctv.texture;
                     ConvertTexture(Converter, cct, &Material.ClearCoatTexture);
                 }
                 
-                if (ccrtv.texture) {
+                if (ccrtv.texture)
+                {
                     cgltf_texture *ccrt = ccrtv.texture;
                     ConvertTexture(Converter, ccrt, &Material.ClearCoatRoughnessTexture);
                 }
                 
-                if (ccntv.texture) {
+                if (ccntv.texture)
+                {
                     cgltf_texture *ccnt = ccrtv.texture;
                     ConvertTexture(Converter, ccnt, &Material.ClearCoatNormalTexture);
                 }
                 
                 Material.ClearCoatFactor = cc.clearcoat_factor;
                 Material.ClearCoatRoughnessFactor = cc.clearcoat_roughness_factor;
+            }
+            
+            { // Normal texture
+                cgltf_texture_view ntv = CgMaterial.normal_texture;
+                cgltf_texture *nt = ntv.texture;
+                
+                if (nt)
+                    ConvertTexture(Converter, nt, &Material.NormalTexture);
+            }
+            
+            { // Occlusion Texture
+                cgltf_texture_view ntv = CgMaterial.occlusion_texture;
+                cgltf_texture *nt = ntv.texture;
+                
+                if (nt)
+                    ConvertTexture(Converter, nt, &Material.OcclusionTexture);
+            }
+            
+            { // Emissive Texture
+                cgltf_texture_view ntv = CgMaterial.emissive_texture;
+                cgltf_texture *nt = ntv.texture;
+                
+                if (nt)
+                    ConvertTexture(Converter, nt, &Material.EmissiveTexture);
             }
             
             SerializeMaterial(Converter, &Material);

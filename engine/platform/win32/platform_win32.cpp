@@ -677,6 +677,84 @@ void Win32DetermineFileEncoding(HANDLE handle)
     }
 }
 
+void Win32CopyFileIfChanged(const char *Destination, const char *Source)
+{
+    jstring DestinationFull = Win32NormalizePath(Destination);
+    jstring SourceFull      = Win32NormalizePath(Source);
+    
+    // Check to see if the file exists...
+    HANDLE DestinationHandle = CreateFileA(DestinationFull.GetCStr(),
+                                           GENERIC_READ,
+                                           0,
+                                           NULL,
+                                           OPEN_EXISTING,
+                                           FILE_ATTRIBUTE_NORMAL,
+                                           NULL);
+    
+    if (DestinationHandle == INVALID_HANDLE_VALUE)
+    {
+        BOOL Err = CopyFile(SourceFull.GetCStr(),
+                            DestinationFull.GetCStr(),
+                            NULL);
+        
+        if (!Err) DisplayError(TEXT("CopyFile"));
+    }
+    else
+    {
+        HANDLE SourceHandle = CreateFileA(SourceFull.GetCStr(),
+                                          GENERIC_READ,
+                                          0,
+                                          NULL,
+                                          OPEN_EXISTING,
+                                          FILE_ATTRIBUTE_NORMAL,
+                                          NULL);
+        
+        if (SourceHandle == INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(DestinationHandle);
+            DisplayError(TEXT("Source file Does not exist for copy!"));
+        }
+        else
+        {
+            BY_HANDLE_FILE_INFORMATION DestinationFileInfo;
+            BOOL Err = GetFileInformationByHandle(DestinationHandle, &DestinationFileInfo);
+            if (!Err) DisplayError("Failed to get file information from destination for copy");
+            
+            BY_HANDLE_FILE_INFORMATION SourceFileInfo;
+            Err = GetFileInformationByHandle(SourceHandle, &SourceFileInfo);
+            if (!Err) DisplayError("Failed to get file information from destination for copy");
+            
+            FILETIME DestinationLastWrite = DestinationFileInfo.ftLastWriteTime;
+            FILETIME SourceLastWrite      = SourceFileInfo.ftLastWriteTime;
+            
+            if (DestinationLastWrite.dwLowDateTime < SourceLastWrite.dwLowDateTime &&
+                DestinationLastWrite.dwHighDateTime < SourceLastWrite.dwHighDateTime)
+            {
+                mprint("Requested copy, updating destination!\n");
+                
+                CloseHandle(DestinationHandle);
+                CloseHandle(SourceHandle);
+                
+                BOOL Err = CopyFile(SourceFull.GetCStr(),
+                                    DestinationFull.GetCStr(),
+                                    NULL);
+                
+                if (!Err) DisplayError(TEXT("CopyFile"));
+            }
+            else
+            {
+                mprint("Requested copy, but the file does not need to be updated!\n");
+                
+                CloseHandle(DestinationHandle);
+                CloseHandle(SourceHandle);
+            }
+        }
+    }
+    
+    DestinationFull.Clear();
+    SourceFull.Clear();
+}
+
 jstring Win32LoadFile(jstring &filename)
 {
     jstring abs_path = Win32NormalizePath(filename.GetCStr());

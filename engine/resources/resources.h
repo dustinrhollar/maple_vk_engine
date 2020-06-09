@@ -4,6 +4,7 @@
 typedef i64 resource_id_t;
 
 struct dynamic_buffer_create_info;
+struct global_shader_data;
 
 // Pool/Linear Allocator for Dynamic UniformBuffers
 namespace mm
@@ -58,6 +59,18 @@ struct buffer_create_info
     frame_params               *FrameParams;
 };
 
+struct image_create_info
+{
+    jstring              Filename;
+    
+    VkFilter             MagFilter;
+    VkFilter             MinFilter;
+    
+    VkSamplerAddressMode AddressModeU;
+    VkSamplerAddressMode AddressModeV;
+    VkSamplerAddressMode AddressModeW;
+};
+
 struct dynamic_buffer_create_info
 {
     // if PersistentlyMapped is set to true and
@@ -91,10 +104,6 @@ struct descriptor_update_write_info
 struct uniform_update_info
 {
     
-};
-
-struct image_create_info
-{
 };
 
 struct shader_file_create_info
@@ -168,7 +177,6 @@ enum resource_type
     Resource_DynamicUniformBuffer,
     Resource_Image,
     Resource_Pipeline,
-    
     Resource_UpdateBuffer,
 };
 
@@ -257,7 +265,7 @@ namespace mresource
     void UpdateGlobalFrameData(global_shader_data *Data, u32 ImageIndex);
     
     // Updates the uniform memory for the per-object frame data for the shaders
-    void UpdateObjectFrameData(object_shader_data *Data, u32 Offset, u32 ImageIndex);
+    void UpdateObjectFrameData(struct object_shader_data *Data, u32 Offset, u32 ImageIndex);
     
     // used for DynamicUniformBuffers to reset their internal allocator
     // Do not call directly! A Uniform reset should be done through the command
@@ -277,6 +285,34 @@ namespace mresource
     resource GetObjectDescriptorSet();
     resource GetObjectUniform();
     resource GetDefaultFrameDescriptor();
+    
+    // A unique struct containing the default resources in the registry.
+    // A user can query for this struct in order to gain access to the default
+    // resource ids
+    struct default_resources
+    {
+        // When there are gaps in Descriptor #'s, the gaps
+        // have to be filled in with an empty descriptor layout
+        resource_id_t EmptyDescriptorLayout;
+        
+        // Default Global Descriptor, contains VP buffer
+        resource_id_t DefaultGlobalDescriptor;
+        resource_id_t DefaultGlobalDescriptorLayout;
+        
+        // Set = 1 is reserved for Model Descriptor
+        // All renderable objects that is not a compute
+        // material will use this descriptor.
+        resource_id_t ObjectDescriptor;
+        resource_id_t ObjectDescriptorLayout;
+        
+        resource_id_t DefaultGlobalBuffer;
+        resource_id_t ObjectDynamicBuffer;
+        
+        // (Different from a default material)
+        resource_id_t DefaultPipeline;
+    };
+    
+    default_resources GetDefaultResourcesFromRegistry();
     
     // Will retrieve the next offset into the dynamic uniform buffer and update
     // the offset for the next request.

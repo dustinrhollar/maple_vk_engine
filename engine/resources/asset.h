@@ -75,12 +75,77 @@ struct model_create_info
     jstring       Filename;
 };
 
+// NOTE(Dustin): this texture definition should probably be moved to resources.h
+struct texture
+{
+    asset_id_t Id;
+    
+    VkFilter MagFilter;
+    VkFilter MinFilter;
+    
+    VkSamplerAddressMode AddressModeU;
+    VkSamplerAddressMode AddressModeV;
+    VkSamplerAddressMode AddressModeW;
+};
+
+struct material_instance
+{
+    bool HasPBRMetallicRoughness;
+    bool HasPBRSpecularGlossiness;
+    bool HasClearCoat;
+    
+    union {
+        // Metallic - Roughness Pipeline
+        struct
+        {
+            asset_id_t BaseColorTexture;
+            asset_id_t MetallicRoughnessTexture;
+            
+            vec4           BaseColorFactor; // Will this always be a vec4?
+            r32            MetallicFactor;
+            r32            RoughnessFactor;
+        };
+        
+        // Specilar - Glosiness Pipeline
+        struct
+        {
+            asset_id_t DiffuseTexture;
+            asset_id_t SpecularGlossinessTexture;
+            
+            vec4           DiffuseFactor;
+            vec3           SpecularFactor;
+            r32            GlossinessFactor;
+        };
+        
+        // ClearCoat Pipeline
+        struct
+        {
+            asset_id_t ClearCoatTexture;
+            asset_id_t ClearCoatRoughnessTexture;
+            asset_id_t ClearCoatNormalTexture;
+            
+            r32            ClearCoatFactor;
+            r32            ClearCoatRoughnessFactor;
+        };
+    };
+    
+    asset_id_t NormalTexture;
+    asset_id_t OcclusionTexture;
+    asset_id_t EmissiveTexture;
+    
+    // Alpha mode?
+    TextureAlphaMode AlphaMode;
+    r32              AlphaCutoff;
+    
+    bool DoubleSided;
+    bool Unlit;
+};
+
 // Mesh might have multiple primitives
 struct primitive
 {
     // TODO(Dustin): Attach a material here
-    //MaterialParameters Material;
-    //u32              MaterialId;
+    asset_id_t       Material;
     
     u32              IndexCount;
     u32              VertexCount;
@@ -162,6 +227,16 @@ struct asset_texture
 
 struct asset_material
 {
+    jstring           Name;
+    shader_data       ShaderData;
+    
+    // while this data could be directly placed in the material struct
+    // i want to prep for multiple material instances...having the below
+    // instance struct, will allow for multiple instances to be attached
+    // to the struct
+    material_instance Instance;
+    // Id of the pipeline to use for this material.
+    resource_id_t     Pipeline;
 };
 
 struct asset

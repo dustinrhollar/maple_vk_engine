@@ -3,7 +3,6 @@
 
 struct frame_params;
 
-
 struct render_set_scissor_info
 {
     VkExtent2D Extent;
@@ -33,35 +32,41 @@ struct render_bind_descriptor_set
 
 struct render_draw_command
 {
-    primitive         *PrimitivesToDraw;
-    u32                PrimitivesCount;
-    
     object_shader_data ObjectShaderData;
     
-    // Hide?
-#if 0
-    resource_id_t    *VertexBuffers;
-    u64              *Offsets;
-    u32               VertexBuffersCount;
+    resource_id_t     *VertexBuffers;
+    u64               *Offsets;
+    u32                VertexBuffersCount;
     
-    bool             IsIndexed;
-    resource_id_t    IndexBuffer;
-    
+    bool               IsIndexed;
+    resource_id_t      IndexBuffer;
     
     // will be either vertex count or index count depending if
     // the draw is indexed
-    u32 Count;
+    u32                Count;
+    
+    asset_id_t         Material;
+    
+#if 0
+    primitive         *PrimitivesToDraw;
+    u32                PrimitivesCount;
 #endif
 };
 
 enum render_command_type
 {
     RenderCmd_Draw,
+    
+    // NOTE(Dustin): Assets are loaded by the engine or the platform layer
+    // should no longer be called by the game layer.
     RenderCmd_LoadAsset,
     
+    // NOTE(Dustin): Probably shouldn't be called from the game layer,
+    // will allow it for now.
     RenderCmd_SetViewport,
     RenderCmd_SetScissor,
     
+    // NOTE(Dustin): No longer should be called from the game layer
     RenderCmd_BindPipeline,
     RenderCmd_BindDescriptorSet,
 };

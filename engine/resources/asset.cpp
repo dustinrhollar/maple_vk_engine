@@ -1,11 +1,13 @@
+
+    inline bool operator==(const asset_id_t &Lhs, const asset_id_t &Rhs)
+{
+    return Lhs.Type == Rhs.Type && Lhs.Gen == Rhs.Gen && Lhs.Index == Rhs.Index;
+}
+
+
 namespace masset
 {
     //~ Special List for handling assets id lists
-    
-    inline bool operator==(asset_id_t &Lhs, asset_id_t &Rhs)
-    {
-        return Lhs.Type == Rhs.Type && Lhs.Gen == Rhs.Gen && Lhs.Index == Rhs.Index;
-    }
     
     struct asset_id_list
     {
@@ -117,7 +119,7 @@ namespace masset
     file_internal void LoadMeshes(mesh_loader *Loader);
     file_internal void LoadNodes(mesh_loader *Loader);
     file_internal asset LoadModel(frame_params *FrameParams, jstring Filename);
-    file_internal asset_id_t LoadMaterial(jstring MaterialFilename, jstring MaterialName);
+    file_internal asset_id_t LoadMaterial(mesh_loader *Loader, jstring MaterialFilename, jstring MaterialName);
     
     //~ Asset Registry functionality
     
@@ -235,10 +237,10 @@ namespace masset
         
         u32 MemberCount;
         ReadUInt32FromBinaryBuffer(Buffer, &MemberCount);
-        Result.Members = DynamicArray<block_member_serial>(MemberCount);
+        Result.Members = DynamicArray<block_member>(MemberCount);
         for (u32 Idx = 0; Idx < MemberCount; ++Idx)
         {
-            block_member_serial Block = {};
+            block_member Block = {};
             
             ReadUInt32FromBinaryBuffer(Buffer, &Block.Size);
             ReadUInt32FromBinaryBuffer(Buffer, &Block.Offset);
@@ -250,7 +252,7 @@ namespace masset
         return Result;
     }
     
-    file_internal void LoadReflectionData(jstring ReflectionFile)
+    file_internal shader_data LoadReflectionData(jstring ReflectionFile)
     {
         jstring Data = PlatformLoadFile(ReflectionFile);
         
@@ -319,10 +321,11 @@ namespace masset
                     ReadUInt32FromBinaryBuffer(&Buffer, &Set);
                     ShaderData.StaticSets.PushBack(Set);
                 }
+                
+                ReflectionData.PushBack(ShaderData);
             }
         }
         
-        // TODO(Dustin): Do something with the data
         /*
 
 Need to collect each unique Descriptor Set
@@ -342,155 +345,322 @@ Need to make sure there are no gaps in the descriptor sets
             // hard limit of 10 bindings
             VkDescriptorSetLayoutBinding Bindings[10];
             u32                          BindingsCount;
+            
+            resource_id_t DescriptorSet;
+            resource_id_t DescriptorSetLayout;
         };
         
-        DynamicArray<mat_descriptor_set> SetList = DynamicArray<mat_descriptor_set>(5);
+        // Find the maximum set number in the list. The sets were sorted when the reflection
+        // data was generated so peaking into the last index for each shader_data should be
+        // enough. Note, that there cannot be any gaps in descriptor set # when creating
+        // a pipeline. So if any numbers are skipped, they will be filled in with an empty
+        // descriptor set
+        u32 MaxSetNumber = 0;
+        for (u32 Idx = 0; Idx < ReflectionData.size; ++Idx)
+        {
+            shader_data_serial ShaderData = ReflectionData[Idx];
+            
+            // TODO(Dustin): Ok, for some reason the data is not sorted. Will
+            // check out another time...
+            for (u32 SetIdx = 0; SetIdx < ShaderData.DescriptorSets.size; ++SetIdx)
+            {
+                input_block_serial Block = ShaderData.DescriptorSets[SetIdx];
+                
+                if (Block.Set > MaxSetNumber) MaxSetNumber = Block.Set;
+            }
+        }
         
-        // Step 1: Collect the unique descriptor sets.
+        // Initialize the list and initialize each descriptor
+        // TODO(Dustin): Use talloc instead of a dynamic array since max size is known
+        DynamicArray<mat_descriptor_set> SetList = DynamicArray<mat_descriptor_set>(MaxSetNumber + 1);
+        for (u32 SetIdx = 0; SetIdx <= MaxSetNumber; SetIdx++)
+        {
+            mat_descriptor_set Set = {};
+            Set.Set           = SetIdx;
+            Set.BindingsCount = 0;
+            
+            SetList.PushBack(Set);
+        }
+        
+        // Fill out the bindings
+        // NOTE(Dustin): Currently, only the block named ObjectData will
+        // be set to UNIFORM_DYNAMIC. In order to allow for dynamic uniforms
+        // in the future, need to be able to set it through a GUI. However,
+        // I am not yet quite sure how DYN Uniforms will be handled internally
+        // for generic use cases.
+        // All other buffers will be set to UNIFORM
         for (u32 Idx = 0; Idx < ReflectionData.size; ++Idx)
         {
             shader_data_serial ShaderData = ReflectionData[Idx];
             
             // TODO(Dustin): Push Constants...
             
+            // Add the binding...
+            // There are currently three types of bindings:
+            // 1. Uniform Block
+            // 2. Dynamic Uniform Block
+            // 3. Texture
+            // To distinguish 1 & 2:
+            // 1. "GlobalData" -> Use the default global data
+            // 2. "ObjectData" -> Use global object data
+            
+            // TODO(Dustin):
+            // For generic buffer types, I will assume that when i
+            // get to that point, I will be able to edit the data from
+            // a GUI.
+            
+            // TODO(Dustin):
+            // Textures are relatively simple:
+            // Check if the block is a texture, check if the texture is already
+            // created, then create the texture (if needed of course)
+            
             for (u32 SetIdx = 0; SetIdx < ShaderData.DescriptorSets.size; SetIdx++)
             {
                 input_block_serial InputBlock = ShaderData.DescriptorSets[SetIdx];
+                mat_descriptor_set *Set = &SetList[InputBlock.Set];
                 
-                // Search for duplicate sets
-                for (u32 SetListIdx = 0; SetListIdx < SetList.size; ++SetListIdx)
+                
+                VkDescriptorSetLayoutBinding Binding = {};
+                Binding.binding            = InputBlock.Binding;
+                Binding.descriptorCount    = 1;
+                
+                switch (ShaderData.Type)
                 {
-                    if (SetList[SetListIdx].Set == InputBlock.Set)
+                    case Shader_Vertex:
                     {
-                        
-                        
-                        // Add the binding...
-                        // There are currently three types of bindings:
-                        // 1. Uniform Block
-                        // 2. Dynamic Uniform Block
-                        // 3. Texture
-                        // To distinguish 1 & 2:
-                        // 1. "GlobalData" -> Use the default global data
-                        // 2. "ObjectData" -> Use global object data
-                        
-                        // TODO(Dustin):
-                        // For generic buffer types, I will assume that when i
-                        // get to that point, I will be able to edit the data from
-                        // a GUI.
-                        
-                        // TODO(Dustin):
-                        // Textures are relatively simple:
-                        // Check if the block is a texture, check if the texture is already
-                        // created, then create the texture (if needed of course)
-                        
-                        if (InputBlock.Name == "ObjectData")
-                        {
-                            
-                        }
-                        else if (InputBlock.Name == "GlobalData")
-                        {
-                            
-                        }
-                        else if (InputBlock.IsTextureBlock)
-                        {
-                            
-                        }
-                        else
-                        {
-                            // TODO(Dustin):
-                            // Generic descriptor bind, need to handle assigning data
-                        }
-                        
-                        continue;
-                    }
+                        Binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+                    } break;
+                    
+                    case Shader_Fragment:
+                    {
+                        Binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+                    } break;
+                    
+                    case Shader_Geometry:
+                    case Shader_TesselationControl:
+                    case Shader_TesselationEvaluation:
+                    case Shader_Compute:
+                    default:
+                    {
+                        mprinte("Shader stage \"%d\" not supported!\n", ShaderData.Type);
+                    } break;
+                }
+                
+                Binding.pImmutableSamplers = nullptr; // Optional
+                
+                if (InputBlock.Name == "global_data_buffer")
+                {
+                    Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                }
+                else if (InputBlock.Name == "object_buffer")
+                {
+                    Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+                }
+                else if (InputBlock.IsTextureBlock)
+                {
+                    // TODO(Dustin): Not handling texture right now...
+                    // TODO(Dustin): Create/Attach the texture image?
+                }
+                else
+                {
+                    // TODO(Dustin): Generic descriptor bind, need to handle assigning data
+                    // NOTE(Dustin): For now, making it a Uniform buffer...
+                    // TODO(Dustin): Create the buffer...?
+                    Binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                }
+                
+                Set->Bindings[Set->BindingsCount++] = Binding;
+            }
+        }
+        
+        // Create the descriptor layouts + sets...
+        // Bindings 0, 1 are hardcoded, and their layouts/descriptors can be obtained
+        // from the Resource Manager. Any other descriptors are created.
+        mresource::default_resources DefaultResources = mresource::GetDefaultResourcesFromRegistry();
+        for (u32 SetIdx = 0; SetIdx < SetList.size; ++SetIdx)
+        {
+            // TODO(Dustin): For the hardcoded sets, make sure their
+            // definitions match the expected definitions...
+            if (SetList[SetIdx].Set == GLOBAL_SET)
+            {
+                SetList[SetIdx].DescriptorSet       = DefaultResources.DefaultGlobalDescriptor;
+                SetList[SetIdx].DescriptorSetLayout = DefaultResources.DefaultGlobalDescriptorLayout;
+            }
+            else if (SetList[SetIdx].Set == STATIC_SET)
+            {
+                SetList[SetIdx].DescriptorSet       = DefaultResources.ObjectDescriptor;
+                SetList[SetIdx].DescriptorSetLayout = DefaultResources.ObjectDescriptorLayout;
+            }
+            else
+            {
+                descriptor_layout_create_info LayoutCreateInfo = {};
+                LayoutCreateInfo.BindingsCount = SetList[SetIdx].BindingsCount;
+                LayoutCreateInfo.Bindings      = SetList[SetIdx].Bindings;
+                SetList[SetIdx].DescriptorSetLayout = mresource::Load({}, // frame params aren't needed here
+                                                                      Resource_DescriptorSetLayout,
+                                                                      &LayoutCreateInfo);
+                
+                descriptor_create_info DescriptorCreateInfo = {};
+                DescriptorCreateInfo.SetCount          = 1;
+                DescriptorCreateInfo.DescriptorLayouts = &SetList[SetIdx].DescriptorSetLayout;
+                SetList[SetIdx].DescriptorSet = mresource::Load({}, // frame params aren't needed here
+                                                                Resource_DescriptorSet,
+                                                                &DescriptorCreateInfo);
+            }
+        }
+        
+        // Convert set information to shader_data
+        shader_data MaterialData = {};
+        MaterialData.DescriptorSetsCount = SetList.size;
+        MaterialData.DescriptorSets      = palloc<shader_descriptor_def>(MaterialData.DescriptorSetsCount);
+        // NOTE(Dustin): Not going to initialize the known bind points...
+        
+        for (u32 SetIdx = 0; SetIdx < SetList.size; ++SetIdx)
+        {
+            mat_descriptor_set Set = SetList[SetIdx];
+            
+            MaterialData.DescriptorSets[SetIdx].DescriptorSet       = Set.DescriptorSet;
+            MaterialData.DescriptorSets[SetIdx].DescriptorSetLayout = Set.DescriptorSetLayout;
+        }
+        
+        // NOTE(Dustin): Not sure if this is necessary, but the intent is to determine the maximum
+        // bind point so then exact amount of required memory is requested. Since the same set
+        // can be used in multiple shader stages, it is important scan over the Reflection Array
+        // and collect the max bind points across all shader stages
+        
+        // Determine the maximum set binding for each set.
+        u32 *MaxBindPoints = talloc<u32>(MaterialData.DescriptorSetsCount);
+        for (u32 BindPoint = 0; BindPoint < MaterialData.DescriptorSetsCount; ++BindPoint)
+            MaxBindPoints[BindPoint] = 0;
+        
+        for (u32 ShaderBlock = 0; ShaderBlock < ReflectionData.size; ++ShaderBlock)
+        {
+            shader_data_serial ShaderData = ReflectionData[ShaderBlock];
+            
+            for (u32 SetIdx = 0; SetIdx < ShaderData.DescriptorSets.size; ++SetIdx)
+            {
+                input_block_serial InputBlock = ShaderData.DescriptorSets[SetIdx];
+                
+                if (MaxBindPoints[InputBlock.Set] < InputBlock.Binding)
+                    MaxBindPoints[InputBlock.Set] = InputBlock.Binding;
+            }
+        }
+        
+        // Loop back through the descriptor sets and allocate the required memory
+        for (u32 SetIdx = 0; SetIdx < MaterialData.DescriptorSetsCount; ++SetIdx)
+        {
+            MaterialData.DescriptorSets[SetIdx].InputDataCount = MaxBindPoints[SetIdx] + 1;
+            MaterialData.DescriptorSets[SetIdx].InputData = palloc<input_block>(MaxBindPoints[SetIdx] + 1);
+            
+            for (u32 Binding = 0; Binding < MaterialData.DescriptorSets[SetIdx].InputDataCount; ++Binding)
+                MaterialData.DescriptorSets[SetIdx].InputData[Binding] = {}; // Zero-Initialize the data
+        }
+        
+        // Set the input block data for each descriptor
+        for (u32 ShaderBlock = 0; ShaderBlock < ReflectionData.size; ++ShaderBlock)
+        {
+            // TODO(Dustin): Push constants....
+            
+            shader_data_serial ShaderData = ReflectionData[ShaderBlock];
+            
+            for (u32 SetIdx = 0; SetIdx < ShaderData.DescriptorSets.size; ++SetIdx)
+            {
+                input_block_serial SerialInputBlock = ShaderData.DescriptorSets[SetIdx];
+                shader_descriptor_def *DescriptorDef = &MaterialData.DescriptorSets[SerialInputBlock.Set];
+                
+                u32 Binding = SerialInputBlock.Binding;
+                input_block *InputBlock = &DescriptorDef->InputData[Binding];
+                
+                InputBlock->Name = CopyJString(SerialInputBlock.Name);
+                InputBlock->IsTextureBlock = SerialInputBlock.IsTextureBlock;
+                InputBlock->Size = SerialInputBlock.Size;
+                
+                InputBlock->MembersCount = SerialInputBlock.Members.size;
+                InputBlock->Members = palloc<block_member>(InputBlock->MembersCount);
+                
+                for (u32 Member = 0; Member < InputBlock->MembersCount; ++Member)
+                {
+                    InputBlock->Members[Member] = SerialInputBlock.Members[Member];
                 }
             }
         }
         
-        // Clean up
+        // Clean up resources
+        for (u32 ShaderBlock = 0; ShaderBlock < ReflectionData.size; ++ShaderBlock)
+        {
+            shader_data_serial *ShaderData = &ReflectionData[ShaderBlock];
+            
+            // Clear up push constant memory
+            for (u32 Member = 0; Member < ShaderData->PushConstants.Members.size; ++Member)
+                ShaderData->PushConstants.Members[Member].Name.Clear();
+            
+            ShaderData->PushConstants.Members.Reset();
+            ShaderData->PushConstants.Name.Clear();
+            
+            // Clear up descriptors
+            for (u32 SetIdx = 0; SetIdx < ShaderData->DescriptorSets.size; ++SetIdx)
+            {
+                for (u32 Member = 0; Member < ShaderData->DescriptorSets[SetIdx].Members.size; ++Member)
+                    ShaderData->DescriptorSets[SetIdx].Members[Member].Name.Clear();
+                
+                ShaderData->DescriptorSets[SetIdx].Members.Reset();
+                ShaderData->DescriptorSets[SetIdx].Name.Clear();
+            }
+            
+            ShaderData->DescriptorSets.Reset();
+            ShaderData->GlobalSets.Reset();
+            ShaderData->StaticSets.Reset();
+            ShaderData->DynamicSets.Reset();
+        }
+        
+        SetList.Reset();
         Data.Clear();
+        
+        return MaterialData;
     }
     
-    struct texture
+    // Use for getting the wrap_t and wrap_s
+    inline VkSamplerAddressMode Int32ToVkAddressMode(i32 address_mode)
     {
-        asset_id_t Id;
-        
-        VkFilter MagFilter;
-        VkFilter MinFilter;
-        
-        VkSamplerAddressMode AddressModeU;
-        VkSamplerAddressMode AddressModeV;
-        VkSamplerAddressMode AddressModeW;
-    };
-    
-    struct material_instance
-    {
-        bool HasPBRMetallicRoughness;
-        bool HasPBRSpecularGlossiness;
-        bool HasClearCoat;
-        
-        union {
-            // Metallic - Roughness Pipeline
-            struct
-            {
-                asset_id_t BaseColorTexture;
-                asset_id_t MetallicRoughnessTexture;
-                
-                vec4           BaseColorFactor; // Will this always be a vec4?
-                r32            MetallicFactor;
-                r32            RoughnessFactor;
-            };
+        switch (address_mode)
+        {
+            // wrap_s and wrap_t
+            case 33071: // CLAMP_TO_EDGE
+            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
             
-            // Specilar - Glosiness Pipeline
-            struct
-            {
-                asset_id_t DiffuseTexture;
-                asset_id_t SpecularGlossinessTexture;
-                
-                vec4           DiffuseFactor;
-                vec3           SpecularFactor;
-                r32            GlossinessFactor;
-            };
+            case 33648: // MIRRORED_REPEAT
+            return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
             
-            // ClearCoat Pipeline
-            struct
-            {
-                asset_id_t ClearCoatTexture;
-                asset_id_t ClearCoatRoughnessTexture;
-                asset_id_t ClearCoatNormalTexture;
-                
-                r32            ClearCoatFactor;
-                r32            ClearCoatRoughnessFactor;
-            };
-        };
-        
-        asset_id_t NormalTexture;
-        asset_id_t OcclusionTexture;
-        asset_id_t EmissiveTexture;
-        
-        // Alpha mode?
-        TextureAlphaMode AlphaMode;
-        r32              AlphaCutoff;
-        
-        bool DoubleSided;
-        bool Unlit;
-    };
+            case 10497: // REPEAT
+            default:
+            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        }
+    }
     
-    // A material is defined by its name and the resources attached to it.
-    struct material
+    // used for getting the mag and min filter
+    inline VkFilter Int32ToVkFilter(i32 filter)
     {
-        jstring Name;
-        
-        shader_data       ShaderInfo;
-        
-        // while this data could be directly placed in the material struct
-        // i want to prep for multiple material instances...having the below
-        // instance struct, will allow for multiple instances to be attached
-        // to the struct
-        material_instance Instance;
-    };
+        switch (filter)
+        {
+            // Mag + Min Filter
+            case 9728: // NEAREST
+            return VK_FILTER_NEAREST;
+            
+            case 9729: // LINEAR
+            return VK_FILTER_LINEAR;
+            
+            // Min Filter
+            // By default, these values are not within the vulkan specs
+            case 9984: // NEAREST_MIPMAP_NEAREST
+            case 9985: // LINEAR_MIPMAP_NEAREST
+            case 9986: // NEAREST_MIPMAP_LINEAR
+            case 9987: // LINEAR_MIPMAP_LINEAR
+            
+            default: return VK_FILTER_NEAREST;
+        }
+    }
     
-    file_internal asset_id_t LoadTexture(config_obj *TextureObj)
+    file_internal asset_id_t LoadTexture(mesh_loader *Loader, config_obj *TextureObj)
     {
         asset_id_t Result = {};
         
@@ -505,21 +675,34 @@ Need to make sure there are no gaps in the descriptor sets
         }
         else
         {
-            // Need to load the texture resources...
-            
-            // TODO(Dustin): Convert these to VK Objects
-            i32 MagFilter = GetConfigI32(TextureObj, "MagFilter");
-            i32 MinFilter = GetConfigI32(TextureObj, "MinFilter");
-            
-            i32 AddressModeU = GetConfigI32(TextureObj, "AddressModeU");
-            i32 AddressModeV = GetConfigI32(TextureObj, "AddressModeV");
-            i32 AddressModeW = GetConfigI32(TextureObj, "AddressModeW");
+            jstring Filename = GetConfigStr(TextureObj, "Filename");
+            if (Filename.len > 0)
+            {
+                i32 MagFilter = GetConfigI32(TextureObj, "MagFilter");
+                i32 MinFilter = GetConfigI32(TextureObj, "MinFilter");
+                
+                i32 AddressModeU = GetConfigI32(TextureObj, "AddressModeU");
+                i32 AddressModeV = GetConfigI32(TextureObj, "AddressModeV");
+                i32 AddressModeW = GetConfigI32(TextureObj, "AddressModeW");
+                
+                image_create_info *TextureInfo = talloc<image_create_info>();
+                TextureInfo->Filename     = CopyJString(Filename);
+                TextureInfo->MagFilter    = Int32ToVkFilter(MagFilter);
+                TextureInfo->MinFilter    = Int32ToVkFilter(MinFilter);
+                TextureInfo->AddressModeU = Int32ToVkAddressMode(AddressModeU);
+                TextureInfo->AddressModeV = Int32ToVkAddressMode(AddressModeV);
+                TextureInfo->AddressModeW = Int32ToVkAddressMode(AddressModeW);
+                
+                mresource::Load(Loader->FrameParams, Resource_Image, TextureInfo);
+                
+                Filename.Clear();
+            }
         }
         
         return Result;
     }
     
-    file_internal asset_id_t LoadMaterial(jstring MaterialFilename, jstring MaterialName)
+    file_internal asset_id_t LoadMaterial(mesh_loader *Loader, jstring MaterialFilename, jstring MaterialName)
     {
         asset_id_t Result;
         
@@ -536,21 +719,22 @@ Need to make sure there are no gaps in the descriptor sets
             config_obj MaterialSettings = GetConfigObj(&MaterialInfo, "Material");
             config_obj ShaderSettings   = GetConfigObj(&MaterialInfo, "Shaders");
             
-            material Material = {};
+            asset_material Material = {};
+            Material.Name = CopyJString(GetConfigStr(&MaterialSettings, "Name"));
+            
+            //~ Load Reflection Info and create descriptors
             
             jstring ReflFile = GetConfigStr(&MaterialSettings, "ReflectionFile");
-            LoadReflectionData(ReflFile);
+            Material.ShaderData = LoadReflectionData(ReflFile);
             
-            // TODO(Dustin): Handle other shader stages
-            jstring VertFile = GetConfigStr(&ShaderSettings, "Vertex");
-            jstring FragFile = GetConfigStr(&ShaderSettings, "Fragment");
+            //~ Load Material Instance Data
             
             Material.Instance.HasPBRMetallicRoughness  = GetConfigI32(&MaterialSettings, "HasPBRMetallicRoughness");
             Material.Instance.HasPBRSpecularGlossiness = GetConfigI32(&MaterialSettings, "HasPBRSpecularGlossiness");
             Material.Instance.HasClearCoat             = GetConfigI32(&MaterialSettings, "HasClearCoat");
             Material.Instance.AlphaMode                = static_cast<TextureAlphaMode>(GetConfigI32(&MaterialSettings,
                                                                                                     "AlphaMode"));
-            Material.Instance.AlphaCutoff              = GetConfigI32(&MaterialSettings, "AlphaCutoff");
+            Material.Instance.AlphaCutoff              = GetConfigR32(&MaterialSettings, "AlphaCutoff");
             Material.Instance.DoubleSided              = GetConfigI32(&MaterialSettings, "DoubleSided");
             Material.Instance.Unlit                    = GetConfigI32(&MaterialSettings, "Unlit");
             
@@ -565,8 +749,8 @@ Need to make sure there are no gaps in the descriptor sets
                 config_obj BaseColorTextureObj         = GetConfigObj(&MaterialInfo, "Base Color Texture");
                 config_obj MetallicRoughnessTextureObj = GetConfigObj(&MaterialInfo, "Base Color Texture");
                 
-                Material.Instance.BaseColorTexture         = LoadTexture(&BaseColorTextureObj);
-                Material.Instance.MetallicRoughnessTexture = LoadTexture(&MetallicRoughnessTextureObj);
+                Material.Instance.BaseColorTexture         = LoadTexture(Loader, &BaseColorTextureObj);
+                Material.Instance.MetallicRoughnessTexture = LoadTexture(Loader, &MetallicRoughnessTextureObj);
             }
             
             if (Material.Instance.HasPBRSpecularGlossiness)
@@ -580,8 +764,8 @@ Need to make sure there are no gaps in the descriptor sets
                 config_obj DiffuseTextureObj            = GetConfigObj(&MaterialInfo, "Diffuse Texture");
                 config_obj SpecularGlossinessTextureObj = GetConfigObj(&MaterialInfo, "Specular Glossiness Texture");
                 
-                Material.Instance.DiffuseTexture            = LoadTexture(&DiffuseTextureObj);
-                Material.Instance.SpecularGlossinessTexture = LoadTexture(&SpecularGlossinessTextureObj);
+                Material.Instance.DiffuseTexture            = LoadTexture(Loader, &DiffuseTextureObj);
+                Material.Instance.SpecularGlossinessTexture = LoadTexture(Loader, &SpecularGlossinessTextureObj);
             }
             
             if (Material.Instance.HasClearCoat)
@@ -595,19 +779,88 @@ Need to make sure there are no gaps in the descriptor sets
                 config_obj ClearCoatRoughnessTextureObj = GetConfigObj(&MaterialInfo, "Clear Coat Roughness Texture");
                 config_obj ClearCoatNormalTextureObj    = GetConfigObj(&MaterialInfo, "Clear Coat Normal Texture");
                 
-                Material.Instance.ClearCoatTexture          = LoadTexture(&ClearCoatTextureObj);
-                Material.Instance.ClearCoatRoughnessTexture = LoadTexture(&ClearCoatRoughnessTextureObj);
-                Material.Instance.ClearCoatNormalTexture    = LoadTexture(&ClearCoatNormalTextureObj);
+                Material.Instance.ClearCoatTexture          = LoadTexture(Loader, &ClearCoatTextureObj);
+                Material.Instance.ClearCoatRoughnessTexture = LoadTexture(Loader, &ClearCoatRoughnessTextureObj);
+                Material.Instance.ClearCoatNormalTexture    = LoadTexture(Loader, &ClearCoatNormalTextureObj);
             }
             
             config_obj NormalTextureObj    = GetConfigObj(&MaterialInfo, "Normal Texture");
             config_obj OcclusionTextureObj = GetConfigObj(&MaterialInfo, "Occlusion Texture");
             config_obj EmissiveTextureObj  = GetConfigObj(&MaterialInfo, "Emissive Texture");
             
-            Material.Instance.NormalTexture    = LoadTexture(&NormalTextureObj);
-            Material.Instance.OcclusionTexture = LoadTexture(&OcclusionTextureObj);
-            Material.Instance.EmissiveTexture  = LoadTexture(&EmissiveTextureObj);
+            Material.Instance.NormalTexture    = LoadTexture(Loader, &NormalTextureObj);
+            Material.Instance.OcclusionTexture = LoadTexture(Loader, &OcclusionTextureObj);
+            Material.Instance.EmissiveTexture  = LoadTexture(Loader, &EmissiveTextureObj);
             
+            //~ Create the Shader Pipeline
+            
+            // TODO(Dustin): Handle other shader stages
+            jstring VertFile = GetConfigStr(&ShaderSettings, "Vertex");
+            jstring FragFile = GetConfigStr(&ShaderSettings, "Fragment");
+            
+            
+            shader_file_create_info Shaders[] = {
+                { VertFile, VK_SHADER_STAGE_VERTEX_BIT   },
+                { FragFile, VK_SHADER_STAGE_FRAGMENT_BIT }
+            };
+            
+            VkVertexInputBindingDescription bindingDescription = Vertex::GetBindingDescription();
+            JTuple<VkVertexInputAttributeDescription*, int> attribs = Vertex::GetAttributeDescriptions();
+            
+            VkExtent2D swapchain_extent = vk::GetSwapChainExtent();
+            VkViewport viewport = {};
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width  = (r32) swapchain_extent.width;
+            viewport.height = (r32) swapchain_extent.height;
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            
+            VkRect2D scissor = {};
+            scissor.offset = {0, 0};
+            scissor.extent = swapchain_extent;
+            
+            resource_id_t *Layouts = talloc<resource_id_t>(Material.ShaderData.DescriptorSetsCount);
+            for (u32 SetIdx = 0; SetIdx < Material.ShaderData.DescriptorSetsCount; ++SetIdx)
+                Layouts[SetIdx] = Material.ShaderData.DescriptorSets[SetIdx].DescriptorSetLayout;
+            
+            pipeline_create_info PipelineCreateInfo = {};
+            PipelineCreateInfo.Shaders      = Shaders;
+            PipelineCreateInfo.ShadersCount = 2;
+            PipelineCreateInfo.VertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+            PipelineCreateInfo.VertexInputInfo.vertexBindingDescriptionCount   = 1;
+            PipelineCreateInfo.VertexInputInfo.pVertexBindingDescriptions      = &bindingDescription;
+            PipelineCreateInfo.VertexInputInfo.vertexAttributeDescriptionCount = attribs.Second();
+            PipelineCreateInfo.VertexInputInfo.pVertexAttributeDescriptions    = attribs.First();
+            PipelineCreateInfo.Viewport               = &viewport;
+            PipelineCreateInfo.Scissor                = &scissor;
+            PipelineCreateInfo.ScissorCount           = 1;
+            PipelineCreateInfo.ViewportCount          = 1;
+            PipelineCreateInfo.PolygonMode            = VK_POLYGON_MODE_FILL;
+            PipelineCreateInfo.FrontFace              = VK_FRONT_FACE_CLOCKWISE;
+            PipelineCreateInfo.HasMultisampling       = false;
+            PipelineCreateInfo.MuliSampleSamples      = VK_SAMPLE_COUNT_1_BIT; // optional
+            PipelineCreateInfo.HasDepthStencil        = true;
+            PipelineCreateInfo.DescriptorLayoutIds    = Layouts;
+            PipelineCreateInfo.DescriptorLayoutsCount = Material.ShaderData.DescriptorSetsCount;
+            PipelineCreateInfo.PushConstants          = nullptr;
+            PipelineCreateInfo.PushConstantsCount     = 0;
+            PipelineCreateInfo.RenderPass             = GetPrimaryRenderPass();
+            
+            Material.Pipeline = mresource::Load({},
+                                                Resource_Pipeline,
+                                                &PipelineCreateInfo);
+            
+            asset Asset = {};
+            Asset.Type     = Asset_Material;
+            Asset.Material = Material;
+            
+            Result = RegistryAdd(&AssetRegistry, Asset);
+            AssetRegistry.MaterialMap.Insert(Material.Name, Result);
+            
+            //~ clean memory
+            
+            FreeConfigObjTable(&MaterialInfo);
         }
         
         return Result;
@@ -686,7 +939,7 @@ Primitive List has the following format:
             jstring MaterialName;
             ReadJStringFromBinaryBuffer(&Loader->Buffer, &MaterialName);
             
-            asset_id_t MaterialId = LoadMaterial(MaterialFilename, MaterialName);
+            Primitive.Material = LoadMaterial(Loader, MaterialFilename, MaterialName);
             
             Loader->Asset->Primitives[PrimitiveIdx] = Primitive;
         }
@@ -898,7 +1151,8 @@ Node List
                 model_create_info *Info = static_cast<model_create_info*>(Data);
                 Asset = LoadModel(Info->FrameParams, Info->Filename);
                 
-                AssetIdListAdd(&AssetRegistry.ModelAssets, Asset.Id);
+                Result = RegistryAdd(&AssetRegistry, Asset);
+                AssetIdListAdd(&AssetRegistry.ModelAssets, Result);
             } break;
             
             case Asset_Texture:
@@ -915,10 +1169,12 @@ Node List
             } break;
         }
         
-        // TODO(Dustin): Error check?
-        Result = RegistryAdd(&AssetRegistry, Asset);
-        
         return Result;
+    }
+    
+    asset* GetAsset(asset_id_t Id)
+    {
+        return AssetRegistry.Assets[Id.Index];
     }
     
     void GetAssetList(asset **Assets, u32 *Count)

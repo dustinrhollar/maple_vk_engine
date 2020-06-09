@@ -27,6 +27,7 @@ void GameStageInit(frame_params* FrameParams)
     ExampleGltfModel.Clear();
 #endif
     
+#if 1
     //jstring ExampleModel = InitJString("data/models/models/fox.model");
     jstring ExampleModel = InitJString("data/models/models/Lantern.model");
     
@@ -36,6 +37,7 @@ void GameStageInit(frame_params* FrameParams)
     masset::Load(Asset_Model, ModelCreateInfo);
     
     ExampleModel.Clear();
+#endif
     
     //~ Subscribe to necessary events
     event::Subscribe<KeyPressEvent>(&ProcessKeyboardInput, nullptr);
@@ -43,6 +45,7 @@ void GameStageInit(frame_params* FrameParams)
 
 void GameStageEntry(frame_params* FrameParams)
 {
+    // Prep the frame for rendering
     u32 Width, Height;
     PlatformGetClientWindowDimensions(&Width, &Height);
     VkExtent2D Extent = vk::GetSwapChainExtent();
@@ -81,18 +84,31 @@ void GameStageShutdown(frame_params* FrameParams)
 
 file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix)
 {
-    // Update Model Info and bind the object descriptor
-    render_draw_command *DrawCommand = talloc<render_draw_command>(1);
-    DrawCommand->PrimitivesCount        = Mesh->PrimitivesCount;
-    
-    DrawCommand->PrimitivesToDraw       = talloc<primitive>(DrawCommand->PrimitivesCount);
-    for (int i = 0; i < Mesh->PrimitivesCount; ++i)
+    for (u32 Idx = 0; Idx < Mesh->PrimitivesCount; ++Idx)
     {
-        DrawCommand->PrimitivesToDraw[i] = *Mesh->Primitives[i];
+        primitive *Primitive = Mesh->Primitives[Idx];
+        
+        resource_id_t *VBuffers = talloc<resource_id_t>(1);
+        u64 *VOffsets = talloc<u64>(1);
+        
+        VBuffers[0] = Primitive->VertexBuffer;
+        VOffsets[0] = 0;
+        
+        render_draw_command *DrawCommand = talloc<render_draw_command>(1);
+        DrawCommand->VertexBuffers      = VBuffers;
+        DrawCommand->VertexBuffersCount = 1;
+        DrawCommand->Offsets            = VOffsets;
+        DrawCommand->IsIndexed          = Primitive->IsIndexed;
+        DrawCommand->IndexBuffer        = Primitive->IndexBuffer;
+        DrawCommand->Count              = (Primitive->IsIndexed) ? Primitive->IndexCount : Primitive->VertexCount;
+        DrawCommand->Material           = Primitive->Material;
+        
+        object_shader_data ObjectData = {};
+        ObjectData.Model = Matrix;
+        DrawCommand->ObjectShaderData   = ObjectData;
+        
+        AddRenderCommand(FrameParams, { RenderCmd_Draw, DrawCommand });
     }
-    
-    DrawCommand->ObjectShaderData.Model = Matrix;
-    AddRenderCommand(FrameParams, { RenderCmd_Draw, DrawCommand });
 }
 
 file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix)

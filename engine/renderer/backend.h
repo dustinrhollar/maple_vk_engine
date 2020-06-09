@@ -54,6 +54,16 @@ struct gpu_index_buffer_create_info
 
 struct gpu_image_create_info
 {
+    jstring              Filename;
+    
+    VkFilter             MagFilter;
+    VkFilter             MinFilter;
+    
+    VkSamplerAddressMode AddressModeU;
+    VkSamplerAddressMode AddressModeV;
+    VkSamplerAddressMode AddressModeW;
+    
+    ImageParameters     *Image;
 };
 
 // TODO(Dustin): Allow for instancing

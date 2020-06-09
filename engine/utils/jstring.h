@@ -603,10 +603,17 @@ void AddJString(jstring &result, const char* lhs, const char* rhs)
     
     if (result.heap)
     {
-        if (result.reserved_heap_size <= add_len)
+        if (result.reserved_heap_size < add_len)
         {
-            result.reserved_heap_size = (result.reserved_heap_size * 2 > add_len) ? result.reserved_heap_size * 2 : add_len + 1;
+            result.reserved_heap_size = (result.reserved_heap_size * 2 > add_len) ?
+                result.reserved_heap_size * 2 : add_len + 1;
             result.hptr = (char*)pstring_realloc(result.hptr, result.len);
+            
+            char *Tmp = (char*)pstring_alloc(result.reserved_heap_size);
+            memcpy(Tmp, result.hptr, result.len);
+            
+            pstring_free(result.hptr);
+            result.hptr = Tmp;
         }
         
         memcpy(result.hptr + result.len, lhs, lhs_sz);
@@ -630,6 +637,8 @@ void AddJString(jstring &result, const char* lhs, const char* rhs)
         memcpy(result.sptr + result.len + lhs_sz, rhs, rhs_sz);
         result.sptr[add_len] = 0;
     }
+    
+    result.len = add_len;
 }
 
 char* jstring::GetCStr() const

@@ -257,6 +257,7 @@ void GpuStageEntry(frame_params *FrameParams)
                                                  FrameImageIndex);
                 
                 // HACK(Dustin): Get the Descriptor for the Global Frame Shader Data
+#if 0
                 resource DefaultPipelineResource = mresource::GetDefaultPipeline();
                 resource GlobalFrameDescriptor   = mresource::GetDefaultFrameDescriptor();
                 VkDescriptorSet DescriptorSet    = GlobalFrameDescriptor.DescriptorSet.DescriptorSets[FrameImageIndex].Handle;
@@ -265,6 +266,7 @@ void GpuStageEntry(frame_params *FrameParams)
                                        GLOBAL_SET, 1,
                                        &DescriptorSet, 0,
                                        nullptr);
+#endif
                 
                 FrameActive = true;
             } break;
@@ -327,6 +329,24 @@ void GpuStageEntry(frame_params *FrameParams)
             
             case GpuCmd_UploadImage:
             {
+                gpu_image_create_info *Info = static_cast<gpu_image_create_info*>(GpuCmd.Data);
+                
+#if 0
+                struct gpu_image_create_info
+                {
+                    jstring              Filename;
+                    
+                    VkFilter             MagFilter;
+                    VkFilter             MinFilter;
+                    
+                    VkSamplerAddressMode AddressModeU;
+                    VkSamplerAddressMode AddressModeV;
+                    VkSamplerAddressMode AddressModeW;
+                    
+                    ImageParameters     *Image;
+                };
+#endif
+                
             } break;
             
             case GpuCmd_Draw:

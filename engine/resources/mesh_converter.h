@@ -73,7 +73,8 @@ BLEND  - Support for this mode varies. There is no perfect and fast solution tha
          value to avoid sorting issues.
 
 */
-enum TextureAlphaMode {
+enum TextureAlphaMode
+{
     TEXTURE_ALPHA_MODE_OPAQUE,
     TEXTURE_ALPHA_MODE_MASK,
     TEXTURE_ALPHA_MODE_BLEND,

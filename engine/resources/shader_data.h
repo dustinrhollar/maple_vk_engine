@@ -31,7 +31,7 @@ enum shader_type
 };
 
 // source: https://github.com/khalladay/VkMaterialSystem/blob/master/ShaderPipeline/shaderdata.h
-struct block_member_serial
+struct block_member
 {
 	u32     Size;
     u32     Offset;
@@ -45,7 +45,7 @@ struct input_block_serial
     u32                        Binding;
     bool                       IsTextureBlock;
     jstring                    Name;
-    DynamicArray<block_member_serial> Members;
+    DynamicArray<block_member> Members;
 };
 
 struct shader_data_serial
@@ -66,41 +66,80 @@ struct shader_data_serial
     DynamicArray<u32>                StaticSets;
 };
 
-struct shader_data
+// TODO(Dustin): Determine if it possible to have duplicated bind points.
+// For example, can bind points at set=0 binding=0 be used for Model in the vertex
+// and color in the fragment?
+struct input_block
 {
+#if 0
+    // NOTE(Dustin):
+    // Set and binding can be found by their position
+    // in external arrays...
+    // shader_descriptor_def will be the set position in the
+    // material data struct.
+    // input_block will be the binding position in the shader
+    // descriptor struct.
+    u32           Set;
+    u32           Binding;
+#endif
+    
+    // Block definition
+    jstring       Name;
+    bool          IsTextureBlock;
+    u32           Size;
+    
+    block_member *Members;
+    u32           MembersCount;
 };
 
-/*
-
-Descriptor Set Layout Information Required
-- Binding
-- Descriptor count
-- Type (Buffer/Dynamic/...)
-- Stage
-- Immutable Samplers
-
-Descriptor Set Information
-- DescriptorSetLayout
-
-Material Information
-- List of shader files
-- Descriptor Layouts
-- Shader bindings
-
-For now, let's only consider two buffers: VP (Global) and Model (Object).
-Once I get textures in place, then add in samplers and see what needs to change.
-This also means that descriptors and materials need to get hidden from the game
-layer.
-
-VkDescriptorSetLayoutBinding Bindings[1]= {};
-    Bindings[0].binding            = 0;
-    Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    Bindings[0].descriptorCount    = 1;
-    Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
-    Bindings[0].pImmutableSamplers = nullptr; // Optional
+struct shader_descriptor_def
+{
+    resource_id_t          DescriptorSet;
+    resource_id_t          DescriptorSetLayout;
     
-here is a good example
+    input_block           *InputData;
+    u32                    InputDataCount;
+    
+#if 0
+    // HACK(Dustin): Hard limit of 10 bindings for a descriptor set.
+    // Might not need to actually store this list, but it could be useful
+    // for comparing descriptor layouts...
+    // NOTE(Dustin): Not going to use these right now...
+    VkDescriptorSetLayoutBinding Bindings[10];
+    u32                          BindingsCount;
+#endif
+};
 
-*/
+struct shader_data
+{
+    input_block            PushConstants;
+    
+    // descriptor ids for all attached descriptor sets
+    shader_descriptor_def *DescriptorSets;
+    u32                    DescriptorSetsCount;
+    
+#if 0
+    // NOTE(Dustin): These might not be needed since since the
+    // shader_descriptor_def list is ordered by descriptor set.
+    // a list of block data is contained within each descriptor
+    
+    // The following are indices into Descriptor Set list
+    // Useful for set bind points of certain descriptor types.
+    
+    // Global descriptor sets
+    u32                   *GlobalSets;
+    u32                    GlobalSetsCount;
+    
+    // Per-object descriptor data
+    u32                   *ObjectSets;
+    u32                    ObjectSetsCount;
+    
+    // Per-material descriptor data
+    u32                   *MaterialSets;
+    u32                    MaterialSetsCount;
+    
+    // TODO(Dustin): List of descriptors that have an unknown bind point...
+#endif
+};
 
 #endif //ENGINE_RESOURCES_SHADER_DATA_H

@@ -99,6 +99,10 @@ namespace mresource
         u32        Count;
         u32        Cap;
         
+        // When there are gaps in Descriptor #'s, the gaps
+        // have to be filled in with an empty descriptor layout
+        resource_id_t EmptyDescriptorLayout;
+        
         // Default Global Descriptor, contains VP buffer
         resource_id_t DefaultGlobalDescriptor;
         resource_id_t DefaultGlobalDescriptorLayout;
@@ -303,6 +307,16 @@ namespace mresource
         
         InitRegistry(&ResourceRegistry, 10);
         
+        //~ Create the Empty Descriptor Layout
+        descriptor_layout_create_info DescriptorLayoutCreateInfo = {};
+        DescriptorLayoutCreateInfo.BindingsCount = 0;
+        DescriptorLayoutCreateInfo.Bindings      = nullptr;
+        
+        ResourceRegistry.EmptyDescriptorLayout = mresource::Load(FrameParams,
+                                                                 Resource_DescriptorSetLayout,
+                                                                 &DescriptorLayoutCreateInfo);
+        
+        
         //~ Global Data Uniform Buffer
         
         // TODO(Dustin): Size is hardcoded right now...
@@ -341,7 +355,7 @@ namespace mresource
         Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
         Bindings[0].pImmutableSamplers = nullptr; // Optional
         
-        descriptor_layout_create_info DescriptorLayoutCreateInfo = {};
+        DescriptorLayoutCreateInfo = {};
         DescriptorLayoutCreateInfo.BindingsCount = 1;
         DescriptorLayoutCreateInfo.Bindings      = Bindings;
         
@@ -736,6 +750,20 @@ namespace mresource
             
             case Resource_Image:
             {
+                image_create_info *Info = static_cast<image_create_info*>(Data);
+                
+                Resource.Image = {};
+                Result = RegistryAdd(&ResourceRegistry, Resource);
+                
+                gpu_image_create_info *ImageInfo = talloc<gpu_image_create_info>();
+                ImageInfo->Filename     = Info->Filename;
+                ImageInfo->MagFilter    = Info->MagFilter;
+                ImageInfo->MinFilter    = Info->MinFilter;
+                ImageInfo->AddressModeU = Info->AddressModeU;
+                ImageInfo->AddressModeV = Info->AddressModeW;
+                ImageInfo->AddressModeW = Info->AddressModeV;
+                ImageInfo->Image        = &ResourceRegistry.Resources[Result]->Image.Image;
+                AddGpuCommand(FrameParams, { GpuCmd_UploadImage, ImageInfo });
             } break;
             
             case Resource_Pipeline:
@@ -1097,5 +1125,20 @@ namespace mresource
         return *ResourceRegistry.Resources[ResourceRegistry.DefaultGlobalDescriptor];
     }
     
+    default_resources GetDefaultResourcesFromRegistry()
+    {
+        default_resources Result = {};
+        
+        Result.EmptyDescriptorLayout         = ResourceRegistry.EmptyDescriptorLayout;
+        Result.DefaultGlobalDescriptor       = ResourceRegistry.DefaultGlobalDescriptor;
+        Result.DefaultGlobalDescriptorLayout = ResourceRegistry.DefaultGlobalDescriptorLayout;
+        Result.ObjectDescriptor              = ResourceRegistry.ObjectDescriptor;
+        Result.ObjectDescriptorLayout        = ResourceRegistry.ObjectDescriptorLayout;
+        Result.DefaultGlobalBuffer           = ResourceRegistry.DefaultGlobalBuffer;
+        Result.ObjectDynamicBuffer           = ResourceRegistry.ObjectDynamicBuffer;
+        Result.DefaultPipeline               = ResourceRegistry.DefaultPipeline;
+        
+        return Result;
+    }
     
 }; // mresource

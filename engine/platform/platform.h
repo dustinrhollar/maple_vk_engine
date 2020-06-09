@@ -258,6 +258,7 @@ inline void mprinte(char *fmt, ...);
 #define PlatformPrintError                    Win32PrintError
 
 #define PlatformGetExeFilepath                Win32GetExeFilepath
+#define PlatformCopyFileIfChanged             Win32CopyFileIfChanged
 #define PlatformFindAllFilesInDirectory       Win32FindAllFilesInDirectory
 #define PlatformWriteBufferToFile             Win32WriteBufferToFile
 #define PlatformLoadFile                      Win32LoadFile
@@ -283,6 +284,7 @@ void Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, c
 
 DynamicArray<jstring> Win32FindAllFilesInDirectory(jstring &directory, jstring delimiter);
 jstring Win32GetExeFilepath();
+void Win32CopyFileIfChanged(const char *Destination, const char *Source);
 jstring Win32LoadFile(jstring &filename);
 void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size);
 void Win32DeleteFile(jstring &file);
