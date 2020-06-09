@@ -12,8 +12,8 @@
 // Determine is a system will be big endian or little endian
 // Little Endian: 01 00 00 00
 // Big Endian:    00 00 00 01
-const int i = 1;
-#define is_bigendian() ( (*(char*)&i) == 0 )
+const int BIG_ENDIAN_CONSTANT = 1;
+#define is_bigendian() ( (*(char*)&BIG_ENDIAN_CONSTANT) == 0 )
 
 // i16
 short ReverseInt16(i16 s)
@@ -103,26 +103,30 @@ u32 ReverseUInt32(u32 i)
     return i;
 }
 
-u64 ReverseUInt64(u64 i)
+u64 ReverseUInt64(u64 uint)
 {
     u8 c1, c2, c3, c4, c5, c6, c7, c8;
     
+    // NOTE(Dustin): For ONLY This reverse functions, big_endian can't decide
+    // what it wants to be
+    //#if 0
     if (is_bigendian())
     {
-        c1 = ( i>>0 )  & 255;
-        c2 = ( i>>8 )  & 255;
-        c3 = ( i>>16 ) & 255;
-        c4 = ( i>>24 ) & 255;
-        c5 = ( i>>32 ) & 255;
-        c6 = ( i>>40 ) & 255;
-        c7 = ( i>>48 ) & 255;
-        c8 = ( i>>56 ) & 255;
+        c1 = ( uint>>0 )  & 255;
+        c2 = ( uint>>8 )  & 255;
+        c3 = ( uint>>16 ) & 255;
+        c4 = ( uint>>24 ) & 255;
+        c5 = ( uint>>32 ) & 255;
+        c6 = ( uint>>40 ) & 255;
+        c7 = ( uint>>48 ) & 255;
+        c8 = ( uint>>56 ) & 255;
         
-        i = ((u64)c1 << 56) + ((u64)c2 << 48) + ((u64)c3 << 40) + ((u64)c4 << 32)
+        uint = ((u64)c1 << 56) + ((u64)c2 << 48) + ((u64)c3 << 40) + ((u64)c4 << 32)
             + ((u64)c5 << 24) + ((u64)c6 << 16) + ((u64)c7 << 8) + ((u64)c8 << 0);
     }
+    //#endif
     
-    return i;
+    return uint;
 }
 
 float ReverseFloat(float f)
@@ -131,12 +135,16 @@ float ReverseFloat(float f)
     
     if (is_bigendian())
     {
-        c1 = ( i>>0 )  & 255;
-        c2 = ( i>>8 )  & 255;
-        c3 = ( i>>16 ) & 255;
-        c4 = ( i>>24 ) & 255;
+        r32 RetVal;
+        char *FloatToConvert = (char*)&f;
+        char *ReturnFloat = (char*)&RetVal;
         
-        f = ((u32)c1 << 24) + ((u32)c2 << 16) + ((u32)c3 << 8) + ((u32)c4 << 0);
+        // swap the bytes into a temporary buffer
+        ReturnFloat[0] = FloatToConvert[3];
+        ReturnFloat[1] = FloatToConvert[2];
+        ReturnFloat[2] = FloatToConvert[1];
+        ReturnFloat[3] = FloatToConvert[0];
+        return RetVal;
     }
     
     return f;
@@ -408,12 +416,33 @@ inline void ResizeIfPossible(FileBuffer *buffer, u32 req_size)
         ResizeFileBuffer(buffer, (buffer->cap * 2 > req_size) ? buffer->cap * 2 : req_size * 2);
 }
 
-i32 BufferUnusedSize(FileBuffer *buffer)
+inline i32 BufferUnusedSize(FileBuffer *buffer)
 {
     u32 used_space = buffer->brkp - buffer->start;
     return buffer->cap - used_space;
 }
 
+void WriteToFileBuffer(FileBuffer *Buffer, char *Fmt, ...)
+{
+    va_list Args;
+    va_start(Args, Fmt);
+    
+    int CharsRead = vsnprintf(NULL, 0, Fmt, Args);
+    if (CharsRead < 0)
+    {
+        mprinte("Encoding error when writing to a buffer. The format was \"%s\"! Unused space in the buffer was %d\n", Fmt, BufferUnusedSize(Buffer));
+        return;
+    }
+    
+    if (CharsRead > BufferUnusedSize(Buffer))
+    { // buffer wasn't big enough, so resize and try again
+        ResizeIfPossible(Buffer, CharsRead);
+    }
+    
+    CharsRead = vsnprintf(Buffer->brkp, BufferUnusedSize(Buffer), Fmt, Args);
+    
+    Buffer->brkp += CharsRead;
+}
 
 //~ Write Routines
 void Int32ToBinaryBuffer(FileBuffer *buffer, i32 *data, u32 count)
@@ -542,11 +571,6 @@ void JStringToBinaryBuffer(FileBuffer *buffer, jstring &str)
     CharToBinaryBuffer(buffer, str.GetCStr(), str.len);
 }
 
-void EntityToBinaryBuffer(FileBuffer *buffer, ecs::Entity entity)
-{
-    UInt64ToBinaryBuffer(buffer, &entity.id, 1);
-}
-
 // NOTE(Dustin): Prints a head for the array - not the array itself!
 template<class T>
 void DynamicArrayToBinaryBuffer(FileBuffer *buffer, DynamicArray<T> *array)
@@ -664,11 +688,6 @@ void ReadUInt64FromBinaryBuffer(FileBuffer *buffer, u64 *result)
         *result = ReadInt64(buffer->brkp);
         buffer->brkp += req_size;
     }
-}
-
-void ReadEntityFromBinaryBuffer(FileBuffer *buffer, ecs::Entity *entity)
-{
-    ReadUInt64FromBinaryBuffer(buffer, &entity->id);
 }
 
 template<class T>

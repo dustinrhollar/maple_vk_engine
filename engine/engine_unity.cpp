@@ -116,7 +116,6 @@ void GameStageEntry(frame_params* FrameParams);
 //~ Platform Specfic Functions
 #include "platform/platform.h"
 
-
 //~ ECS Headers
 #include "ecs/entity.h"
 #include "ecs/component.h"
@@ -129,6 +128,8 @@ void GameStageEntry(frame_params* FrameParams);
 #include "events/event_manager.h"
 
 #include "events/event_manager.cpp"
+
+//~ Shader related data
 
 //~ Vulkan Headers
 // TODO(Dustin): Find a better solution to this.
@@ -188,7 +189,6 @@ void *VulkanLibrary;
 #include "ecs/system.cpp"
 #include "ecs/ecs.cpp"
 
-
 //~ Vulkan Source Files
 #include "vk/vulkan_functions.cpp"
 #include "vk/maple_vulkan.cpp"
@@ -198,9 +198,19 @@ void *VulkanLibrary;
 #include "config/config_parser.cpp"
 
 //~ Resource Managers
+
+#include "resources/resource_allocator.h"
+#include "resources/resource_allocator.cpp"
+
 #define CGLTF_IMPLEMENTATION
 #include "resources/cgltf.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
+#include "resources/mesh_converter.h"
 #include "resources/resources.h"
+#include "resources/shader_data.h"
 #include "resources/asset.h"
 #include "renderer/frontend.h"
 #include "renderer/backend.h"
@@ -209,6 +219,7 @@ void *VulkanLibrary;
 #include "frame_info/frame_params.cpp"
 #include "resources/asset.cpp"
 #include "resources/resources.cpp"
+#include "resources/mesh_converter.cpp"
 #include "renderer/frontend.cpp"
 #include "renderer/backend.cpp"
 

@@ -254,4 +254,14 @@ first place.
     }
     
     
+    void EntityToBinaryBuffer(FileBuffer *buffer, ecs::Entity entity)
+    {
+        UInt64ToBinaryBuffer(buffer, &entity.id, 1);
+    }
+    
+    void ReadEntityFromBinaryBuffer(FileBuffer *buffer, ecs::Entity *entity)
+    {
+        ReadUInt64FromBinaryBuffer(buffer, &entity->id);
+    }
+    
 } // ecs

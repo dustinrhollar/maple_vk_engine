@@ -28,6 +28,7 @@ namespace mm
                             Buffer.Handle,
                             Buffer.Memory,
                             Buffer.AllocationInfo);
+        Buffer.Size = BufferSize;
         
         Pool->Buffer = Buffer;
     }
@@ -94,10 +95,30 @@ namespace mresource
     
     struct resource_registry
     {
-        resource *Resources;
-        u32       Count;
-        u32       Cap;
+        resource **Resources;
+        u32        Count;
+        u32        Cap;
+        
+        // When there are gaps in Descriptor #'s, the gaps
+        // have to be filled in with an empty descriptor layout
+        resource_id_t EmptyDescriptorLayout;
+        
+        // Default Global Descriptor, contains VP buffer
+        resource_id_t DefaultGlobalDescriptor;
+        resource_id_t DefaultGlobalDescriptorLayout;
+        
+        // Set = 1 is reserved for Model Descriptor
+        // All renderable objects that is not a compute
+        // material will use this descriptor.
+        resource_id_t ObjectDescriptor;
+        resource_id_t ObjectDescriptorLayout;
+        
+        resource_id_t DefaultGlobalBuffer;
+        resource_id_t ObjectDynamicBuffer;
+        
     } file_global ResourceRegistry;
+    
+    file_global mm::resource_allocator ResourceAllocator;
     
     file_internal void InitDescriptorPool(descriptor_pool *Pool);
     file_internal void FreeDescriptorPool(descriptor_pool *Pool);
@@ -121,20 +142,22 @@ namespace mresource
     {
         Registry->Count     = 0;
         Registry->Cap       = Cap;
-        Registry->Resources = palloc<resource>(Registry->Cap);
+        Registry->Resources = palloc<resource*>(Registry->Cap);
+        
+        mm::InitResourceAllocator(&ResourceAllocator, sizeof(resource), Cap);
         
         for (u32 i = 0; i < Registry->Cap; ++i)
-            Registry->Resources[i].Id = -1;
+            Registry->Resources[i] = nullptr;
     }
     
     file_internal void FreeRegistry(resource_registry *Registry)
     {
         for (u32 i = 0; i < Registry->Cap; ++i)
         {
-            if (Registry->Resources[i].Id != -1)
+            if (Registry->Resources[i])
             {
-                FreeResource(&Registry->Resources[i]);
-                Registry->Resources[i].Id = -1;
+                FreeResource(Registry->Resources[i]);
+                Registry->Resources[i] = nullptr;
             }
         }
         
@@ -145,14 +168,14 @@ namespace mresource
     
     file_internal void RegistryResize(resource_registry *Registry, u32 NewSize)
     {
-        resource *NewRegistry = palloc<resource>(NewSize);
+        resource **NewRegistry = palloc<resource*>(NewSize);
         
         for (u32 Idx = 0; Idx < Registry->Count; Idx++)
             NewRegistry[Idx] = Registry->Resources[Idx];
         
         // Mark empty slots as invalid resources
         for (u32 Idx = Registry->Count; Idx < NewSize; ++Idx)
-            NewRegistry[Idx].Id = -1;
+            NewRegistry[Idx] = nullptr;
         
         pfree(Registry->Resources);
         Registry->Resources = NewRegistry;
@@ -162,26 +185,30 @@ namespace mresource
     file_internal resource_id_t RegistryAdd(resource_registry *Registry, resource Resource)
     {
         if (Registry->Count + 1 >= Registry->Cap)
-            RegistryResize(Registry, (Registry->Cap>0) ? Registry->Cap*2 : 10);
+            RegistryResize(Registry, (Registry->Cap>0) ? Registry->Cap*2 : 20);
+        
+        resource *NewResource = (resource*)ResourceAllocatorAlloc(&ResourceAllocator);
+        *NewResource = Resource;
         
         resource_id_t Result = Registry->Count;
-        Resource.Id = Result;
-        Registry->Resources[Registry->Count++] = Resource;
+        NewResource->Id = Result;
+        Registry->Resources[Registry->Count++] = NewResource;
         
         return Result;
     }
     
     file_internal void RegistryRemove(resource_registry *Registry, u32 ResourceIdx)
     {
-        resource Resource = Registry->Resources[ResourceIdx];
-        FreeResource(&Resource);
-        Registry->Resources[ResourceIdx].Id = -1;
+        resource *Resource = Registry->Resources[ResourceIdx];
+        FreeResource(Resource);
+        ResourceAllocatorFree(&ResourceAllocator, Resource);
+        Registry->Resources[ResourceIdx]->Id = -1;
     }
     
     file_internal inline bool RegistryIsValidResource(resource_registry *Registry,
                                                       resource_id_t Id)
     {
-        return Id < Registry->Count && Registry->Resources[Id].Id == Id;
+        return Id < Registry->Count && Registry->Resources[Id]->Id == Id;
     }
     
     
@@ -276,11 +303,125 @@ namespace mresource
                            DescriptorSizes, 3, 3 * PoolList.MaxSetType);
         
         DescriptorPoolListAdd(&PoolList, Pool);
+        
+        InitRegistry(&ResourceRegistry, 10);
+        
+        //~ Create the Empty Descriptor Layout
+        descriptor_layout_create_info DescriptorLayoutCreateInfo = {};
+        DescriptorLayoutCreateInfo.BindingsCount = 0;
+        DescriptorLayoutCreateInfo.Bindings      = nullptr;
+        
+        ResourceRegistry.EmptyDescriptorLayout = mresource::Load(FrameParams,
+                                                                 Resource_DescriptorSetLayout,
+                                                                 &DescriptorLayoutCreateInfo);
+        
+        
+        //~ Global Data Uniform Buffer
+        
+        // TODO(Dustin): Size is hardcoded right now...
+        buffer_create_info MvpBufferCreateInfo = {};
+        MvpBufferCreateInfo.BufferSize         = sizeof(mat4) * 2;
+        MvpBufferCreateInfo.PersistentlyMapped = true;
+        MvpBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        MvpBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        MvpBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        ResourceRegistry.DefaultGlobalBuffer = mresource::Load({},
+                                                               Resource_UniformBuffer,
+                                                               &MvpBufferCreateInfo);
+        
+        //~ Object Uniform Buffer
+        
+        // TODO(Dustin): Size is hard coded...
+        dynamic_buffer_create_info ModelBufferCreateInfo = {};
+        ModelBufferCreateInfo.ElementCount       = 50;
+        ModelBufferCreateInfo.ElementStride      = sizeof(mat4);
+        ModelBufferCreateInfo.PersistentlyMapped = true;
+        ModelBufferCreateInfo.Usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        ModelBufferCreateInfo.MemoryUsage        = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        ModelBufferCreateInfo.MemoryFlags        = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        ResourceRegistry.ObjectDynamicBuffer = mresource::Load(FrameParams,
+                                                               Resource_DynamicUniformBuffer,
+                                                               &ModelBufferCreateInfo);
+        
+        //~ Default Global Descriptor, contains VP buffer
+        
+        VkDescriptorSetLayoutBinding Bindings[1]= {};
+        Bindings[0].binding            = 0;
+        Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        Bindings[0].descriptorCount    = 1;
+        Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+        Bindings[0].pImmutableSamplers = nullptr; // Optional
+        
+        DescriptorLayoutCreateInfo = {};
+        DescriptorLayoutCreateInfo.BindingsCount = 1;
+        DescriptorLayoutCreateInfo.Bindings      = Bindings;
+        
+        ResourceRegistry.DefaultGlobalDescriptorLayout = mresource::Load(FrameParams,
+                                                                         Resource_DescriptorSetLayout,
+                                                                         &DescriptorLayoutCreateInfo);
+        
+        descriptor_create_info DescriptorCreateInfo = {};
+        DescriptorCreateInfo.DescriptorLayouts = &ResourceRegistry.DefaultGlobalDescriptorLayout;
+        DescriptorCreateInfo.SetCount          = 1;
+        
+        ResourceRegistry.DefaultGlobalDescriptor = mresource::Load(FrameParams,
+                                                                   Resource_DescriptorSet,
+                                                                   &DescriptorCreateInfo);
+        
+        //~ Object Descriptor Info
+        
+        Bindings[0].binding            = 0;
+        Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        Bindings[0].descriptorCount    = 1;
+        Bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+        Bindings[0].pImmutableSamplers = nullptr; // Optional
+        
+        DescriptorLayoutCreateInfo.BindingsCount = 1;
+        DescriptorLayoutCreateInfo.Bindings      = Bindings;
+        
+        ResourceRegistry.ObjectDescriptorLayout = mresource::Load(FrameParams,
+                                                                  Resource_DescriptorSetLayout,
+                                                                  &DescriptorLayoutCreateInfo);
+        
+        DescriptorCreateInfo.DescriptorLayouts = &ResourceRegistry.ObjectDescriptorLayout;
+        DescriptorCreateInfo.SetCount          = 1;
+        
+        ResourceRegistry.ObjectDescriptor = mresource::Load(FrameParams, Resource_DescriptorSet,
+                                                            &DescriptorCreateInfo);
+        
+        //~ Update the descriptor write info for both sets of descriptors
+        
+        descriptor_write_info *WriteInfos = talloc<descriptor_write_info>(2);
+        
+        WriteInfos[0] = {
+            ResourceRegistry.DefaultGlobalBuffer,
+            ResourceRegistry.DefaultGlobalDescriptor,
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+        };
+        
+        WriteInfos[1] = {
+            ResourceRegistry.ObjectDynamicBuffer,
+            ResourceRegistry.ObjectDescriptor,
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+        };
+        
+        gpu_descriptor_update_info *DescriptorUpdateInfos = talloc<gpu_descriptor_update_info>();
+        DescriptorUpdateInfos->WriteInfos      = WriteInfos;
+        DescriptorUpdateInfos->WriteInfosCount = 2;
+        
+        AddGpuCommand(FrameParams, {GpuCmd_UpdateDescriptor, DescriptorUpdateInfos});
     }
     
     void Free(frame_params *FrameParams)
     {
+        vk::Idle();
+        
         FreeRegistry(&ResourceRegistry);
+        mm::FreeResourceAllocator(&ResourceAllocator);
         FreeDescriptorPoolList(&PoolList);
     }
     
@@ -321,9 +462,9 @@ namespace mresource
                 VkResult SetAllocResult;
                 VkDescriptorPool DescriptorPool;
                 
-                resource ResourceLayout =
+                resource *ResourceLayout =
                     ResourceRegistry.Resources[Info->DescriptorLayouts[0]];
-                VkDescriptorSetLayout Layout = ResourceLayout.DescriptorLayout.DescriptorLayout;
+                VkDescriptorSetLayout Layout = ResourceLayout->DescriptorLayout.DescriptorLayout;
                 
                 VkDescriptorSet *Sets = talloc<VkDescriptorSet>(SwapchainImageCount);
                 VkDescriptorSetLayout *Layouts = talloc<VkDescriptorSetLayout>(SwapchainImageCount);
@@ -366,67 +507,10 @@ namespace mresource
                     RDescriptorSet.DescriptorSets[Image].Handle = Sets[Image];;
                     RDescriptorSet.DescriptorSets[Image].Layout = Layout;
                     RDescriptorSet.DescriptorSets[Image].Pool   = DescriptorPool;
-                    
                 }
                 
                 Resource.DescriptorSet = RDescriptorSet;
                 Result = RegistryAdd(&ResourceRegistry, Resource);
-            } break;
-            
-            case Resource_DescriptorSetWriteUpdate:
-            {
-                descriptor_update_write_info *Infos =
-                    static_cast<descriptor_update_write_info*>(Data);
-                
-                for (u32 SwapImage = 0; SwapImage < SwapchainImageCount; ++SwapImage)
-                {
-                    VkWriteDescriptorSet *DescriptorWrites =
-                        talloc<VkWriteDescriptorSet>(Infos->WriteInfosCount);
-                    
-                    for (u32 WriteInfo = 0; WriteInfo < Infos->WriteInfosCount; WriteInfo++)
-                    {
-                        resource UniformResource =
-                            ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].BufferId];
-                        
-                        resource DescriptorResource =
-                            ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].DescriptorId];
-                        
-                        // Set 0: View-Projection Matrices
-                        VkDescriptorBufferInfo *BufferInfo = talloc<VkDescriptorBufferInfo>(1);
-                        *BufferInfo = {};
-                        if (UniformResource.Type == Resource_UniformBuffer)
-                        {
-                            BufferInfo->buffer =
-                                UniformResource.UniformBuffer.Buffers[SwapImage].Handle;
-                        }
-                        else if (UniformResource.Type == Resource_DynamicUniformBuffer)
-                        {
-                            BufferInfo->buffer =
-                                UniformResource.DynamicUniformBuffer.Pools[SwapImage].Buffer.Handle;
-                        }
-                        else
-                            mprinte("Attempting to update an incorrect buffer type with a Descriptor!\n");
-                        
-                        BufferInfo->offset = 0;
-                        BufferInfo->range  = VK_WHOLE_SIZE;
-                        
-                        DescriptorWrites[WriteInfo] = {};
-                        DescriptorWrites[WriteInfo].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                        DescriptorWrites[WriteInfo].dstSet           =
-                            DescriptorResource.DescriptorSet.DescriptorSets[SwapImage].Handle;
-                        DescriptorWrites[WriteInfo].dstBinding       =
-                            Infos->WriteInfos[WriteInfo].DescriptorBinding;
-                        DescriptorWrites[WriteInfo].dstArrayElement  = 0;
-                        DescriptorWrites[WriteInfo].descriptorType   =
-                            Infos->WriteInfos[WriteInfo].DescriptorType;
-                        DescriptorWrites[WriteInfo].descriptorCount  = 1;
-                        DescriptorWrites[WriteInfo].pBufferInfo      = BufferInfo;
-                        DescriptorWrites[WriteInfo].pImageInfo       = nullptr; // Optional
-                        DescriptorWrites[WriteInfo].pTexelBufferView = nullptr; // Optional
-                    }
-                    
-                    vk::UpdateDescriptorSets(DescriptorWrites, Infos->WriteInfosCount);
-                }
             } break;
             
             case Resource_VertexBuffer:
@@ -450,8 +534,12 @@ namespace mresource
                 gpu_vertex_buffer_create_info *VertexBufferCreateInfo = talloc<gpu_vertex_buffer_create_info>(1);
                 VertexBufferCreateInfo->BufferCreateInfo = vertex_buffer_info;
                 VertexBufferCreateInfo->VmaCreateInfo    = vertex_alloc_info;
-                VertexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Handle;
-                VertexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Memory;
+                
+                VertexBufferCreateInfo->BufferParams = &ResourceRegistry.Resources[Result]->VertexBuffer.Buffer;
+                
+                //VertexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Handle;
+                //VertexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].VertexBuffer.Buffer.Memory;
+                
                 VertexBufferCreateInfo->Data             = Info->Data;
                 VertexBufferCreateInfo->Size             = Info->Size;
                 
@@ -479,8 +567,8 @@ namespace mresource
                 gpu_index_buffer_create_info *IndexBufferCreateInfo = talloc<gpu_index_buffer_create_info>(1);
                 IndexBufferCreateInfo->BufferCreateInfo = index_buffer_info;
                 IndexBufferCreateInfo->VmaCreateInfo    = index_alloc_info;
-                IndexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result].IndexBuffer.Buffer.Handle;
-                IndexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result].IndexBuffer.Buffer.Memory;
+                IndexBufferCreateInfo->Buffer           = &ResourceRegistry.Resources[Result]->IndexBuffer.Buffer.Handle;
+                IndexBufferCreateInfo->Allocation       = &ResourceRegistry.Resources[Result]->IndexBuffer.Buffer.Memory;
                 IndexBufferCreateInfo->Data             = Info->Data;
                 IndexBufferCreateInfo->Size             = Info->Size;
                 
@@ -545,6 +633,20 @@ namespace mresource
             
             case Resource_Image:
             {
+                image_create_info *Info = static_cast<image_create_info*>(Data);
+                
+                Resource.Image = {};
+                Result = RegistryAdd(&ResourceRegistry, Resource);
+                
+                gpu_image_create_info *ImageInfo = talloc<gpu_image_create_info>();
+                ImageInfo->Filename     = Info->Filename;
+                ImageInfo->MagFilter    = Info->MagFilter;
+                ImageInfo->MinFilter    = Info->MinFilter;
+                ImageInfo->AddressModeU = Info->AddressModeU;
+                ImageInfo->AddressModeV = Info->AddressModeW;
+                ImageInfo->AddressModeW = Info->AddressModeV;
+                ImageInfo->Image        = &ResourceRegistry.Resources[Result]->Image.Image;
+                AddGpuCommand(FrameParams, { GpuCmd_UploadImage, ImageInfo });
             } break;
             
             case Resource_Pipeline:
@@ -658,10 +760,10 @@ namespace mresource
                     talloc<VkDescriptorSetLayout>(Info->DescriptorLayoutsCount);
                 for (u32 Set = 0; Set < Info->DescriptorLayoutsCount; ++Set)
                 {
-                    resource ResourceLayout =
+                    resource *ResourceLayout =
                         ResourceRegistry.Resources[Info->DescriptorLayoutIds[Set]];
                     
-                    Layouts[Set] = ResourceLayout.DescriptorLayout.DescriptorLayout;
+                    Layouts[Set] = ResourceLayout->DescriptorLayout.DescriptorLayout;
                 }
                 
                 VkPipelineLayoutCreateInfo PipelineLayoutInfo = {};
@@ -768,6 +870,9 @@ namespace mresource
             
             case Resource_Image:
             {
+                vk::DestroyImageView(Resource->Image.Image.View);
+                vk::DestroyImageSampler(Resource->Image.Image.Sampler);
+                vk::DestroyVmaImage(Resource->Image.Image.Handle, Resource->Image.Image.Memory);
             } break;
             
             case Resource_Pipeline:
@@ -782,7 +887,7 @@ namespace mresource
     
     void UpdateUniform(resource_id_t Uniform, void *Data, u64 Size, u32 ImageIdx, u32 Offset)
     {
-        resource *Resource = &ResourceRegistry.Resources[Uniform];
+        resource *Resource = ResourceRegistry.Resources[Uniform];
         
         // NOTE(Dustin): Two Type of uniforms currently supported:
         // 1. Uniform
@@ -814,28 +919,47 @@ namespace mresource
         }
     }
     
+    // Updates the uniform memory for the global frame data for the shaders
+    void UpdateGlobalFrameData(global_shader_data *Data, u32 ImageIndex)
+    {
+        resource *Resource = ResourceRegistry.Resources[ResourceRegistry.DefaultGlobalBuffer];
+        
+        BufferParameters Buffer = Resource->UniformBuffer.Buffers[ImageIndex];
+        
+        void *BufferPtr = Buffer.AllocationInfo.pMappedData;
+        memcpy((char*)BufferPtr, Data, sizeof(global_shader_data));
+    }
+    
+    void UpdateObjectFrameData(object_shader_data *Data, u32 Offset, u32 ImageIndex)
+    {
+        resource *Resource = ResourceRegistry.Resources[ResourceRegistry.ObjectDynamicBuffer];
+        
+        mm::dyn_uniform_pool *Pool = &Resource->DynamicUniformBuffer.Pools[ImageIndex];
+        AllocDynUniformPool(Pool, Data, Offset, true);
+    }
+    
     // used for DynamicUniformBuffers to reset their internal allocator
     // Do not call directly! A Uniform reset should be done through the command
     // Gpu_ResetUniformBuffer
     void ResetDynamicUniformOffset(resource_id_t Uniform, u32 ImageIdx)
     {
-        resource Resource = ResourceRegistry.Resources[Uniform];
+        resource *Resource = ResourceRegistry.Resources[Uniform];
         
-        mm::dyn_uniform_pool *Pool = &Resource.DynamicUniformBuffer.Pools[ImageIdx];
+        mm::dyn_uniform_pool *Pool = &Resource->DynamicUniformBuffer.Pools[ImageIdx];
         Pool->Offset = 0;
     }
     
     resource GetResource(resource_id_t ResourceId)
     {
-        resource Resource = ResourceRegistry.Resources[ResourceId];
+        resource Resource = *ResourceRegistry.Resources[ResourceId];
         return Resource;
     }
     
     dyn_uniform_template GetDynamicUniformTemplate(resource_id_t Uniform)
     {
-        resource Resource = ResourceRegistry.Resources[Uniform];
+        resource *Resource = ResourceRegistry.Resources[Uniform];
         
-        mm::dyn_uniform_pool Pool = Resource.DynamicUniformBuffer.Pools[0];
+        mm::dyn_uniform_pool Pool = Resource->DynamicUniformBuffer.Pools[0];
         
         dyn_uniform_template Template = {};
         Template.Alignment   = Pool.Alignment;
@@ -845,6 +969,12 @@ namespace mresource
         
         return Template;
     }
+    
+    dyn_uniform_template GetDynamicObjectUniformTemplate()
+    {
+        return GetDynamicUniformTemplate(ResourceRegistry.ObjectDynamicBuffer);
+    }
+    
     
     i64 DynUniformGetNextOffset(dyn_uniform_template *DynUniformTemplate)
     {
@@ -860,4 +990,35 @@ namespace mresource
         
         return Result;
     }
+    
+    resource GetObjectDescriptorSet()
+    {
+        return *ResourceRegistry.Resources[ResourceRegistry.ObjectDescriptor];
+    }
+    
+    resource GetObjectUniform()
+    {
+        return *ResourceRegistry.Resources[ResourceRegistry.ObjectDynamicBuffer];
+    }
+    
+    resource GetDefaultFrameDescriptor()
+    {
+        return *ResourceRegistry.Resources[ResourceRegistry.DefaultGlobalDescriptor];
+    }
+    
+    default_resources GetDefaultResourcesFromRegistry()
+    {
+        default_resources Result = {};
+        
+        Result.EmptyDescriptorLayout         = ResourceRegistry.EmptyDescriptorLayout;
+        Result.DefaultGlobalDescriptor       = ResourceRegistry.DefaultGlobalDescriptor;
+        Result.DefaultGlobalDescriptorLayout = ResourceRegistry.DefaultGlobalDescriptorLayout;
+        Result.ObjectDescriptor              = ResourceRegistry.ObjectDescriptor;
+        Result.ObjectDescriptorLayout        = ResourceRegistry.ObjectDescriptorLayout;
+        Result.DefaultGlobalBuffer           = ResourceRegistry.DefaultGlobalBuffer;
+        Result.ObjectDynamicBuffer           = ResourceRegistry.ObjectDynamicBuffer;
+        
+        return Result;
+    }
+    
 }; // mresource

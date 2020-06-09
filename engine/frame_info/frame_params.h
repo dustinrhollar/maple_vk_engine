@@ -24,6 +24,10 @@ struct frame_params
     asset          *Assets;
     u32             AssetsCount;
     
+    // NOTE(Dustin): Do I want this duplicated memory?
+    asset          *ModelAssets; // lookups into the assets array
+    u32             ModelAssetsCount;
+    
     //~ Commands
     // NOTE(Dustin): Need to determine the internal data structure of these
     // command lists... Since the frame_params uses a tagged heap for memory

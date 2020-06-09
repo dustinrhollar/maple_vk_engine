@@ -1,4 +1,3 @@
-#define BIT(x) (1<<(x))
 
 #define BIT_TOGGLE(n, b, v) ((n) = ((n) & ~(1ULL << (b))) | ((v) << (b)))
 #define BIT_TOGGLE_0(n ,b) BIT_TOGGLE(n, b, 0)

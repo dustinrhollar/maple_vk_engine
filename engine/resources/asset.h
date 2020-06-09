@@ -52,7 +52,24 @@ struct Vertex
     
 };
 
-typedef i64 asset_id_t;
+enum asset_type
+{
+    Asset_Invalid    = BIT(0),
+    Asset_Model      = BIT(1),
+    Asset_Texture    = BIT(2),
+    Asset_Material   = BIT(3),
+};
+
+struct asset_id
+{
+    u64 Type:8;
+    u64 Gen:16;
+    u64 Index:40;
+};
+
+typedef asset_id asset_id_t;
+
+#define INVALID_ASSET { Asset_Invalid, 0, 0 }
 
 struct model_create_info
 {
@@ -60,15 +77,83 @@ struct model_create_info
     jstring       Filename;
 };
 
+// NOTE(Dustin): this texture definition should probably be moved to resources.h
+struct texture
+{
+    asset_id_t Id;
+    
+    VkFilter MagFilter;
+    VkFilter MinFilter;
+    
+    VkSamplerAddressMode AddressModeU;
+    VkSamplerAddressMode AddressModeV;
+    VkSamplerAddressMode AddressModeW;
+};
+
+struct material_instance
+{
+    bool HasPBRMetallicRoughness;
+    bool HasPBRSpecularGlossiness;
+    bool HasClearCoat;
+    
+    union {
+        // Metallic - Roughness Pipeline
+        struct
+        {
+            asset_id_t BaseColorTexture;
+            asset_id_t MetallicRoughnessTexture;
+            
+            vec4           BaseColorFactor; // Will this always be a vec4?
+            r32            MetallicFactor;
+            r32            RoughnessFactor;
+        };
+        
+        // Specilar - Glosiness Pipeline
+        struct
+        {
+            asset_id_t DiffuseTexture;
+            asset_id_t SpecularGlossinessTexture;
+            
+            vec4           DiffuseFactor;
+            vec3           SpecularFactor;
+            r32            GlossinessFactor;
+        };
+        
+        // ClearCoat Pipeline
+        struct
+        {
+            asset_id_t ClearCoatTexture;
+            asset_id_t ClearCoatRoughnessTexture;
+            asset_id_t ClearCoatNormalTexture;
+            
+            r32            ClearCoatFactor;
+            r32            ClearCoatRoughnessFactor;
+        };
+    };
+    
+    asset_id_t NormalTexture;
+    asset_id_t OcclusionTexture;
+    asset_id_t EmissiveTexture;
+    
+    // Alpha mode?
+    TextureAlphaMode AlphaMode;
+    r32              AlphaCutoff;
+    
+    bool DoubleSided;
+    bool Unlit;
+};
+
 // Mesh might have multiple primitives
 struct primitive
 {
     // TODO(Dustin): Attach a material here
-    //MaterialParameters Material;
-    //u32              MaterialId;
+    asset_id_t       Material;
     
-    u64              IndexCount;
-    u64              VertexCount;
+    u32              IndexCount;
+    u32              VertexCount;
+    
+    u32              IndexStride;
+    u32              VertexStride;
     
     u64              IndicesOffset;
     u64              VerticesOffset;
@@ -77,90 +162,95 @@ struct primitive
     vec3             Max;
     
     bool             IsIndexed;
+    bool             IsSkinned;
+    
     resource_id_t    VertexBuffer;
     resource_id_t    IndexBuffer;
-    
-    void            *DataBlock; // Pointer to where the primitive data is organized in interleaved format
 };
 
 struct mesh
 {
-    ecs::Entity Entity;
+    jstring     Name; // Keep this?
     
-    primitive  *Primitives;
+    primitive **Primitives;
     u64         PrimitivesCount;
     
     // TODO(Dustin): Add instances here maybe?
 };
 
+/*
+
+Three known types of nodes:
+- Transformation Node : CHECK
+- Joint Node          : DONT CARE
+- Mesh Node           : CHECK
+
+*/
+
 struct model_node
 {
-    jstring Name;
+    jstring     Name;
     
     model_node *Parent;
     
-    model_node *Children;
+    model_node **Children;
     u64         ChildrenCount;
     
-    bool HasTranslation;
-    bool HasRotation;
-    bool HasScale;
-    bool HasMatrix;
-    
-    // NOTE(Dustin): This is an experiment. I think that
-    // a node can have EITHER a Translation,Rotation,and Scale
-    // OR a Model Matrix.
-    
-    // NOTE(Dustin): When matrix is provided, it must be decomposable
-    // to TRS, and cannot skew or shear.
-    
-    // NOTE(Dustin): When a node is targeted for animation, only TRS
-    // properties will be present; matrix will not be present.
-    
-    vec3 Translation;
-    vec3 Scale;
-    vec4 Rotation; // this is a quaternion
-    
-    // TODO(Dustin): Decide on whether or not to use components OR
-    // matrix. If not matrix, extract the components from the matrix
-    // if one was provided.
-    mat4 Matrix;
+    vec3        Translation;
+    vec3        Scale;
+    vec4        Rotation; // this is a quaternion
     
     // Pointer to a mesh, if one exists
-    mesh *Mesh;
-};
-
-struct model
-{
-    // a disjoint set of nodes
-    model_node *Nodes;
-    u32         NodesCount;
-};
-
-enum asset_type
-{
-    Asset_Model,
-    Asset_Texture,
-    Asset_Material,
+    mesh       *Mesh;
+    
+    jstring     MeshName;
 };
 
 struct asset_model
 {
-    model Model;
+    ecs::Entity Entity;
+    
+    model_node **RootModelNodes;
+    i32          RootModelNodesCount;
+    
+    model_node  *Nodes;
+    i32          NodesCount;
+    
+    mesh        *Meshes;
+    i32          MeshesCount;
+    
+    primitive   *Primitives;
+    i32          PrimitivesCount;
 };
 
 struct asset_texture
 {
+    resource_id_t Image;
+    
+    // TODO(Dustin): glTF offers texture settings
+    // that i am not currently loading in. When I
+    // introduce them into the system, they can be
+    // placed here.
 };
 
 struct asset_material
 {
+    jstring           Name;
+    shader_data       ShaderData;
+    
+    // while this data could be directly placed in the material struct
+    // i want to prep for multiple material instances...having the below
+    // instance struct, will allow for multiple instances to be attached
+    // to the struct
+    material_instance Instance;
+    // Id of the pipeline to use for this material.
+    resource_id_t     Pipeline;
 };
 
 struct asset
 {
     asset_id_t Id;
-    asset_type Type;
+    asset_type Type; // TODO(Dustin): Remove this. It is encoded in the Id.
     union
     {
         asset_model    Model;
@@ -171,13 +261,16 @@ struct asset
 
 namespace masset
 {
-    asset_id_t Load(asset_type Type, void *Data);
+    void Init();
     void Free();
+    
+    asset_id_t Load(asset_type Type, void *Data);
     
     void Render(asset_id_t AssetId);
     
     asset* GetAsset(asset_id_t Id);
-    void GetModelAssets(asset **Assets, u32 *Count);
+    void GetAssetList(asset **Assets, u32 *Count);
+    void FilterAssets(asset **Assets, u32 *Count, asset *AssetList, u32 AssetListCount, asset_type Type);
     
     // Retrieves a list of assets of the specified type
     DynamicArray<asset*> Filter(asset_type Type);

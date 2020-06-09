@@ -2,12 +2,12 @@
 
 void InitFrameParams(frame_params *FrameParams)
 {
-    FrameParams->RenderCommands      = talloc<render_command>(10);
     FrameParams->RenderCommandsCount = 0;
-    FrameParams->RenderCommandsCap   = 10;
-    FrameParams->GpuCommands         = talloc<gpu_command>(10);
+    FrameParams->RenderCommandsCap   = 20;
+    FrameParams->RenderCommands      = talloc<render_command>(10);
     FrameParams->GpuCommandsCount    = 0;
-    FrameParams->GpuCommandsCap      = 10;
+    FrameParams->GpuCommandsCap      = 20;
+    FrameParams->GpuCommands         = talloc<gpu_command>(FrameParams->GpuCommandsCap);
 }
 
 void FreeFrameParams(frame_params *FrameParams)
@@ -26,8 +26,8 @@ void AddRenderCommand(frame_params *FrameParams, render_command Cmd)
     { //  resize
         FrameParams->RenderCommandsCap *= 2;
         render_command *RenderCommands = talloc<render_command>(FrameParams->RenderCommandsCap);
-        for (u32 Cmd = 0; Cmd < FrameParams->RenderCommandsCount; ++Cmd)
-            RenderCommands[Cmd] = FrameParams->RenderCommands[Cmd];
+        for (u32 CmdIdx = 0; CmdIdx < FrameParams->RenderCommandsCount; ++CmdIdx)
+            RenderCommands[CmdIdx] = FrameParams->RenderCommands[CmdIdx];
         
         // NOTE(Dustin): No need to free the memory since it is a linear allocator...
         FrameParams->RenderCommands = RenderCommands;
@@ -42,8 +42,8 @@ void AddGpuCommand(frame_params *FrameParams, gpu_command Cmd)
     { //  resize
         FrameParams->GpuCommandsCap *= 2;
         gpu_command *GpuCommands = talloc<gpu_command>(FrameParams->GpuCommandsCap);
-        for (u32 Cmd = 0; Cmd < FrameParams->GpuCommandsCount; ++Cmd)
-            GpuCommands[Cmd] = FrameParams->GpuCommands[Cmd];
+        for (u32 CmdIdx = 0; CmdIdx < FrameParams->GpuCommandsCount; ++CmdIdx)
+            GpuCommands[CmdIdx] = FrameParams->GpuCommands[CmdIdx];
         
         // NOTE(Dustin): No need to free the memory since it is a linear allocator...
         FrameParams->GpuCommands = GpuCommands;
@@ -56,10 +56,15 @@ void CopyModelAssets(frame_params *FrameParams)
 {
     asset *Assets = nullptr;
     u32 Count = 0;
-    masset::GetModelAssets(&Assets, &Count);
     
-    FrameParams->AssetsCount = Count;
-    FrameParams->Assets      = talloc<asset>(Count);
-    for (u32 Asset = 0; Asset < Count; ++Asset)
-        FrameParams->Assets[Asset] = Assets[Asset];
+    asset *ModelAssets = nullptr;
+    u32 ModelCount = 0;
+    
+    masset::GetAssetList(&Assets, &Count);
+    masset::FilterAssets(&ModelAssets, &ModelCount, Assets, Count, Asset_Model);
+    
+    FrameParams->AssetsCount      = Count;
+    FrameParams->Assets           = Assets;
+    FrameParams->ModelAssets      = ModelAssets;
+    FrameParams->ModelAssetsCount = ModelCount;
 }
