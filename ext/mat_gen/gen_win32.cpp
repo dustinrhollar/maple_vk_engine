@@ -998,6 +998,15 @@ int main(int argc, char *argv[])
     // Initialize Management Routines
     mm::InitializeMemoryManager(_MB(5), _MB(1));
 	
+	#if 0
+	
+	jstring Vert = InitJString("shader.vert.spv");
+	jstring Frag = InitJString("shader.frag.spv");
+	
+	jstring ReflFile = InitJString("TestRefl.refl");
+	
+	#endif 
+	
 	// only arg that is really important in #1, which is the config file
 	//assert(argc == 2);
     for (i32 i = 0; i < argc; ++i)
@@ -1029,8 +1038,9 @@ int main(int argc, char *argv[])
     Frag.Clear();
     ReflFile.Clear();
     ShaderList.Reset();
+	
     FreeConfigObjTable(&ConfigTable);
-    
+
     Win32ShutdownRoutines();
     return (0);
 }

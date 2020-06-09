@@ -205,6 +205,9 @@ void *VulkanLibrary;
 #define CGLTF_IMPLEMENTATION
 #include "resources/cgltf.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
 #include "resources/mesh_converter.h"
 #include "resources/resources.h"
 #include "resources/shader_data.h"

@@ -90,8 +90,24 @@ struct gpu_descriptor_create_info
 {
 };
 
+struct descriptor_write_info
+{
+    union
+    {
+        resource_id_t    BufferId;
+        resource_id_t    TextureId;
+    };
+    
+    resource_id_t    DescriptorId;
+    u32              DescriptorBinding;
+    VkDescriptorType DescriptorType;
+};
+
+
 struct gpu_descriptor_update_info
 {
+    descriptor_write_info       *WriteInfos;
+    u32                          WriteInfosCount;
 };
 
 struct gpu_descriptor_set_bind_info

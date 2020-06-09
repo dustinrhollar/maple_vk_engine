@@ -116,7 +116,6 @@ namespace mresource
         resource_id_t DefaultGlobalBuffer;
         resource_id_t ObjectDynamicBuffer;
         
-        resource_id_t DefaultPipeline; // (Different from a default material)
     } file_global ResourceRegistry;
     
     file_global mm::resource_allocator ResourceAllocator;
@@ -394,87 +393,27 @@ namespace mresource
         
         //~ Update the descriptor write info for both sets of descriptors
         
-        descriptor_write_info WriteInfos[2] = {
-            {
-                ResourceRegistry.DefaultGlobalBuffer,
-                ResourceRegistry.DefaultGlobalDescriptor,
-                0,
-                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-            },
-            {
-                ResourceRegistry.ObjectDynamicBuffer,
-                ResourceRegistry.ObjectDescriptor,
-                0,
-                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC }
+        descriptor_write_info *WriteInfos = talloc<descriptor_write_info>(2);
+        
+        WriteInfos[0] = {
+            ResourceRegistry.DefaultGlobalBuffer,
+            ResourceRegistry.DefaultGlobalDescriptor,
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
         };
         
-        descriptor_update_write_info DescriptorUpdateInfos = {};
-        DescriptorUpdateInfos.WriteInfos      = WriteInfos;
-        DescriptorUpdateInfos.WriteInfosCount = 2;
-        
-        mresource::Load(FrameParams, Resource_DescriptorSetWriteUpdate, &DescriptorUpdateInfos);
-        
-        //~ HACK(Dustin): Temporary material creation in order to allow for temp.
-        // default material
-        
-        jstring VERT_SHADER = InitJString("data/shaders/shader.vert.spv");
-        jstring FRAG_SHADER = InitJString("data/shaders/shader.frag.spv");
-        
-        shader_file_create_info Shaders[] = {
-            { VERT_SHADER, VK_SHADER_STAGE_VERTEX_BIT   },
-            { FRAG_SHADER, VK_SHADER_STAGE_FRAGMENT_BIT }
+        WriteInfos[1] = {
+            ResourceRegistry.ObjectDynamicBuffer,
+            ResourceRegistry.ObjectDescriptor,
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
         };
         
-        VkVertexInputBindingDescription bindingDescription = Vertex::GetBindingDescription();
-        JTuple<VkVertexInputAttributeDescription*, int> attribs = Vertex::GetAttributeDescriptions();
+        gpu_descriptor_update_info *DescriptorUpdateInfos = talloc<gpu_descriptor_update_info>();
+        DescriptorUpdateInfos->WriteInfos      = WriteInfos;
+        DescriptorUpdateInfos->WriteInfosCount = 2;
         
-        VkExtent2D swapchain_extent = vk::GetSwapChainExtent();
-        VkViewport viewport = {};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width  = (r32) swapchain_extent.width;
-        viewport.height = (r32) swapchain_extent.height;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        
-        VkRect2D scissor = {};
-        scissor.offset = {0, 0};
-        scissor.extent = swapchain_extent;
-        
-        resource_id_t Layouts[] = {
-            ResourceRegistry.DefaultGlobalDescriptorLayout,
-            ResourceRegistry.ObjectDescriptorLayout,
-        };
-        
-        pipeline_create_info PipelineCreateInfo = {};
-        PipelineCreateInfo.Shaders      = Shaders;
-        PipelineCreateInfo.ShadersCount = 2;
-        PipelineCreateInfo.VertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        PipelineCreateInfo.VertexInputInfo.vertexBindingDescriptionCount   = 1;
-        PipelineCreateInfo.VertexInputInfo.pVertexBindingDescriptions      = &bindingDescription;
-        PipelineCreateInfo.VertexInputInfo.vertexAttributeDescriptionCount = attribs.Second();
-        PipelineCreateInfo.VertexInputInfo.pVertexAttributeDescriptions    = attribs.First();
-        PipelineCreateInfo.Viewport               = &viewport;
-        PipelineCreateInfo.Scissor                = &scissor;
-        PipelineCreateInfo.ScissorCount           = 1;
-        PipelineCreateInfo.ViewportCount          = 1;
-        PipelineCreateInfo.PolygonMode            = VK_POLYGON_MODE_FILL;
-        PipelineCreateInfo.FrontFace              = VK_FRONT_FACE_CLOCKWISE;
-        PipelineCreateInfo.HasMultisampling       = false;
-        PipelineCreateInfo.MuliSampleSamples      = VK_SAMPLE_COUNT_1_BIT; // optional
-        PipelineCreateInfo.HasDepthStencil        = true;
-        PipelineCreateInfo.DescriptorLayoutIds    = Layouts;
-        PipelineCreateInfo.DescriptorLayoutsCount = 2;
-        PipelineCreateInfo.PushConstants          = nullptr;
-        PipelineCreateInfo.PushConstantsCount     = 0;
-        PipelineCreateInfo.RenderPass             = GetPrimaryRenderPass();
-        
-        ResourceRegistry.DefaultPipeline = mresource::Load({},
-                                                           Resource_Pipeline,
-                                                           &PipelineCreateInfo);
-        
-        VERT_SHADER.Clear();
-        FRAG_SHADER.Clear();
+        AddGpuCommand(FrameParams, {GpuCmd_UpdateDescriptor, DescriptorUpdateInfos});
     }
     
     void Free(frame_params *FrameParams)
@@ -572,62 +511,6 @@ namespace mresource
                 
                 Resource.DescriptorSet = RDescriptorSet;
                 Result = RegistryAdd(&ResourceRegistry, Resource);
-            } break;
-            
-            case Resource_DescriptorSetWriteUpdate:
-            {
-                descriptor_update_write_info *Infos =
-                    static_cast<descriptor_update_write_info*>(Data);
-                
-                for (u32 SwapImage = 0; SwapImage < SwapchainImageCount; ++SwapImage)
-                {
-                    VkWriteDescriptorSet *DescriptorWrites =
-                        talloc<VkWriteDescriptorSet>(Infos->WriteInfosCount);
-                    
-                    for (u32 WriteInfo = 0; WriteInfo < Infos->WriteInfosCount; WriteInfo++)
-                    {
-                        resource *UniformResource =
-                            ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].BufferId];
-                        
-                        resource *DescriptorResource =
-                            ResourceRegistry.Resources[Infos->WriteInfos[WriteInfo].DescriptorId];
-                        
-                        // Set 0: View-Projection Matrices
-                        VkDescriptorBufferInfo *BufferInfo = talloc<VkDescriptorBufferInfo>(1);
-                        *BufferInfo = {};
-                        if (UniformResource->Type == Resource_UniformBuffer)
-                        {
-                            BufferInfo->buffer =
-                                UniformResource->UniformBuffer.Buffers[SwapImage].Handle;
-                        }
-                        else if (UniformResource->Type == Resource_DynamicUniformBuffer)
-                        {
-                            BufferInfo->buffer =
-                                UniformResource->DynamicUniformBuffer.Pools[SwapImage].Buffer.Handle;
-                        }
-                        else
-                            mprinte("Attempting to update an incorrect buffer type with a Descriptor!\n");
-                        
-                        BufferInfo->offset = 0;
-                        BufferInfo->range  = VK_WHOLE_SIZE;
-                        
-                        DescriptorWrites[WriteInfo] = {};
-                        DescriptorWrites[WriteInfo].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                        DescriptorWrites[WriteInfo].dstSet           =
-                            DescriptorResource->DescriptorSet.DescriptorSets[SwapImage].Handle;
-                        DescriptorWrites[WriteInfo].dstBinding       =
-                            Infos->WriteInfos[WriteInfo].DescriptorBinding;
-                        DescriptorWrites[WriteInfo].dstArrayElement  = 0;
-                        DescriptorWrites[WriteInfo].descriptorType   =
-                            Infos->WriteInfos[WriteInfo].DescriptorType;
-                        DescriptorWrites[WriteInfo].descriptorCount  = 1;
-                        DescriptorWrites[WriteInfo].pBufferInfo      = BufferInfo;
-                        DescriptorWrites[WriteInfo].pImageInfo       = nullptr; // Optional
-                        DescriptorWrites[WriteInfo].pTexelBufferView = nullptr; // Optional
-                    }
-                    
-                    vk::UpdateDescriptorSets(DescriptorWrites, Infos->WriteInfosCount);
-                }
             } break;
             
             case Resource_VertexBuffer:
@@ -987,6 +870,9 @@ namespace mresource
             
             case Resource_Image:
             {
+                vk::DestroyImageView(Resource->Image.Image.View);
+                vk::DestroyImageSampler(Resource->Image.Image.Sampler);
+                vk::DestroyVmaImage(Resource->Image.Image.Handle, Resource->Image.Image.Memory);
             } break;
             
             case Resource_Pipeline:
@@ -1105,11 +991,6 @@ namespace mresource
         return Result;
     }
     
-    resource GetDefaultPipeline()
-    {
-        return *ResourceRegistry.Resources[ResourceRegistry.DefaultPipeline];
-    }
-    
     resource GetObjectDescriptorSet()
     {
         return *ResourceRegistry.Resources[ResourceRegistry.ObjectDescriptor];
@@ -1136,7 +1017,6 @@ namespace mresource
         Result.ObjectDescriptorLayout        = ResourceRegistry.ObjectDescriptorLayout;
         Result.DefaultGlobalBuffer           = ResourceRegistry.DefaultGlobalBuffer;
         Result.ObjectDynamicBuffer           = ResourceRegistry.ObjectDynamicBuffer;
-        Result.DefaultPipeline               = ResourceRegistry.DefaultPipeline;
         
         return Result;
     }

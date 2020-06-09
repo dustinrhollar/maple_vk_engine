@@ -6,6 +6,10 @@ layout (location = 1) in vec3 normals;
 layout (location = 2) in vec4 color;
 layout (location = 3) in vec2 uv0;
 
+layout (location = 0) out vec3 OutColor;
+layout (location = 1) out vec3 OutNormal;
+layout (location = 2) out vec2 OutTex;
+
 struct global_data {
     mat4 View;
     mat4 Projection;
@@ -25,4 +29,8 @@ layout (binding = 0, set = 1) uniform object_buffer {
 void main()
 {
 	gl_Position = GlobalData.Projection * GlobalData.View * ObjectData.Model * vec4(position, 1.0);
+	
+	OutColor  = color.xyz;
+	OutNormal = normals;
+	OutTex    = uv0;
 }

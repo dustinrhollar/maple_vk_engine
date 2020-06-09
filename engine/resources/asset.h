@@ -69,6 +69,8 @@ struct asset_id
 
 typedef asset_id asset_id_t;
 
+#define INVALID_ASSET { Asset_Invalid, 0, 0 }
+
 struct model_create_info
 {
     frame_params *FrameParams;
@@ -223,6 +225,12 @@ struct asset_model
 
 struct asset_texture
 {
+    resource_id_t Image;
+    
+    // TODO(Dustin): glTF offers texture settings
+    // that i am not currently loading in. When I
+    // introduce them into the system, they can be
+    // placed here.
 };
 
 struct asset_material

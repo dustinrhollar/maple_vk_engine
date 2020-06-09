@@ -682,16 +682,22 @@ void Win32CopyFileIfChanged(const char *Destination, const char *Source)
     jstring DestinationFull = Win32NormalizePath(Destination);
     jstring SourceFull      = Win32NormalizePath(Source);
     
-    // Check to see if the file exists...
-    HANDLE DestinationHandle = CreateFileA(DestinationFull.GetCStr(),
-                                           GENERIC_READ,
-                                           0,
-                                           NULL,
-                                           OPEN_EXISTING,
-                                           FILE_ATTRIBUTE_NORMAL,
-                                           NULL);
+    BY_HANDLE_FILE_INFORMATION DestinationFileInfo;
+    BY_HANDLE_FILE_INFORMATION SourceFileInfo;
     
-    if (DestinationHandle == INVALID_HANDLE_VALUE)
+    BOOL DstErr = GetFileAttributesEx(DestinationFull.GetCStr(),
+                                      GetFileExInfoStandard,
+                                      &DestinationFileInfo);
+    
+    BOOL SrcErr = GetFileAttributesEx(SourceFull.GetCStr(),
+                                      GetFileExInfoStandard,
+                                      &SourceFileInfo);
+    
+    if (!SrcErr)
+    {
+        DisplayError(TEXT("Could not find source file for copy!"));
+    }
+    else if (!DstErr)
     {
         BOOL Err = CopyFile(SourceFull.GetCStr(),
                             DestinationFull.GetCStr(),
@@ -701,53 +707,17 @@ void Win32CopyFileIfChanged(const char *Destination, const char *Source)
     }
     else
     {
-        HANDLE SourceHandle = CreateFileA(SourceFull.GetCStr(),
-                                          GENERIC_READ,
-                                          0,
-                                          NULL,
-                                          OPEN_EXISTING,
-                                          FILE_ATTRIBUTE_NORMAL,
-                                          NULL);
+        FILETIME DestinationLastWrite = DestinationFileInfo.ftLastWriteTime;
+        FILETIME SourceLastWrite      = SourceFileInfo.ftLastWriteTime;
         
-        if (SourceHandle == INVALID_HANDLE_VALUE)
+        if (DestinationLastWrite.dwLowDateTime < SourceLastWrite.dwLowDateTime &&
+            DestinationLastWrite.dwHighDateTime < SourceLastWrite.dwHighDateTime)
         {
-            CloseHandle(DestinationHandle);
-            DisplayError(TEXT("Source file Does not exist for copy!"));
-        }
-        else
-        {
-            BY_HANDLE_FILE_INFORMATION DestinationFileInfo;
-            BOOL Err = GetFileInformationByHandle(DestinationHandle, &DestinationFileInfo);
-            if (!Err) DisplayError("Failed to get file information from destination for copy");
+            BOOL Err = CopyFile(SourceFull.GetCStr(),
+                                DestinationFull.GetCStr(),
+                                NULL);
             
-            BY_HANDLE_FILE_INFORMATION SourceFileInfo;
-            Err = GetFileInformationByHandle(SourceHandle, &SourceFileInfo);
-            if (!Err) DisplayError("Failed to get file information from destination for copy");
-            
-            FILETIME DestinationLastWrite = DestinationFileInfo.ftLastWriteTime;
-            FILETIME SourceLastWrite      = SourceFileInfo.ftLastWriteTime;
-            
-            if (DestinationLastWrite.dwLowDateTime < SourceLastWrite.dwLowDateTime &&
-                DestinationLastWrite.dwHighDateTime < SourceLastWrite.dwHighDateTime)
-            {
-                mprint("Requested copy, updating destination!\n");
-                
-                CloseHandle(DestinationHandle);
-                CloseHandle(SourceHandle);
-                
-                BOOL Err = CopyFile(SourceFull.GetCStr(),
-                                    DestinationFull.GetCStr(),
-                                    NULL);
-                
-                if (!Err) DisplayError(TEXT("CopyFile"));
-            }
-            else
-            {
-                mprint("Requested copy, but the file does not need to be updated!\n");
-                
-                CloseHandle(DestinationHandle);
-                CloseHandle(SourceHandle);
-            }
+            if (!Err) DisplayError(TEXT("CopyFile"));
         }
     }
     

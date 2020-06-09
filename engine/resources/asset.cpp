@@ -4,6 +4,10 @@
     return Lhs.Type == Rhs.Type && Lhs.Gen == Rhs.Gen && Lhs.Index == Rhs.Index;
 }
 
+inline bool operator!=(const asset_id_t &Lhs, const asset_id_t &Rhs)
+{
+    return Lhs.Type != Rhs.Type || Lhs.Gen != Rhs.Gen || Lhs.Index != Rhs.Index;
+}
 
 namespace masset
 {
@@ -139,7 +143,10 @@ namespace masset
     file_internal inline bool RegistryIsValidAsset(asset_registry *Registry,
                                                    asset_id_t Id)
     {
-        return Id.Index < Registry->Count && Registry->Assets[Id.Index] && Registry->Assets[Id.Index]->Id.Gen == Id.Gen;
+        return Id.Type != Asset_Invalid &&
+            Id.Index < Registry->Count &&
+            Registry->Assets[Id.Index] &&
+            Registry->Assets[Id.Index]->Id.Gen == Id.Gen;
     }
     
     file_internal void InitRegistry(asset_registry *Registry, u32 Cap)
@@ -460,6 +467,7 @@ Need to make sure there are no gaps in the descriptor sets
                 {
                     // TODO(Dustin): Not handling texture right now...
                     // TODO(Dustin): Create/Attach the texture image?
+                    Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 }
                 else
                 {
@@ -670,7 +678,7 @@ Need to make sure there are no gaps in the descriptor sets
         asset_id_t *Ret;
         if ((Ret = AssetRegistry.TextureMap.Get(Filename)))
         {
-            mprint("Material \"%s\" is already loaded...Returing loaded asset.\n", Filename.GetCStr());
+            mprint("Texture \"%s\" is already loaded...Returing loaded asset.\n", Filename.GetCStr());
             Result = *Ret;
         }
         else
@@ -693,9 +701,21 @@ Need to make sure there are no gaps in the descriptor sets
                 TextureInfo->AddressModeV = Int32ToVkAddressMode(AddressModeV);
                 TextureInfo->AddressModeW = Int32ToVkAddressMode(AddressModeW);
                 
-                mresource::Load(Loader->FrameParams, Resource_Image, TextureInfo);
+                asset_texture Texture = {};
+                Texture.Image = mresource::Load(Loader->FrameParams, Resource_Image, TextureInfo);
+                
+                asset Asset = {};
+                Asset.Type    = Asset_Texture;
+                Asset.Texture = Texture;
+                
+                Result = RegistryAdd(&AssetRegistry, Asset);
+                AssetRegistry.TextureMap.Insert(Filename, Result);
                 
                 Filename.Clear();
+            }
+            else
+            {
+                Result = INVALID_ASSET;
             }
         }
         
@@ -747,7 +767,7 @@ Need to make sure there are no gaps in the descriptor sets
                 Material.Instance.RoughnessFactor = GetConfigR32(&MetallicSettings, "RoughnessFactor");
                 
                 config_obj BaseColorTextureObj         = GetConfigObj(&MaterialInfo, "Base Color Texture");
-                config_obj MetallicRoughnessTextureObj = GetConfigObj(&MaterialInfo, "Base Color Texture");
+                config_obj MetallicRoughnessTextureObj = GetConfigObj(&MaterialInfo, "Metallic Roughness Texture");
                 
                 Material.Instance.BaseColorTexture         = LoadTexture(Loader, &BaseColorTextureObj);
                 Material.Instance.MetallicRoughnessTexture = LoadTexture(Loader, &MetallicRoughnessTextureObj);
@@ -791,6 +811,105 @@ Need to make sure there are no gaps in the descriptor sets
             Material.Instance.NormalTexture    = LoadTexture(Loader, &NormalTextureObj);
             Material.Instance.OcclusionTexture = LoadTexture(Loader, &OcclusionTextureObj);
             Material.Instance.EmissiveTexture  = LoadTexture(Loader, &EmissiveTextureObj);
+            
+            //~ Now that textures have been loaded, let's bind the textures to the descriptors...
+            
+            if (Material.ShaderData.DescriptorSetsCount > DYNAMIC_SET)
+            {
+                shader_descriptor_def MaterialSet = Material.ShaderData.DescriptorSets[DYNAMIC_SET];
+                
+                descriptor_write_info *WriteInfos = talloc<descriptor_write_info>(MaterialSet.InputDataCount);
+                u32 WriteInfoCount = 0;
+                
+                
+                if (Material.Instance.HasPBRMetallicRoughness)
+                {
+                    if (RegistryIsValidAsset(&AssetRegistry,
+                                             Material.Instance.BaseColorTexture))
+                    {
+                        asset *Asset = AssetRegistry.Assets[Material.Instance.BaseColorTexture.Index];
+                        
+                        descriptor_write_info Info = {
+                            Asset->Texture.Image,
+                            MaterialSet.DescriptorSet,
+                            BASE_COLOR_TEXTURE_BINDING,
+                            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                        };
+                        
+                        WriteInfos[WriteInfoCount++] = Info;
+                    }
+                    
+                    if (RegistryIsValidAsset(&AssetRegistry,
+                                             Material.Instance.MetallicRoughnessTexture))
+                    {
+                        asset *Asset = AssetRegistry.Assets[Material.Instance.MetallicRoughnessTexture.Index];
+                        
+                        descriptor_write_info Info = {
+                            Asset->Texture.Image,
+                            MaterialSet.DescriptorSet,
+                            METALLIC_ROUGHNESS_TEXTURE_BINDING,
+                            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                        };
+                        
+                        WriteInfos[WriteInfoCount++] = Info;
+                    }
+                }
+                
+                // TODO(Dustin): Specular-Glossiness and Clearcut workflow
+                
+                
+                if (RegistryIsValidAsset(&AssetRegistry,
+                                         Material.Instance.NormalTexture))
+                {
+                    asset *Asset = AssetRegistry.Assets[Material.Instance.NormalTexture.Index];
+                    
+                    descriptor_write_info Info = {
+                        Asset->Texture.Image,
+                        MaterialSet.DescriptorSet,
+                        NORMAL_TEXTURE_BINDING,
+                        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                    };
+                    
+                    WriteInfos[WriteInfoCount++] = Info;
+                }
+                
+                
+                if (RegistryIsValidAsset(&AssetRegistry,
+                                         Material.Instance.OcclusionTexture))
+                {
+                    asset *Asset = AssetRegistry.Assets[Material.Instance.OcclusionTexture.Index];
+                    
+                    descriptor_write_info Info = {
+                        Asset->Texture.Image,
+                        MaterialSet.DescriptorSet,
+                        OCCLUSION_TEXTURE_BINDING,
+                        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                    };
+                    
+                    WriteInfos[WriteInfoCount++] = Info;
+                }
+                
+                if (RegistryIsValidAsset(&AssetRegistry,
+                                         Material.Instance.EmissiveTexture))
+                {
+                    asset *Asset = AssetRegistry.Assets[Material.Instance.EmissiveTexture.Index];
+                    
+                    descriptor_write_info Info = {
+                        Asset->Texture.Image,
+                        MaterialSet.DescriptorSet,
+                        EMISSIVE_TEXTURE_BINDING,
+                        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                    };
+                    
+                    WriteInfos[WriteInfoCount++] = Info;
+                }
+                
+                gpu_descriptor_update_info *DescriptorUpdateInfos = talloc<gpu_descriptor_update_info>();
+                DescriptorUpdateInfos->WriteInfos      = WriteInfos;
+                DescriptorUpdateInfos->WriteInfosCount = WriteInfoCount;
+                
+                AddGpuCommand(Loader->FrameParams, {GpuCmd_UpdateDescriptor, DescriptorUpdateInfos});
+            }
             
             //~ Create the Shader Pipeline
             

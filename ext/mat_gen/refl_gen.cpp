@@ -6,8 +6,8 @@ file_internal int InputBlockCompare(const void *a, const void *b)
     input_block *lhs = (input_block*)a;
     input_block *rhs = (input_block*)b;
     
-    if (lhs->Set != rhs->Set) return lhs->Set < rhs->Set;
-    return lhs->Binding < rhs->Binding;
+    if (lhs->Set != rhs->Set) return lhs->Set > rhs->Set;
+    return lhs->Binding > rhs->Binding;
 }
 
 file_internal jstring BaseTypeToString(spirv_cross::SPIRType::BaseType type)
@@ -151,7 +151,10 @@ void GenerateReflectionInfo(DynamicArray<shader> &Shaders, jstring ReflFile)
         
         for (spirv_cross::Resource res : resources.sampled_images)
         {
-            CreateTextureBlockForResource(&ShaderData.DescriptorSets[idx++], res, glsl);
+            input_block Block = {};
+            CreateTextureBlockForResource(&Block, res, glsl);
+            
+            ShaderData.DescriptorSets.PushBack(Block);
         }
         
         // NOTE(Dustin): let's not use qsort in the future - maybe replace it with something else?

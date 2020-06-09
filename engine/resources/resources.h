@@ -87,20 +87,6 @@ struct dynamic_buffer_create_info
     frame_params               *FrameParams;
 };
 
-struct descriptor_write_info
-{
-    resource_id_t    BufferId;
-    resource_id_t    DescriptorId;
-    u32              DescriptorBinding;
-    VkDescriptorType DescriptorType;
-};
-
-struct descriptor_update_write_info
-{
-    descriptor_write_info *WriteInfos;
-    u32                   WriteInfosCount;
-};
-
 struct uniform_update_info
 {
     
@@ -169,7 +155,6 @@ enum resource_type
 {
     Resource_DescriptorSetLayout,
     Resource_DescriptorSet,
-    Resource_DescriptorSetWriteUpdate,
     Resource_DescriptorSetUpdate,
     Resource_VertexBuffer,
     Resource_IndexBuffer,
@@ -281,7 +266,6 @@ namespace mresource
     dyn_uniform_template GetDynamicObjectUniformTemplate();
     
     // HACK(Dustin): Get Default Resource State for materials...
-    resource GetDefaultPipeline();
     resource GetObjectDescriptorSet();
     resource GetObjectUniform();
     resource GetDefaultFrameDescriptor();

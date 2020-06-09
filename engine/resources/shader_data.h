@@ -9,6 +9,12 @@
 #define STATIC_SET  1
 #define DYNAMIC_SET 2
 
+#define BASE_COLOR_TEXTURE_BINDING         0
+#define METALLIC_ROUGHNESS_TEXTURE_BINDING 1
+#define NORMAL_TEXTURE_BINDING             2
+#define OCCLUSION_TEXTURE_BINDING          3
+#define EMISSIVE_TEXTURE_BINDING           4
+
 struct global_shader_data
 {
     alignas(16) mat4 View;
@@ -71,7 +77,6 @@ struct shader_data_serial
 // and color in the fragment?
 struct input_block
 {
-#if 0
     // NOTE(Dustin):
     // Set and binding can be found by their position
     // in external arrays...
@@ -79,9 +84,6 @@ struct input_block
     // material data struct.
     // input_block will be the binding position in the shader
     // descriptor struct.
-    u32           Set;
-    u32           Binding;
-#endif
     
     // Block definition
     jstring       Name;

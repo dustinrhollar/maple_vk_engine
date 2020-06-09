@@ -331,22 +331,135 @@ void GpuStageEntry(frame_params *FrameParams)
             {
                 gpu_image_create_info *Info = static_cast<gpu_image_create_info*>(GpuCmd.Data);
                 
-#if 0
-                struct gpu_image_create_info
-                {
-                    jstring              Filename;
-                    
-                    VkFilter             MagFilter;
-                    VkFilter             MinFilter;
-                    
-                    VkSamplerAddressMode AddressModeU;
-                    VkSamplerAddressMode AddressModeV;
-                    VkSamplerAddressMode AddressModeW;
-                    
-                    ImageParameters     *Image;
-                };
-#endif
+                i32 Width, Height, Channels;
+                unsigned char *Data = stbi_load(Info->Filename.GetCStr(), &Width, &Height, &Channels, STBI_rgb_alpha);
+                VkDeviceSize ImageSize = Width * Height * 4;
                 
+                if (!Data)
+                {
+                    mprinte("Failed to load texture from file %s!\n", Info->Filename.GetCStr());
+                }
+                else
+                {
+                    // size, usage, properties
+                    VkBufferCreateInfo BufferCreateInfo = {};
+                    BufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                    BufferCreateInfo.size        = ImageSize;
+                    BufferCreateInfo.usage       = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+                    BufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+                    
+                    // prop: VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+                    VmaAllocationCreateInfo VmaCreateInfo = {};
+                    VmaCreateInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+                    
+                    BufferParameters StagingBuffer;
+                    
+                    StagingBuffer.Size = ImageSize;
+                    vk::CreateVmaBuffer(BufferCreateInfo,
+                                        VmaCreateInfo,
+                                        StagingBuffer.Handle,
+                                        StagingBuffer.Memory,
+                                        StagingBuffer.AllocationInfo);
+                    
+                    void *MappedMemory;
+                    vk::VmaMap(&MappedMemory, StagingBuffer.Memory);
+                    {
+                        memcpy(MappedMemory, Data, StagingBuffer.Size);
+                    }
+                    vk::VmaUnmap(StagingBuffer.Memory);
+                    
+                    stbi_image_free(Data);
+                    
+                    // Calculate mip levels
+#define MAX(x,y) ((x) >= (y) ? (x) : (y))
+                    u32 MipLevels = ((u32)floor(log2(MAX(Width, Height)))) + 1;
+#undef MAX
+                    
+                    // Create the Image for the component
+                    VkImageCreateInfo ImageInfo = {};
+                    ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+                    ImageInfo.imageType     = VK_IMAGE_TYPE_2D;
+                    ImageInfo.extent.width  = (u32)(Width);
+                    ImageInfo.extent.height = (u32)(Height);
+                    ImageInfo.extent.depth  = 1;
+                    ImageInfo.mipLevels     = MipLevels;
+                    ImageInfo.arrayLayers   = 1;
+                    ImageInfo.format        = VK_FORMAT_R8G8B8A8_SRGB;
+                    ImageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+                    ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                    ImageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                        VK_IMAGE_USAGE_SAMPLED_BIT;
+                    ImageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+                    ImageInfo.samples       = VK_SAMPLE_COUNT_1_BIT; // NOTE(Dustin): Anti-Aliasing?
+                    ImageInfo.flags         = 0; // Optional
+                    
+                    VmaAllocationCreateInfo AllocInfo = {};
+                    AllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+                    
+                    // Create the image and copy the data into it.
+                    vk::CreateVmaImage(ImageInfo, AllocInfo,
+                                       Info->Image->Handle,
+                                       Info->Image->Memory,
+                                       Info->Image->AllocationInfo);
+                    
+                    vk::TransitionImageLayout(CommandPool,
+                                              Info->Image->Handle,
+                                              VK_FORMAT_R8G8B8A8_SRGB,
+                                              VK_IMAGE_LAYOUT_UNDEFINED,
+                                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                              MipLevels);
+                    
+                    vk::CopyBufferToImage(CommandPool,
+                                          StagingBuffer.Handle,
+                                          Info->Image->Handle,
+                                          Width, Height);
+                    
+                    // Image is transitioned to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                    // while generating mipmaps
+                    
+                    vk::DestroyVmaBuffer(StagingBuffer.Handle, StagingBuffer.Memory);
+                    
+                    vk::GenerateMipmaps(CommandPool,
+                                        Info->Image->Handle, VK_FORMAT_R8G8B8A8_SRGB,
+                                        Width, Height, MipLevels);
+                    
+                    // Create the image view for the texture
+                    VkImageViewCreateInfo ViewInfo = {};
+                    ViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                    ViewInfo.image                           = Info->Image->Handle;
+                    ViewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+                    ViewInfo.format                          = VK_FORMAT_R8G8B8A8_SRGB;
+                    ViewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+                    ViewInfo.subresourceRange.baseMipLevel   = 0;
+                    ViewInfo.subresourceRange.levelCount     = MipLevels;
+                    ViewInfo.subresourceRange.baseArrayLayer = 0;
+                    ViewInfo.subresourceRange.layerCount     = 1;
+                    
+                    Info->Image->View = vk::CreateImageView(ViewInfo);
+                    
+                    // Create the Texture Sampler
+                    VkSamplerCreateInfo SamplerInfo = {};
+                    SamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+                    SamplerInfo.magFilter               = Info->MagFilter;
+                    SamplerInfo.minFilter               = Info->MinFilter;
+                    SamplerInfo.addressModeU            = Info->AddressModeU;
+                    SamplerInfo.addressModeV            = Info->AddressModeV;
+                    SamplerInfo.addressModeW            = Info->AddressModeW;
+                    SamplerInfo.anisotropyEnable        = VK_TRUE;
+                    SamplerInfo.maxAnisotropy           = 16;
+                    SamplerInfo.borderColor             = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+                    SamplerInfo.unnormalizedCoordinates = VK_FALSE;
+                    SamplerInfo.compareEnable           = VK_FALSE;
+                    SamplerInfo.compareOp               = VK_COMPARE_OP_ALWAYS;
+                    SamplerInfo.mipmapMode              = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+                    SamplerInfo.mipLodBias              = 0.0f;
+                    SamplerInfo.minLod                  = 0.0f;
+                    SamplerInfo.maxLod                  = static_cast<r32>(MipLevels);
+                    
+                    Info->Image->Sampler = vk::CreateImageSampler(SamplerInfo);
+                }
+                
+                Info->Filename.Clear();
             } break;
             
             case GpuCmd_Draw:
@@ -376,6 +489,83 @@ void GpuStageEntry(frame_params *FrameParams)
             
             case GpuCmd_UpdateDescriptor:
             {
+                gpu_descriptor_update_info *Infos =
+                    static_cast<gpu_descriptor_update_info*>(GpuCmd.Data);
+                
+                // NOTE(Dustin): Probably do not want to force a descriptor write update
+                // for all descriptors?
+                u32 SwapchainImageCount = vk::GetSwapChainImageCount();
+                for (u32 SwapImage = 0; SwapImage < SwapchainImageCount; ++SwapImage)
+                {
+                    VkWriteDescriptorSet *DescriptorWrites =
+                        talloc<VkWriteDescriptorSet>(Infos->WriteInfosCount);
+                    
+                    for (u32 WriteInfo = 0; WriteInfo < Infos->WriteInfosCount; WriteInfo++)
+                    {
+                        resource DescriptorResource = mresource::GetResource(Infos->WriteInfos[WriteInfo].DescriptorId);
+                        
+                        DescriptorWrites[WriteInfo] = {};
+                        DescriptorWrites[WriteInfo].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        DescriptorWrites[WriteInfo].dstSet           =
+                            DescriptorResource.DescriptorSet.DescriptorSets[SwapImage].Handle;
+                        DescriptorWrites[WriteInfo].dstBinding       =
+                            Infos->WriteInfos[WriteInfo].DescriptorBinding;
+                        DescriptorWrites[WriteInfo].dstArrayElement  = 0;
+                        DescriptorWrites[WriteInfo].descriptorType   =
+                            Infos->WriteInfos[WriteInfo].DescriptorType;
+                        DescriptorWrites[WriteInfo].descriptorCount  = 1;
+                        
+                        if (Infos->WriteInfos[WriteInfo].DescriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+                            Infos->WriteInfos[WriteInfo].DescriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+                        {
+                            resource UniformResource = mresource::GetResource(Infos->WriteInfos[WriteInfo].BufferId);
+                            
+                            VkDescriptorBufferInfo *BufferInfo = talloc<VkDescriptorBufferInfo>(1);
+                            *BufferInfo = {};
+                            if (UniformResource.Type == Resource_UniformBuffer)
+                            {
+                                BufferInfo->buffer =
+                                    UniformResource.UniformBuffer.Buffers[SwapImage].Handle;
+                            }
+                            else if (UniformResource.Type == Resource_DynamicUniformBuffer)
+                            {
+                                BufferInfo->buffer =
+                                    UniformResource.DynamicUniformBuffer.Pools[SwapImage].Buffer.Handle;
+                            }
+                            else
+                                mprinte("Attempting to update an incorrect buffer type with a Descriptor!\n");
+                            
+                            BufferInfo->offset = 0;
+                            BufferInfo->range  = VK_WHOLE_SIZE;
+                            
+                            DescriptorWrites[WriteInfo].pBufferInfo      = BufferInfo;
+                            DescriptorWrites[WriteInfo].pImageInfo       = nullptr;
+                            DescriptorWrites[WriteInfo].pTexelBufferView = nullptr;
+                        }
+                        else if (Infos->WriteInfos[WriteInfo].DescriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                        {
+                            resource ImageResource = mresource::GetResource(Infos->WriteInfos[WriteInfo].TextureId);
+                            
+                            VkDescriptorImageInfo *ImageInfo = talloc<VkDescriptorImageInfo>(1);
+                            
+                            *ImageInfo = {};
+                            ImageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                            ImageInfo->imageView   = ImageResource.Image.Image.View;
+                            ImageInfo->sampler     = ImageResource.Image.Image.Sampler;
+                            
+                            DescriptorWrites[WriteInfo].pBufferInfo      = nullptr;
+                            DescriptorWrites[WriteInfo].pImageInfo       = ImageInfo;
+                            DescriptorWrites[WriteInfo].pTexelBufferView = nullptr;
+                        }
+                        else
+                        {
+                            mprinte("Unknown descriptor write update!\n");
+                        }
+                    }
+                    
+                    vk::UpdateDescriptorSets(DescriptorWrites, Infos->WriteInfosCount);
+                }
+                
             } break;
             
             case GpuCmd_UpdateBuffer:

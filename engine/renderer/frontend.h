@@ -46,11 +46,6 @@ struct render_draw_command
     u32                Count;
     
     asset_id_t         Material;
-    
-#if 0
-    primitive         *PrimitivesToDraw;
-    u32                PrimitivesCount;
-#endif
 };
 
 enum render_command_type
