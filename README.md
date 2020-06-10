@@ -43,23 +43,6 @@ Maple uses the unity build system where source is included into a single `*.cpp`
 
 By default, the Application unity file will be the example project. To include one's own project, edit `unity.cpp` to include the desired unity file.
 
-## Engine Features
-
-Rught now, the engine does not contain many flashy features worth showing off. In fact, you could probably call Maple the most robust triangle renderer of all time. Nonetheless, there are some interesting features working behind the scenes.
-
-### Memory Management
-
-
-
-### Entity-Component-System
-
-
-### Rendering Architecture
-
-
-### Maple Config Langauge
-
-
 ## Dependencies
 
 One of the primary goals of the engine is to keep the number of dependencies to a minimum. However, there are some aspects of development that can be sped up considerably when using a third party library. Here is a list of dependencies for the engine
