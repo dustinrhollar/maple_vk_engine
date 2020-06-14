@@ -103,6 +103,16 @@ void RenderStageEntry(frame_params *FrameParams)
                 AddGpuCommand(FrameParams, { GpuCmd_BindDescriptorSet, BindInfo });
             } break;
             
+            case RenderCmd_DrawDevGui:
+            {
+                render_draw_dev_gui *Info = static_cast<render_draw_dev_gui*>(RenderCmd.Data);
+                
+                gpu_draw_dev_gui_info *DrawUi = talloc<gpu_draw_dev_gui_info>();
+                DrawUi->DevGui = Info->DevGui;
+                
+                AddGpuCommand(FrameParams, { GpuCmd_DrawDevGui, DrawUi });
+            } break;
+            
             default:
             {
                 mprinte("Unknown render command %d\n", RenderCmd.Type);

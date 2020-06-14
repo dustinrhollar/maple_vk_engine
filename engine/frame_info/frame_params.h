@@ -4,6 +4,7 @@
 struct render_command;
 struct gpu_command;
 struct asset;
+struct camera;
 
 struct frame_params
 {
@@ -40,6 +41,11 @@ struct frame_params
     gpu_command    *GpuCommands;
     u32             GpuCommandsCount;
     u32             GpuCommandsCap;
+    
+    //~ Player/Dev Camera
+    // NOTE(Dustin): Will the game layer need this?
+    camera *ActiveCamera;
+    
 };
 
 void InitFrameParams(frame_params *FrameParams);

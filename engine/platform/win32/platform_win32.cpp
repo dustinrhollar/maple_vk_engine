@@ -19,6 +19,8 @@ file_global i64 GlobalPerfCountFrequency;
 file_global HWND ClientWindow;
 file_global RECT ClientWindowRect    = {};
 file_global RECT ClientWindowRectOld = ClientWindowRect;
+file_global bool GlobalIsFullscreen  = false;
+file_global bool ClientIsRunning     = false;
 
 file_global u32 ClientWindowWidth;
 file_global u32 ClientWindowHeight;
@@ -29,12 +31,11 @@ file_global r32 GlobalMouseYPos;
 
 // Game or Dev Mode?
 file_global bool GlobalIsDevMode = true;
-file_global bool GlobalIsFullscreen = false;
+file_global bool RenderDevGui    = true;
 
-file_global bool ClientIsRunning = false;
-
-file_global FrameInput GlobalFrameInput;
+// Frame Info
 file_global u64 FrameCount = 0;
+
 
 struct CodeDLL
 {
@@ -1191,6 +1192,49 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     event::Subscribe<WindowResizeEvent>(&WindowResizeEventCallback, nullptr);
     event::Subscribe<CoreVulkanResizeEvent>(&CoreVulkanResizeEventCallback, nullptr);
     
+    //~ Client Initialization
+    {
+        mm::ResetTransientMemory();
+        
+        // Collect this frame's parameters
+        frame_params FrameParams = {};
+        InitFrameParams(&FrameParams);
+        
+        GpuStageInit(&FrameParams);
+        //RenderStageInit(&FrameParams);
+        masset::Init();
+        mresource::Init(&FrameParams);
+        //GameStageInit(&FrameParams);
+        
+        //~ Asset Loading
+        {
+#if 1
+            //jstring ExampleGltfModel = InitJString("data/glTF/Fox/glTF/fox.gltf");
+            jstring ExampleGltfModel = InitJString("data/glTF/Lantern/Lantern.gltf");
+            
+            masset::ConvertGlTF(ExampleGltfModel);
+            ExampleGltfModel.Clear();
+#endif
+            
+#if 1
+            //jstring ExampleModel = InitJString("data/models/models/fox.model");
+            jstring ExampleModel = InitJString("data/models/models/Lantern.model");
+            
+            model_create_info *ModelCreateInfo = talloc<model_create_info>(1);
+            ModelCreateInfo->Filename          = ExampleModel;
+            ModelCreateInfo->FrameParams       = &FrameParams;
+            masset::Load(Asset_Model, ModelCreateInfo);
+            
+            ExampleModel.Clear();
+#endif
+        }
+        
+        
+        // Game Init will probably init some render/gpu commands...
+        RenderStageEntry(&FrameParams);
+        GpuStageEntry(&FrameParams);
+    }
+    
     //~ Initialize ImGui information
     
     ImGuiContext *ctx = ImGui::CreateContext();
@@ -1204,74 +1248,22 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         exit(1);
     }
     
-    //~ Client Initialization
-    {
-        mm::ResetTransientMemory();
-        
-        // Collect this frame's parameters
-        frame_params FrameParams = {};
-        InitFrameParams(&FrameParams);
-        
-        GpuStageInit(&FrameParams);
-        RenderStageInit(&FrameParams);
-        masset::Init();
-        mresource::Init(&FrameParams);
-        GameStageInit(&FrameParams);
-        
-        // Game Init will probably init some render/gpu commands...
-        RenderStageEntry(&FrameParams);
-        GpuStageEntry(&FrameParams);
-    }
+    // Init Dev UI
+    maple_dev_gui *DevGui = palloc<maple_dev_gui>();
+    MapleDevGuiInit(DevGui, GetPrimaryRenderPass(), &MapleDevUi);
     
-    //~ Tagged Heap testing
+    //~ Init Dev + player cameras
+    camera PlayerCamera = {};
+    camera DevCamera    = {};
     
-    // TODO(Dustin): Find away to use large pages...
-    DWORD       dwPageSize;
-    SYSTEM_INFO sSysInfo;
+    vec3 InitialPlayerPos = { 0.0f, 0.0f, -2.0f };
+    InitCamera(&PlayerCamera, &PlayerCameraCallback, InitialPlayerPos);
+    InitCamera(&DevCamera, &DevCameraCallback, InitialPlayerPos);
     
-    GetSystemInfo(&sSysInfo);
-    dwPageSize = sSysInfo.dwPageSize;
-    
-    // _128MB should get me 64 2MiB blocks
-    tagged_heap TaggedHeap;
-    InitTaggedHeap(&TaggedHeap, _128MB, _2MB);
-    
-    tagged_heap_block Block4 = TaggedHeapRequestAllocation(&TaggedHeap, 4);
-    tagged_heap_block Block0 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
-    tagged_heap_block Block3 = TaggedHeapRequestAllocation(&TaggedHeap, 3);
-    tagged_heap_block Block1 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
-    tagged_heap_block Block2 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
-    
-    tagged_heap_block Block01 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
-    tagged_heap_block Block02 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
-    tagged_heap_block Block03 = TaggedHeapRequestAllocation(&TaggedHeap, 0);
-    
-    tagged_heap_block Block11 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
-    tagged_heap_block Block12 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
-    tagged_heap_block Block13 = TaggedHeapRequestAllocation(&TaggedHeap, 1);
-    
-    tagged_heap_block Block21 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
-    tagged_heap_block Block22 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
-    tagged_heap_block Block23 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
-    tagged_heap_block Block24 = TaggedHeapRequestAllocation(&TaggedHeap, 2);
-    
-    // Do some per block allocation
-    // each block is 2MiB, try to alloc two 1MiB allocations.
-    void* ret0 = TaggedHeapBlockAlloc(&Block0, _1MB);
-    assert(ret0);
-    void* ret1 = TaggedHeapBlockAlloc(&Block0, _1MB);
-    assert(ret1);
-    // third allocation should fail
-    void* ret3 = TaggedHeapBlockAlloc(&Block0, _1MB);
-    assert(!ret3);
-    
-    TaggedHeapReleaseAllocation(&TaggedHeap, 0);
-    TaggedHeapReleaseAllocation(&TaggedHeap, 3);
-    TaggedHeapReleaseAllocation(&TaggedHeap, 2);
-    TaggedHeapReleaseAllocation(&TaggedHeap, 4);
-    TaggedHeapReleaseAllocation(&TaggedHeap, 1);
-    
-    FreeTaggedHeap(&TaggedHeap);
+    if (GlobalIsDevMode)
+        DevCamera.IsActive = true;
+    else
+        PlayerCamera.IsActive = true;
     
     //~ App Loop
     ::ShowWindow(ClientWindow, nCmdShow);
@@ -1280,15 +1272,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     r32 refresh_rate = 60.0f;
     r32 target_seconds_per_frame = 1 / refresh_rate;
     
-    GlobalFrameInput = {0};;
     ClientIsRunning = true;
     MSG msg = {};
     while (ClientIsRunning)
     {
-        bool last_frame_wireframe = GlobalFrameInput.RenderWireframe;
-        GlobalFrameInput = {0};
-        GlobalFrameInput.RenderWireframe = last_frame_wireframe;
-        
         // Message loop
         while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
         {
@@ -1322,7 +1309,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
         mm::ResetTransientMemory();
         
-        // Collect this frame's parameters
+        //~ Collect this frame's parameters
         // TODO(Dustin): Set frame timers, frame number, etc...
         frame_params FrameParams = {};
         InitFrameParams(&FrameParams);
@@ -1330,20 +1317,81 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         FrameParams.FrameStartTime = Win32GetWallClock();
         CopyModelAssets(&FrameParams);
         
+        //~ Emit start frame commands
+        {
+            if (GlobalIsDevMode)
+            {
+                FrameParams.ActiveCamera = &DevCamera;
+                
+                PlayerCamera.IsActive = false;
+                DevCamera.IsActive    = true;
+            }
+            else
+            {
+                FrameParams.ActiveCamera = &PlayerCamera;
+                
+                PlayerCamera.IsActive = true;
+                DevCamera.IsActive    = false;
+            }
+            
+            // Prep the frame for rendering
+            u32 Width, Height;
+            Win32GetClientWindowDimensions(&Width, &Height);
+            VkExtent2D Extent = vk::GetSwapChainExtent();
+            
+            mat4 Projection = PerspectiveProjection(90.0f, (r32)Width/(r32)Height, 0.1f, 1000.0f);
+            Projection[1][1] *= -1;
+            
+            gpu_begin_frame_info *BeginFrame = talloc<gpu_begin_frame_info>(1);
+            BeginFrame->Color    = {0.67f, 0.85f, 0.90f, 1.0f};
+            BeginFrame->HasDepth = true;
+            BeginFrame->Depth    = 1.0f;
+            BeginFrame->Stencil  = 0;
+            BeginFrame->GlobalShaderData.Projection = Projection;
+            BeginFrame->GlobalShaderData.View       = GetViewMatrix(FrameParams.ActiveCamera);
+            AddGpuCommand(&FrameParams, { GpuCmd_BeginFrame, BeginFrame });
+            
+            render_set_scissor_info *ScissorInfo = talloc<render_set_scissor_info>(1);
+            ScissorInfo->Extent  = Extent;
+            ScissorInfo->XOffset = 0;
+            ScissorInfo->YOffset = 0;
+            AddRenderCommand(&FrameParams, { RenderCmd_SetScissor, ScissorInfo });
+            
+            render_set_viewport_info *ViewportInfo = talloc<render_set_viewport_info>(1);
+            ViewportInfo->Width  = static_cast<r32>(Extent.width);
+            ViewportInfo->Height = static_cast<r32>(Extent.height);
+            ViewportInfo->X      = 0.0f;
+            ViewportInfo->Y      = 0.0f;
+            AddRenderCommand(&FrameParams, { RenderCmd_SetViewport, ViewportInfo });
+        }
+        
+        //~ Game Stage
         // TODO(Dustin): Have the game define a callback function
         // that will be "GameStageEntry".
         GameStageEntry(&FrameParams);
         FrameParams.GameStageEndTime = Win32GetWallClock();
         
+        //~ Render Stage
         FrameParams.RenderStageStartTime = Win32GetWallClock();
         RenderStageEntry(&FrameParams);
         FrameParams.RenderStageEndTime   = Win32GetWallClock();
         
+        //~ Engine UI
+        if (GlobalIsDevMode && RenderDevGui)
+        {
+            ImGui_ImplWin32_NewFrame();
+            gpu_draw_dev_gui_info *DevGuiDraw = talloc<gpu_draw_dev_gui_info>();
+            DevGuiDraw->DevGui = DevGui;
+            AddGpuCommand(&FrameParams, { GpuCmd_DrawDevGui, DevGuiDraw });
+        }
+        
+        //~ Gpu Stage
         FrameParams.GpuStageStartTime = Win32GetWallClock();
         GpuStageEntry(&FrameParams);
         FrameParams.GpuStageEndTime = Win32GetWallClock();
         
 #if 0
+        // Log frame timings...
         local_persist r32 FrameAccumulator = 0.0f;
         
         r32 GameElapsed   = Win32GetSecondsElapsed(FrameParams.FrameStartTime, FrameParams.GameStageEndTime);
@@ -1364,8 +1412,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
 #endif
         
-        GlobalFrameInput.TimeElapsed = seconds_elapsed_per_frame;
-        
         FrameCount++;
     }
     
@@ -1380,6 +1426,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         masset::Free();
         mresource::Free(&FrameParams);
         GpuStageShutdown(&FrameParams);
+        
+        MapleDevGuiFree(DevGui);
+        pfree(DevGui);
     }
     
     Win32ShutdownRoutines();
@@ -1552,13 +1601,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 {
                     case VK_F5:
                     {
-                        KeyF5PressEvent event;
-                        event.Key = KEY_F5;
-                        event::Dispatch<KeyF5PressEvent>(event);
+                        // F5 toggles DevMode
+                        GlobalIsDevMode = !GlobalIsDevMode;
+                        
+                        // Do not dispatch a generic key event for the F5 key
+                        return DefWindowProc(hwnd, uMsg, wParam, lParam);
                     } break;
                     
                     case VK_SPACE:
                     {
+                        RenderDevGui = !RenderDevGui;
                         
                         KeySpacePressEvent event;
                         event.Key = KEY_Space;

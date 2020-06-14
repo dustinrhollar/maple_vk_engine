@@ -146,6 +146,12 @@ struct gpu_update_buffer_info
     u32            DataSize;
 };
 
+struct gpu_draw_dev_gui_info
+{
+    maple_dev_gui *DevGui;
+};
+
+
 enum gpu_command_type
 {
     GpuCmd_BeginFrame,
@@ -182,6 +188,9 @@ enum gpu_command_type
     // Render Pass
     GpuCmd_BeginRenderPass,
     GpuCmd_EndRenderPass,
+    
+    // Draw Guis
+    GpuCmd_DrawDevGui,
 };
 
 struct gpu_command

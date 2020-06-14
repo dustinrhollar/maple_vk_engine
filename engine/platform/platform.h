@@ -140,6 +140,7 @@ Release memory allocated using PlatformRequestMemory.
 
 */
 
+#if 0
 struct KeyboardInput
 {
     u64 KEY_A:1;
@@ -203,16 +204,7 @@ struct MouseInput
     u8 MOUSE_RIGHT:1;
     u8 Padding:6;
 };
-
-struct FrameInput
-{
-    KeyboardInput Keyboard;
-    MouseInput    Mouse;
-    
-    r32 TimeElapsed;
-    
-    bool RenderWireframe;
-};
+#endif
 
 enum ErrorCode
 {

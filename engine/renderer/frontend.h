@@ -48,6 +48,11 @@ struct render_draw_command
     asset_id_t         Material;
 };
 
+struct render_draw_dev_gui
+{
+    maple_dev_gui *DevGui;
+};
+
 enum render_command_type
 {
     RenderCmd_Draw,
@@ -64,6 +69,9 @@ enum render_command_type
     // NOTE(Dustin): No longer should be called from the game layer
     RenderCmd_BindPipeline,
     RenderCmd_BindDescriptorSet,
+    
+    // Draw Ui
+    RenderCmd_DrawDevGui,
 };
 
 struct render_command

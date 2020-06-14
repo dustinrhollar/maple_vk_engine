@@ -167,8 +167,11 @@ void *VulkanLibrary;
 
 //~ ImGui Vulkan Implementation
 
-#include "ui/imgui_impl_vulkan.h"
-#include "ui/imgui_impl_vulkan.cpp"
+// my implementation of the imgui vulkan layer
+#include "ui/imgui_vulkan.h"
+#include "ui/dev_ui.cpp"
+#include "ui/imgui_vulkan.cpp"
+
 
 //~ File IO Operations (OS Independent)
 #include "io/file.h"
@@ -226,6 +229,10 @@ void *VulkanLibrary;
 //~ Fiber Implementation
 #include "fibers/tagged_heap.h"
 #include "fibers/tagged_heap.cpp"
+
+//~ Camera Implementations
+#include "camera/camera.h"
+#include "camera/camera.cpp"
 
 //~ ENTRY POINT
 #include "platform/entry.cpp"

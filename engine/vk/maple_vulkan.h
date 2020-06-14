@@ -165,7 +165,7 @@ namespace vk {
                          VmaAllocation allocation);
     
     void CreateImage(VkImageCreateInfo       image_create_info,
-                     VmaAllocationCreateInfo vma_create_info,
+                     VkMemoryPropertyFlags   Properties,
                      VkImage                 &image,
                      VkDeviceMemory          &allocation);
     void DestroyImage(VkImage        image,
@@ -247,9 +247,10 @@ namespace vk {
     void DestroyVmaBuffer(VkBuffer buffer, VmaAllocation allocation);
     
     void CreateBuffer(VkBufferCreateInfo      buffer_create_info,
-                      VkMemoryAllocateInfo    vma_create_info,
+                      VkMemoryPropertyFlags   Properties,
                       VkBuffer                &buffer,
                       VkDeviceMemory          &allocation);
+    
     void DestroyBuffer(VkBuffer buffer, VkDeviceMemory allocation);
     
     void DestroyDeviceMemory(VkDeviceMemory device_memory);
@@ -277,6 +278,9 @@ namespace vk {
     
     void VmaMap(void **mapped_memory, VmaAllocation allocation);
     void VmaUnmap(VmaAllocation allocation);
+    void VmaFlushAllocation(VmaAllocation Allocation,
+                            VkDeviceSize Offset = 0,
+                            VkDeviceSize Size = VK_WHOLE_SIZE);
     
     void Map(void             **mapped_memory,
              VkDeviceMemory   allocation,
@@ -285,14 +289,18 @@ namespace vk {
              VkMemoryMapFlags flags);
     void Unmap(VkDeviceMemory allocation);
     
-    VkShaderModule CreateShaderModule(const char *code, size_t size);
+    VkShaderModule CreateShaderModule(const u32 *code, size_t size);
     void DestroyShaderModule(VkShaderModule module);
     
     VkPipeline CreatePipeline(VkGraphicsPipelineCreateInfo pipeline_info);
+    VkPipeline CreatePipeline(VkGraphicsPipelineCreateInfo pipeline_info, VkPipelineCache PipelineCache);
     void DestroyPipeline(VkPipeline pipeline);
     
     VkPipelineLayout CreatePipelineLayout(VkPipelineLayoutCreateInfo layout_info);
     void DestroyPipelineLayout(VkPipelineLayout pipeline_layout);
+    
+    void CreatePipelineCache(VkPipelineCache *PipelineCache);
+    void DestroyPipelineCache(VkPipelineCache PipelineCache);
     
     void BindPipeline(VkCommandBuffer command_buffer, VkPipeline pipeline);
     
@@ -364,6 +372,14 @@ namespace vk {
                          VkImage image, VkFormat image_format,
                          i32 width, i32 height, u32 mip_levels);
     
+    void PushConstants(VkCommandBuffer    CommandBuffer,
+                       VkPipelineLayout   Layout,
+                       VkShaderStageFlags StageFlags,
+                       u32                Offset,
+                       u32                Size,
+                       const void*        pValues);
+    
+    void FlushMappedMemory(VkMappedMemoryRange *Ranges, u32 RangesCount);
 }
 
 #endif //SPLICER_ENGINE_VULKAN_H

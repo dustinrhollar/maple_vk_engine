@@ -662,7 +662,7 @@ namespace mresource
                     jstring ShaderFile = PlatformLoadFile(Info->Shaders[Shader].Filename);
                     
                     ShaderModules[Shader] =
-                        vk::CreateShaderModule(ShaderFile.GetCStr(), ShaderFile.len);
+                        vk::CreateShaderModule((u32*)ShaderFile.GetCStr(), ShaderFile.len);
                     
                     VkPipelineShaderStageCreateInfo ShaderStageInfo = {};
                     ShaderStageInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

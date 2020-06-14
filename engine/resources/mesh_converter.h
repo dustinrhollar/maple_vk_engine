@@ -81,28 +81,6 @@ enum TextureAlphaMode
     TEXTURE_ALPHA_MODE_INVALID,
 };
 
-#if 0
-
-struct TextureParameters {
-    VkFilter MagFilter; // store?
-    VkFilter MinFilter; // store?
-    
-    VkSamplerAddressMode AddressModeU; // wrapS
-    VkSamplerAddressMode AddressModeV; // wrapT
-    VkSamplerAddressMode AddressModeW; // ??
-    
-    u32 TextureId;
-    
-    // cgltf contains these values, but there doesn't seem to be anything
-    // in the specs that mention them
-    //bool HasTransform;
-    //vec3 Scale;
-    //Vec2 Offset;
-    //r32  Theta; // Radians or Degrees?
-    
-};
-#endif
-
 struct texture_serial
 {
     jstring Filename;

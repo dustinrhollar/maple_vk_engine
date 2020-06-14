@@ -611,6 +611,13 @@ void GpuStageEntry(frame_params *FrameParams)
                 vk::BindPipeline(CommandBuffer, Info->Pipeline);
             } break;
             
+            case GpuCmd_DrawDevGui:
+            {
+                gpu_draw_dev_gui_info *Info = static_cast<gpu_draw_dev_gui_info*>(GpuCmd.Data);
+                
+                Info->DevGui->Draw(Info->DevGui, CommandBuffer);
+            } break;
+            
             default:
             {
                 mprinte("Unknown Gpu Command %d!\n", GpuCmd.Type);

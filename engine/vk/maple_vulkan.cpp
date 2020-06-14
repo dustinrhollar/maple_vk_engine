@@ -950,7 +950,7 @@ void vk::DestroyVmaImage(VkImage       image,
 }
 
 void vk::CreateImage(VkImageCreateInfo       image_create_info,
-                     VmaAllocationCreateInfo vma_create_info,
+                     VkMemoryPropertyFlags   Properties,
                      VkImage                 &image,
                      VkDeviceMemory          &allocation)
 {
@@ -959,6 +959,21 @@ void vk::CreateImage(VkImageCreateInfo       image_create_info,
                                   nullptr,
                                   &image),
                     "Failed to create image!\n");
+    
+    
+    VkMemoryRequirements req;
+    vkGetImageMemoryRequirements(GlobalVulkanState.Device, image, &req);
+    
+    VkMemoryAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = req.size;
+    alloc_info.memoryTypeIndex = FindMemoryType(req.memoryTypeBits, Properties);
+    
+    VK_CHECK_RESULT(vkAllocateMemory(GlobalVulkanState.Device, &alloc_info, nullptr, &allocation),
+                    "Unable to allocate memory for image!");
+    
+    VK_CHECK_RESULT(vkBindImageMemory(GlobalVulkanState.Device, image, allocation, 0),
+                    "Unable to bind image memory!");
 }
 
 void vk::CreateVmaImage(VkImageCreateInfo       image_create_info,
@@ -1333,20 +1348,32 @@ void vk::Resize() {
 }
 
 void vk::CreateBuffer(VkBufferCreateInfo      buffer_create_info,
-                      VkMemoryAllocateInfo    allocation_create_info,
+                      VkMemoryPropertyFlags   Properties,
                       VkBuffer                &buffer,
-                      VkDeviceMemory          &allocation) {
+                      VkDeviceMemory          &allocation)
+{
     VK_CHECK_RESULT(vkCreateBuffer(GlobalVulkanState.Device,
                                    &buffer_create_info,
                                    nullptr,
                                    &buffer),
                     "Failed to create a buffer!\n");
     
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements(GlobalVulkanState.Device, buffer, &req);
+    
+    VkMemoryAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = req.size;
+    alloc_info.memoryTypeIndex = FindMemoryType(req.memoryTypeBits, Properties);
+    
     VK_CHECK_RESULT(vkAllocateMemory(GlobalVulkanState.Device,
-                                     &allocation_create_info,
+                                     &alloc_info,
                                      nullptr,
                                      &allocation),
                     "Failed to allocate memory for a buffer!");
+    
+    VK_CHECK_RESULT(vkBindBufferMemory(GlobalVulkanState.Device, buffer, allocation, 0),
+                    "Unable to bind buffer memory!");
 }
 
 
@@ -1448,6 +1475,10 @@ void vk::VmaUnmap(VmaAllocation allocation) {
     vmaUnmapMemory(GlobalVulkanState.VulkanAllocator, allocation);
 }
 
+void vk::VmaFlushAllocation(VmaAllocation Allocation, VkDeviceSize Offset, VkDeviceSize Size)
+{
+    vmaFlushAllocation(GlobalVulkanState.VulkanAllocator, Allocation, Offset, Size);
+}
 
 void vk::Map(void             **mapped_memory,
              VkDeviceMemory   allocation,
@@ -1455,18 +1486,27 @@ void vk::Map(void             **mapped_memory,
              VkDeviceSize     size,
              VkMemoryMapFlags flags)
 {
+    VK_CHECK_RESULT(vkMapMemory(GlobalVulkanState.Device,
+                                allocation, offset, size, flags, mapped_memory),
+                    "Unable to map buffer memory!");
 }
 
 void vk::Unmap(VkDeviceMemory allocation)
 {
+    vk::vkUnmapMemory(GlobalVulkanState.Device, allocation);
 }
 
+void vk::FlushMappedMemory(VkMappedMemoryRange *Ranges, u32 RangesCount)
+{
+    VK_CHECK_RESULT(vkFlushMappedMemoryRanges(GlobalVulkanState.Device, RangesCount, Ranges),
+                    "Unable to flush mapped memory!");
+}
 
-VkShaderModule vk::CreateShaderModule(const char *code, size_t size) {
+VkShaderModule vk::CreateShaderModule(const u32 *code, size_t size) {
     VkShaderModuleCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = size;
-    createInfo.pCode = (u32*)code;
+    createInfo.pCode    = code;
     
     VkShaderModule shaderModule;
     VK_CHECK_RESULT(vkCreateShaderModule(GlobalVulkanState.Device, &createInfo, nullptr, &shaderModule),
@@ -1479,15 +1519,35 @@ void vk::DestroyShaderModule(VkShaderModule module) {
     vkDestroyShaderModule(GlobalVulkanState.Device, module, nullptr);
 }
 
-VkPipeline vk::CreatePipeline(VkGraphicsPipelineCreateInfo pipeline_info) {
+void vk::CreatePipelineCache(VkPipelineCache *PipelineCache)
+{
+    VkPipelineCacheCreateInfo PipelineCacheCreateInfo = {};
+    PipelineCacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    
+    VK_CHECK_RESULT(vkCreatePipelineCache(GlobalVulkanState.Device, &PipelineCacheCreateInfo, nullptr, PipelineCache),
+                    "Unable to create a pipeline cache!\n");
+}
+
+void vk::DestroyPipelineCache(VkPipelineCache PipelineCache)
+{
+    vkDestroyPipelineCache(GlobalVulkanState.Device, PipelineCache, nullptr);
+}
+
+VkPipeline vk::CreatePipeline(VkGraphicsPipelineCreateInfo pipeline_info)
+{
+    return CreatePipeline(pipeline_info, VK_NULL_HANDLE);
+}
+
+VkPipeline vk::CreatePipeline(VkGraphicsPipelineCreateInfo pipeline_info, VkPipelineCache PipelineCache)
+{
     VkPipeline pipeline;
     VK_CHECK_RESULT(vkCreateGraphicsPipelines(GlobalVulkanState.Device,
-                                              VK_NULL_HANDLE, 1,
+                                              PipelineCache, 1,
                                               &pipeline_info, nullptr, &pipeline),
                     "Failed to create graphics pipeline!");
-    
     return pipeline;
 }
+
 
 void vk::DestroyPipeline(VkPipeline pipeline) {
     vkDestroyPipeline(GlobalVulkanState.Device, pipeline, nullptr);
@@ -1786,6 +1846,18 @@ void vk::GenerateMipmaps(VkCommandPool command_pool,
     EndSingleTimeCommands(command_buffer, command_pool);
 }
 
-VkSampleCountFlagBits vk::GetMaxMsaaSamples() {
+VkSampleCountFlagBits vk::GetMaxMsaaSamples()
+{
     return GlobalVulkanState.MsaaSamples;
+}
+
+
+void vk::PushConstants(VkCommandBuffer    CommandBuffer,
+                       VkPipelineLayout   Layout,
+                       VkShaderStageFlags StageFlags,
+                       u32                Offset,
+                       u32                Size,
+                       const void*        pValues)
+{
+    vkCmdPushConstants(CommandBuffer, Layout, StageFlags, Offset, Size, pValues);
 }
