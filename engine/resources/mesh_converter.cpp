@@ -87,17 +87,17 @@ namespace masset
         
         bool HasPosition = false;
         bool HasNormals  = false;
-        bool HasColor    = false;
-        bool HasUVs      = false;
-        bool HasWeights  = false;
-        bool HasJoints   = false;
+        //bool HasColor    = false;
+        //bool HasUVs      = false;
+        //bool HasWeights  = false; 
+        //bool HasJoints   = false;
         
         float *position_buffer = nullptr;
         float *normal_buffer   = nullptr;
         float *color_buffer    = nullptr;
         float *uv0_buffer      = nullptr;
-        float *weights_buffer  = nullptr;
-        float *joints_buffer   = nullptr;
+        //float *weights_buffer  = nullptr;
+        //float *joints_buffer   = nullptr;
         
         // Determine the attributes and get the ptr to their buffers
         for (size_t k = 0; k < CgPrimitive->attributes_count; ++k)
@@ -150,26 +150,26 @@ namespace masset
                 
                 case cgltf_attribute_type_color:
                 {
-                    HasColor = true;
+                    //HasColor = true;
                     color_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
                 } break;
                 
                 case cgltf_attribute_type_texcoord:
                 {
-                    HasUVs = true;
+                    //HasUVs = true;
                     uv0_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
                 } break;
                 
                 case cgltf_attribute_type_weights:
                 {
-                    HasUVs = true;
-                    weights_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
+                    //HasUVs = true;
+                    //weights_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
                 } break;
                 
                 case cgltf_attribute_type_joints:
                 {
-                    HasUVs = true;
-                    joints_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
+                    //HasUVs = true;
+                    //joints_buffer = (float*)(buffer + accessor->offset + buffer_view->offset);
                 } break;
                 
                 // TODO(Dustin): tangents,
@@ -201,7 +201,7 @@ namespace masset
                     u16 *indices_buffer = (u16*)(unknown_indices_buffer +
                                                  //indices_accessor->offset +
                                                  indices_buffer_view->offset);
-                    for (int i = 0; i < Primitive.IndexCount; ++i)
+                    for (u32 i = 0; i < Primitive.IndexCount; ++i)
                     {
                         indices[i] = (u32)indices_buffer[i];
                     }
@@ -211,7 +211,7 @@ namespace masset
                 {
                     u8 *indices_buffer = (u8*)unknown_indices_buffer;
                     
-                    for (int i = 0; i < Primitive.IndexCount; ++i)
+                    for (u32 i = 0; i < Primitive.IndexCount; ++i)
                     {
                         indices[i] = (u32)indices_buffer[i];
                     }
@@ -221,7 +221,7 @@ namespace masset
                 {
                     u32 *indices_buffer = (u32*)unknown_indices_buffer;
                     
-                    for (int i = 0; i < Primitive.IndexCount; ++i)
+                    for (u32 i = 0; i < Primitive.IndexCount; ++i)
                     {
                         indices[i] = (u32)indices_buffer[i];
                     }
@@ -282,7 +282,7 @@ namespace masset
         Mesh.PrimitivesCount = CgMesh->primitives_count;
         Mesh.PrimitivesIdx   = talloc<i32>(Mesh.PrimitivesCount);
         
-        for (int i = 0; i < CgMesh->primitives_count; ++i)
+        for (i32 i = 0; i < (i32)CgMesh->primitives_count; ++i)
         {
             i32 PrimitiveIdx = ConvertPrimitive(Converter, CgMesh->primitives + i);
             if (PrimitiveIdx >= 0) Mesh.PrimitivesIdx[i] = PrimitiveIdx;
@@ -367,14 +367,14 @@ namespace masset
         Node.ChildrenCount   = CgNode->children_count;
         Node.ChildrenIndices = talloc<i32>(Node.ChildrenCount);
         
-        for (int i = 0; i < Node.ChildrenCount; ++i)
+        for (u64 i = 0; i < Node.ChildrenCount; ++i)
         {
             i32 ChildIdx = ConvertNode(Converter, CgNode->children[i]);
             Node.ChildrenIndices[i] = ChildIdx;
         }
         
         Converter->SerialNodeList[Node.NodeIdx] = Node;
-        for (int i = 0; i < Node.ChildrenCount; ++i)
+        for (u64 i = 0; i < Node.ChildrenCount; ++i)
         {
             i32 ChildIdx = Node.ChildrenIndices[i];
             Converter->SerialNodeList[ChildIdx].ParentIdx = Node.NodeIdx;
@@ -390,7 +390,7 @@ namespace masset
         Scene.NodesCount   = (u32)CgScene->nodes_count;
         Scene.NodesIdx     = talloc<i32>(Scene.NodesCount);
         
-        for (int i = 0; i < Scene.NodesCount; ++i)
+        for (i32 i = 0; i < (i32)Scene.NodesCount; ++i)
         {
             i32 Idx = ConvertNode(Converter, CgScene->nodes[i]);
             Scene.NodesIdx[i] = Idx;
@@ -416,57 +416,57 @@ namespace masset
     {
         i32 Ret;
         
-        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "{%s}\n", TextureHeader);
+        Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "{%s}\n", TextureHeader);
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "{%s}\n", TextureHeader);
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "{%s}\n", TextureHeader);
         Buffer->brkp += Ret;
         
-        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "Filename : str = \"%s\"\n",
+        Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "Filename : str = \"%s\"\n",
                                 Texture->Filename.GetCStr());
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "Filename : str = \"%s\"\n",
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "Filename : str = \"%s\"\n",
                                     Texture->Filename.GetCStr());
         Buffer->brkp += Ret;
         
-        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MinFilter : i32 = %d\n",
+        Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MinFilter : i32 = %d\n",
                                 Texture->MinFilter);
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MinFilter : i32 = %d\n",
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MinFilter : i32 = %d\n",
                                     Texture->MinFilter);
         Buffer->brkp += Ret;
         
-        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MagFilter : i32 = %d\n",
+        Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MagFilter : i32 = %d\n",
                                 Texture->MagFilter);
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MagFilter : i32 = %d\n",
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "MagFilter : i32 = %d\n",
                                     Texture->MagFilter);
         Buffer->brkp += Ret;
         
-        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeU : i32 = %d\n",
+        Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeU : i32 = %d\n",
                                 Texture->AddressModeU);
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeU : i32 = %d\n",
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeU : i32 = %d\n",
                                     Texture->AddressModeU);
         Buffer->brkp += Ret;
         
-        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeV : i32 = %d\n",
+        Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeV : i32 = %d\n",
                                 Texture->AddressModeV);
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeV : i32 = %d\n",
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeV : i32 = %d\n",
                                     Texture->AddressModeV);
         Buffer->brkp += Ret;
         
-        Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeW : i32 = %d\n",
+        Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeW : i32 = %d\n",
                                 Texture->AddressModeW);
         if (CheckTextBufferResize(Buffer, Ret))
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeW : i32 = %d\n",
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "AddressModeW : i32 = %d\n",
                                     Texture->AddressModeW);
         Buffer->brkp += Ret;
         
         { // spacing...
-            Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "\n");
+            Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "\n");
             if (CheckTextBufferResize(Buffer, Ret))
-                Ret = Win32FormatString(Buffer->brkp, BufferUnusedSize(Buffer), "\n");
+                Ret = PlatformFormatString(Buffer->brkp, BufferUnusedSize(Buffer), "\n");
             Buffer->brkp += Ret;
         }
         
@@ -491,8 +491,6 @@ namespace masset
         
         FileBuffer Buffer;
         CreateFileBuffer(&Buffer, sizeof(material_serial));
-        
-        i32 Ret;
         
         WriteToFileBuffer(&Buffer, "{Material}\n");
         WriteToFileBuffer(&Buffer, "ReflectionFile : str = \"%s\"\n", CmdReflFile.GetCStr());
@@ -649,10 +647,10 @@ namespace masset
             
             // NOTE(Dustin): This is a very silly if-statement, but I want to be able to detect
             // if there will ever be a combination of these settings
-            if (Material.HasPBRMetallicRoughness  && Material.HasPBRSpecularGlossiness ||
-                Material.HasPBRMetallicRoughness  && Material.HasClearCoat ||
-                Material.HasPBRSpecularGlossiness && Material.HasClearCoat ||
-                Material.HasPBRMetallicRoughness  && Material.HasPBRSpecularGlossiness && Material.HasClearCoat)
+            if ((Material.HasPBRMetallicRoughness  && Material.HasPBRSpecularGlossiness) ||
+                (Material.HasPBRMetallicRoughness  && Material.HasClearCoat) ||
+                (Material.HasPBRSpecularGlossiness && Material.HasClearCoat) ||
+		(Material.HasPBRMetallicRoughness  && Material.HasPBRSpecularGlossiness && Material.HasClearCoat))
             {
                 printf("%s Material has a combination of material types!\n", Material.Name.GetCStr());
             }
@@ -821,7 +819,7 @@ namespace masset
         CorrectExtension.Clear();
         ModelFilename.Clear();
         
-        cgltf_options options = {0};
+        cgltf_options options = {};
         Converter.Data = nullptr;
         cgltf_result result = cgltf_parse_file(&options, Filename.GetCStr(), &Converter.Data);
         if (result != cgltf_result_success)
@@ -878,7 +876,7 @@ namespace masset
         // Serialize primitives
         Int32ToBinaryBuffer(&Buffer, &Converter.PrimitiveIdx, 1);
         
-        for (u32 Primitive = 0; Primitive < Converter.PrimitiveIdx; ++Primitive)
+        for (i32 Primitive = 0; Primitive < Converter.PrimitiveIdx; ++Primitive)
         {
             // Data info
             UInt64ToBinaryBuffer(&Buffer, &Converter.SerialPrimitiveList[Primitive].Offset, 1);
@@ -904,7 +902,7 @@ namespace masset
         // Serialize the meshes
         Int32ToBinaryBuffer(&Buffer, &Converter.MeshIdx, 1);
         
-        for (u32 Mesh = 0; Mesh < Converter.MeshIdx; ++Mesh)
+        for (i32 Mesh = 0; Mesh < Converter.MeshIdx; ++Mesh)
         {
             JStringToBinaryBuffer(&Buffer, Converter.SerialMeshList[Mesh].MeshName);
             
@@ -918,7 +916,7 @@ namespace masset
         // Serialize the node heirarchy
         Int32ToBinaryBuffer(&Buffer, &Converter.NodeIdx, 1);
         
-        for (u32 Node = 0; Node < Converter.NodeIdx; ++Node)
+        for (i32 Node = 0; Node < Converter.NodeIdx; ++Node)
         {
             JStringToBinaryBuffer(&Buffer, Converter.SerialNodeList[Node].Name);
             
@@ -941,7 +939,7 @@ namespace masset
         
         // serialize the disjoint set
         Int32ToBinaryBuffer(&Buffer, &Converter.SceneIdx, 1);
-        for (u32 Scene = 0; Scene < Converter.SceneIdx; ++Scene)
+        for (i32 Scene = 0; Scene < Converter.SceneIdx; ++Scene)
         {
             UInt32ToBinaryBuffer(&Buffer, &Converter.SerialSceneList[Scene].NodesCount, 1);
             Int32ToBinaryBuffer(&Buffer, Converter.SerialSceneList[Scene].NodesIdx,

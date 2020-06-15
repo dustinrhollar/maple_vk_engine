@@ -1,5 +1,14 @@
 
 
+#if defined(linux) || defined(__unix__)
+
+#pragma GCC diagnostic push
+
+#pragma GCC diagnostic ignored "-Wwrite-strings"
+#pragma GCC diagnostic ignored "-Wswitch"
+
+#endif
+
 //~ Required Game level functions - must be declared here
 // These are functions the engine needs to about related to the game.
 // For example, once the engine is done setting up internal behaviors,
@@ -236,3 +245,11 @@ void *VulkanLibrary;
 
 //~ ENTRY POINT
 #include "platform/entry.cpp"
+
+
+
+#if defined(linux) || defined(__unix__)
+
+#pragma GCC diagnostic pop
+
+#endif

@@ -131,8 +131,6 @@ u64 ReverseUInt64(u64 uint)
 
 float ReverseFloat(float f)
 {
-    u8 c1, c2, c3, c4;
-    
     if (is_bigendian())
     {
         r32 RetVal;
@@ -152,7 +150,6 @@ float ReverseFloat(float f)
 
 i16 ReadInt16(char *buffer)
 {
-    // a uint is just 4 bytes
     u8 c1, c2;
     
     c1 = buffer[0];

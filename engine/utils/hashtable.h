@@ -207,7 +207,7 @@ bool HashTable<K,V>::Insert(const K& key, const V& value) {
 
 template<class K, class V>
 V* HashTable<K,V>::Get(const K &key) {
-    if (Count == 0) return false;
+    if (Count == 0) return nullptr;
     
     Entry *entry = GetEntry(key);
     

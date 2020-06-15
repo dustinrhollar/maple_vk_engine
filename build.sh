@@ -31,5 +31,5 @@ fi
 pushd $BUILD_DIR
 	echo Building game...
 	echo g++ $CFLAGS -Wno-reorder -Wno-unused-parameter -Wno-missing-field-initializers -fno-strict-aliasing $INC -DVK_USE_PLATFORM_XLIB_KHR -DVK_NO_PROTOTYPES $UNITY_SRC -o example -ldl -lpthread -lX11 -Wl,-rpath=$VK_LIB
-	g++ $CFLAGS -Wno-reorder -Wno-unused-parameter -Wno-unused-function -Wno-missing-field-initializers -fno-strict-aliasing $INC -DVK_USE_PLATFORM_XCB_KHR -DVK_NO_PROTOTYPES $UNITY_SRC -o example -ldl -lpthread -lxcb -Wl,-rpath=$VK_LIB
+	g++ $CFLAGS -Wno-reorder -Wno-unused-parameter -Wno-unused-function -Wno-missing-field-initializers -fno-strict-aliasing $INC -DVK_USE_PLATFORM_XCB_KHR -DVK_NO_PROTOTYPES $UNITY_SRC -o example -ldl -lpthread -lxcb -lxcb-keysyms -Wl,-rpath=$VK_LIB
 popd

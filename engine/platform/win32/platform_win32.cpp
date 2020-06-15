@@ -1289,7 +1289,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         r32 seconds_elapsed_per_frame = seconds_elapsed_update;
         if (seconds_elapsed_per_frame < target_seconds_per_frame)
         {
-            if (sleep_is_granular)
+	    if (sleep_is_granular) 
             {
                 DWORD sleep_ms = (DWORD)(1000.0f * (target_seconds_per_frame - seconds_elapsed_per_frame));
                 if (sleep_ms > 0)

@@ -1082,7 +1082,7 @@ Primitive List has the following format:
             ReadUInt64FromBinaryBuffer(&Loader->Buffer, &Mesh.PrimitivesCount);
             Mesh.Primitives = palloc<primitive*>(Mesh.PrimitivesCount);
             
-            for (i64 PrimIdx = 0; PrimIdx < Mesh.PrimitivesCount; PrimIdx++)
+            for (u32 PrimIdx = 0; PrimIdx < Mesh.PrimitivesCount; PrimIdx++)
             {
                 i32 Idx;
                 ReadInt32FromBinaryBuffer(&Loader->Buffer, &Idx);
@@ -1362,14 +1362,14 @@ Node List
         {
             case Asset_Model:
             {
-                for (u32 NodeIdx = 0; NodeIdx < Asset->Model.NodesCount; ++NodeIdx)
+                for (i32 NodeIdx = 0; NodeIdx < Asset->Model.NodesCount; ++NodeIdx)
                     ShutdownNode(&Asset->Model.Nodes[NodeIdx]);
                 
                 pfree(Asset->Model.Nodes);
                 Asset->Model.Nodes = nullptr;
                 Asset->Model.NodesCount = 0;
                 
-                for (u32 MeshIdx = 0; MeshIdx < Asset->Model.MeshesCount; ++MeshIdx)
+                for (i32 MeshIdx = 0; MeshIdx < Asset->Model.MeshesCount; ++MeshIdx)
                     ShutdownMesh(&Asset->Model.Meshes[MeshIdx]);
                 
                 pfree(Asset->Model.Meshes);

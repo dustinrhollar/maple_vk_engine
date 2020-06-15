@@ -105,7 +105,6 @@ config_var ConfigMemberTableGet(config_member_table *Table, const char* Key)
 void ConfigMemberTableResize(config_member_table *Table, u32 Cap)
 {
     u32 OldCap = Table->Cap;
-    u32 OldSize = Table->Count;
     config_member_table_entry *OldEntries = Table->Entries;
     
     // allocate new entry storage and zero the mem
@@ -234,7 +233,6 @@ config_obj ConfigObjTableGet(config_obj_table *Table, const char* Key)
 void ConfigObjTableResize(config_obj_table *Table, u32 Cap)
 {
     u32 OldCap = Table->Cap;
-    u32 OldSize = Table->Count;
     config_obj_table_entry *OldEntries = Table->Entries;
     
     // allocate new entry storage and zero the mem

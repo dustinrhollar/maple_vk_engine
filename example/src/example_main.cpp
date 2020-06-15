@@ -1,9 +1,3 @@
-
-//file_global BufferParameters VertexBuffer;
-
-file_global bool IsGameInit      = false;
-file_global bool GameNeedsResize = false;
-
 file_internal void RenderAssetMesh(frame_params *FrameParams, mesh *Mesh, mat4 Matrix);
 file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, mat4 Matrix);
 file_internal void RenderAllAssets(frame_params *FrameParams);
@@ -87,7 +81,7 @@ file_internal void RenderAssetNode(frame_params *FrameParams, model_node *Node, 
         RenderAssetMesh(FrameParams, Node->Mesh, ModelMatrix);
     }
     
-    for (int i = 0; i < Node->ChildrenCount; ++i)
+    for (u64 i = 0; i < Node->ChildrenCount; ++i)
     {
         RenderAssetNode(FrameParams, Node->Children[i], ModelMatrix);
     }
@@ -99,7 +93,7 @@ file_internal void RenderAllAssets(frame_params *FrameParams)
     {
         asset Asset = FrameParams->ModelAssets[AssetIdx];
         
-        for (u32 DisjointNode = 0; DisjointNode < Asset.Model.RootModelNodesCount; ++DisjointNode)
+        for (i32 DisjointNode = 0; DisjointNode < Asset.Model.RootModelNodesCount; ++DisjointNode)
         {
             model_node *RootNode = Asset.Model.RootModelNodes[DisjointNode];
             RenderAssetNode(FrameParams, RootNode, mat4(1.0f));

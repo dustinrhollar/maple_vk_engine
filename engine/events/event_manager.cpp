@@ -41,7 +41,7 @@ namespace event
         
         EventSubscribers.Resize(initial_cap);
         
-        for (int i = 0; i < EventSubscribers.cap; ++i)
+        for (u32 i = 0; i < EventSubscribers.cap; ++i)
         {
             SubscriberListInit(&EventSubscribers[i], 5);
         }
@@ -49,7 +49,7 @@ namespace event
     
     void ManagerShutdown()
     {
-        for (int i = 0; i < EventSubscribers.cap; ++i)
+        for (u32 i = 0; i < EventSubscribers.cap; ++i)
         {
             SubscriberListFree(&EventSubscribers[i]);
         }

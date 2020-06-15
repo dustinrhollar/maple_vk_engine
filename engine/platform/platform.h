@@ -298,7 +298,12 @@ void Win32ReleaseMemory(void *Ptr);
 
 #else
 
+#define PlatformFormatString                  XcbFormatString
+#define PlatformPrintMessage                  XcbPrintMessage
+#define PlatformPrintError                    XcbPrintError
+
 #define PlatformGetExeFilepath                XcbGetExeFilepath
+#define PlatformCopyFileIfChanged             XcbCopyFileIfChanged
 #define PlatformFindAllFilesInDirectory       XcbFindAllFilesInDirectory
 #define PlatformWriteBufferToFile             XcbWriteBufferToFile
 #define PlatformLoadFile                      XcbLoadFile
@@ -308,16 +313,42 @@ void Win32ReleaseMemory(void *Ptr);
 #define PlatformGetClientWindowDimensions     XcbGetClientWindowDimensions
 #define PlatformVulkanCreateSurface           XcbVulkanCreateSurface
 
+#define PlatformGetWallClock                  XcbGetWallClock
+#define PlatformGetSecondsElapsed             XcbGetSecondsElapsed
+#define PlatformRaiseError                    XcbRaiseError
+
+u32 XcbComputeLeadingZero(u64 Value);
+u32 XcbComputeTrailingZero(u64 Value);
+
+#define PlatformClz(v)                        (v)?XcbComputeLeadingZero(v):32
+#define PlatformCtz(v)                        (v)?XcbComputeTrailingZero(v):32
+
+#define PlatformRequestMemory                 XcbRequestMemory
+#define PlatformReleaseMemory                 XcbReleaseMemory
+
 jstring XcbGetExeFilepath();
-DynamicArray<jstring> XcbFindAllFilesInDirectory(jstring &directory, jstring delimiter);
-void XcbWriteBufferToFile(jstring &file, void *buffer, u32 size);
-jstring XcbLoadFile(jstring &directory, jstring &filename);
+DynamicArray<jstring> XcbFindAllFilesInDirect(jstring &directory, jstring delimiter);
+void XcbWriteBufferToFile(jstring &file, void  *buffer, u32 size);
+jstring XcbLoadFile(jstring &filename);
 void XcbDeleteFile(jstring &file);
 void XcbExecuteCommand(jstring &system_cmd);
 
-const char *XcbGetRequiredInstanceExtensions(bool validation_layers);
-void XcbGetClientWindowDimensions(u32 *width, u32 *height);
+const char *XcbGetRequiredInstanceExtensions( bool validation_layers);
+void XcbGetClientWindowDimensions(u32 *width,  u32 *height);
 void XcbVulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance);
+
+i32 XcbFormatString(char *buff, i32 len, char* fmt, ...);
+void XcbPrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
+void XcbPrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...);
+
+void XcbCopyFileIfChanged(const char *Destination, const char *Source);
+u64 XcbGetWallClock();
+r32 XcbGetSecondsElapsed(r32 start, u32 end);
+void XcbRaiseError(ErrorCode error, char *fmt, ...);
+
+void* XcbRequestMemory(u64 Size);
+void XcbReleaseMemory(void *Ptr);
+
 
 #endif
 

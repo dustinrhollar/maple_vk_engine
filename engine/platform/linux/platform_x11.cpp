@@ -19,7 +19,7 @@ file_global xcb_key_symbols_t *KeySymbols;
 file_internal xcb_intern_atom_cookie_t intern_atom_cookie(xcb_connection_t *c, const jstring s);
 file_internal xcb_atom_t intern_atom(xcb_connection_t *c, xcb_intern_atom_cookie_t cookie);
 
-file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_t *event);
+file_internal void XcbHandleEvent(const xcb_generic_event_t *event);
 file_internal void XcbLoopWait();
 file_internal void XcbLoopPoll();
 file_internal void XcbCreateWindow();
@@ -79,10 +79,11 @@ void XcbWriteBufferToFile(jstring &file, void *buffer, u32 size)
     close(fd);
 }
 
-jstring XcbLoadFile(jstring &directory, jstring &filename)
+jstring XcbLoadFile(jstring &filename)
 {
     jstring result = {};
-    
+
+    #if 0
     jstring fullpath = directory + filename;
     int fd = open(fullpath.GetCStr(), O_RDONLY);
     if (fd > 0)
@@ -98,6 +99,7 @@ jstring XcbLoadFile(jstring &directory, jstring &filename)
         
         result = InitJString(buf, size);
     }
+    #endif
     
     return result;
 }
@@ -182,6 +184,68 @@ void XcbVulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance)
                     "Unable to create XCB Surface!\n");
 }
 
+i32 XcbFormatString(char *buff, i32 len, char* fmt, ...)
+{
+    return 0;
+}
+
+void XcbPrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
+{
+
+}
+
+inline void mprint(char *fmt, ...)
+{
+}
+
+inline void mprinte(char *fmt, ...)
+{
+}
+
+
+void XcbPrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
+{
+
+}
+
+void XcbCopyFileIfChanged(const char *Destination, const char *Source)
+{
+
+}
+
+u64 XcbGetWallClock()
+{
+    return 0;
+}
+
+r32 XcbGetSecondsElapsed(r32 start, u32 end)
+{
+    return 0.0f;
+}
+
+void XcbRaiseError(ErrorCode error, char *fmt, ...)
+{
+}
+
+void* XcbRequestMemory(u64 Size)
+{
+    return nullptr;
+}
+
+void XcbReleaseMemory(void *Ptr)
+{
+}
+
+u32  XcbComputeTrailingZero(u64 Value)
+{
+    return 0;
+}
+
+u32  XcbComputeLeadingZero(u64 Value)
+{
+    return 0;
+}
+
 file_internal void StartupRoutines()
 {
     XcbEnableLogging();
@@ -215,8 +279,8 @@ file_internal void ShutdownRoutines()
     mm::ShutdownMemoryManager();
 }
 
-file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_t *ev)
-{
+file_internal void XcbHandleEvent(const xcb_generic_event_t *ev)
+{  
     switch (ev->response_type & 0x7f) {
         case XCB_CONFIGURE_NOTIFY:
         {
@@ -229,7 +293,7 @@ file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_
                 {
                     ClientWidth  = notify->width;
                     ClientHeight = notify->height;
-                    FlagGameResize();
+                    //FlagGameResize();
                 }
                 else
                 {
@@ -241,7 +305,9 @@ file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_
         
         case XCB_KEY_PRESS:
         {
-            const xcb_key_press_event_t *press = reinterpret_cast<const xcb_key_press_event_t *>(ev);
+	    EventKey Key;
+
+	    const xcb_key_press_event_t *press = reinterpret_cast<const xcb_key_press_event_t *>(ev);
             
             
             xcb_keysym_t keysym = xcb_key_symbols_get_keysym(KeySymbols,
@@ -260,22 +326,22 @@ file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_
                 
                 case XK_Up:
                 { // key up
-                    input->KEY_ARROW_UP = 1;
+                    Key = KEY_Up;
                 } break;
                 
                 case XK_Down:
                 { // key down
-                    input->KEY_ARROW_DOWN = 1;
+                    Key = KEY_Down;
                 } break;
                 
                 case XK_Left:
                 { // key up
-                    input->KEY_ARROW_LEFT = 1;
+                    Key = KEY_Left;
                 } break;
                 
                 case XK_Right:
                 { // key down
-                    input->KEY_ARROW_RIGHT = 1;
+                    Key = KEY_Right;
                 } break;
                 
                 case XK_space:
@@ -285,22 +351,22 @@ file_internal void XcbHandleEvent(KeyboardInput *input, const xcb_generic_event_
                 
                 case XK_w:
                 { // key F
-                    input->KEY_W = 1;
+                    Key = KEY_w;
                 } break;
                 
                 case XK_s:
                 {
-                    input->KEY_S = 1;
+                    Key = KEY_s;
                 } break;
                 
                 case XK_a:
                 {
-                    input->KEY_A = 1;
+                    Key = KEY_a;
                 } break;
                 
                 case XK_d:
                 {
-                    input->KEY_D = 1;
+                    Key = KEY_d;
                 } break;
                 
                 default:
@@ -339,7 +405,7 @@ file_internal void XcbLoopWait()
                     
                     ClientWidth  = notify->width;
                     ClientHeight = notify->height;
-                    FlagGameResize();
+                    //FlagGameResize();
                     return;
                 }
             } break;
@@ -438,7 +504,7 @@ int main()
     IsRunning = false;
     
     StartupRoutines();
-    GameInit();
+    //GameInit();
     
     xcb_map_window(xcb_info.Connection, xcb_info.Window);
     xcb_flush(xcb_info.Connection);
@@ -446,23 +512,19 @@ int main()
     IsRunning = true;
     while (IsRunning)
     {
-        FrameInput frame_input = {0};
-        
         while (true)
         {
             xcb_generic_event_t *ev = xcb_poll_for_event(xcb_info.Connection);
             if (!ev) break;
             
-            XcbHandleEvent(&frame_input.Keyboard, ev);
+            XcbHandleEvent(ev);
             free(ev); // not sure how i feel about this...
         }
-        
-        GameUpdateAndRender(frame_input);
         
         // TODO(Dustin): TIMING
     }
     
-    GameShutdown();
+    //GameShutdown();
     ShutdownRoutines();
     
     xcb_destroy_window(xcb_info.Connection, xcb_info.Window);

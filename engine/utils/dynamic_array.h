@@ -129,7 +129,7 @@ DynamicArray<T>::DynamicArray(const DynamicArray& cpy)
 , cap(cpy.cap)
 {
     ptr = (T*)parray_alloc(sizeof(T) * cap);
-    for (int i = 0; i < size; ++i) ptr[i] = cpy.ptr[i];
+    for (u32 i = 0; i < size; ++i) ptr[i] = cpy.ptr[i];
     //memcpy(ptr, cpy.ptr, sizeof(T)*size);
 }
 

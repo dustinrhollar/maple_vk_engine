@@ -12,7 +12,6 @@ DEV_UI_DRAW_CALLBACK(MapleDevUi)
     
     // Render to generate draw buffers
     ImGui::Render();
-    ImDrawData* ImDrawData = ImGui::GetDrawData();
     MapleDevGuiDraw(DevGui, CommandBuffer);
     ImGui::EndFrame();
 }

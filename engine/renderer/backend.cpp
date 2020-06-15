@@ -273,7 +273,6 @@ void GpuStageEntry(frame_params *FrameParams)
             
             case GpuCmd_EndFrame:
             {
-                gpu_end_frame_info *Info = static_cast<gpu_end_frame_info*>(GpuCmd.Data);
             } break;
             
             case GpuCmd_SetScissor:

@@ -51,14 +51,14 @@ namespace event
     template<class T>
         void Subscribe(void (*fn_callback)(void *instance, T event), void *inst)
     {
-        Subscribe(EventIdManager<T>::STATIC_EVENT_ID, fn_callback, inst);
+        Subscribe(EventIdManager<T>::STATIC_EVENT_ID, reinterpret_cast<void*>(fn_callback), inst);
     }
     
-    void Unsubscribe(u64 event_id, void *callback, void *inst);
+    void Unsubscribe(u64 event_id, void *fn_callback, void *inst);
     template<class T>
         void Unsubscribe(void (*fn_callback)(void *instance, T event), void *inst)
     {
-        Unsubscribe(EventIdManager<T>::STATIC_EVENT_ID, fn_callback, inst);
+      Unsubscribe(EventIdManager<T>::STATIC_EVENT_ID, reinterpret_cast<void*>(fn_callback), inst);
     }
     
     void RetrieveSubscribers(u64 event_id, SubscriberList **subscribers);
@@ -70,7 +70,7 @@ namespace event
         RetrieveSubscribers(EventIdManager<T>::STATIC_EVENT_ID, &subscribers);
         assert(subscribers != nullptr);
         
-        for (int i = 0; i < subscribers->Size; ++i)
+        for (u32 i = 0; i < subscribers->Size; ++i)
         {
             EventSubscriber subscriber = subscribers->Ptr[i];
             
