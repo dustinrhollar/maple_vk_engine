@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <linux/limits.h>
+#include <sys/sendfile.h>
 
 file_global u32 ClientWidth;
 file_global u32 ClientHeight;
@@ -83,9 +84,10 @@ jstring XcbLoadFile(jstring &filename)
 {
     jstring result = {};
 
-    #if 0
-    jstring fullpath = directory + filename;
-    int fd = open(fullpath.GetCStr(), O_RDONLY);
+    jstring ExePath = XcbGetExeFilepath();
+    
+    jstring Fullpath = ExePath + filename;
+    int fd = open(Fullpath.GetCStr(), O_RDONLY);
     if (fd > 0)
     {
         // determine file size
@@ -99,17 +101,35 @@ jstring XcbLoadFile(jstring &filename)
         
         result = InitJString(buf, size);
     }
-    #endif
+
+    ExePath.Clear();
+    Fullpath.Clear();
     
     return result;
 }
 
 void XcbDeleteFile(jstring &file)
 {
+    jstring ExePath = XcbGetExeFilepath();
+    jstring Fullpath = ExePath + file;
+
+    int Ret = remove(Fullpath.GetCStr());
+    if (Ret == -1)
+    {
+	mprinte("Failed to remove file!\n");
+    }
+
+    ExePath.Clear();
+    Fullpath.Clear();
 }
 
 void XcbExecuteCommand(jstring &system_cmd)
 {
+    int Ret = system(system_cmd.GetCStr());
+    if (!Ret)
+    {
+	mprinte("Failed to execute command \"%s\"!\n", system_cmd.GetCStr());
+    }
 }
 
 void XcbEnableLogging()
@@ -184,33 +204,129 @@ void XcbVulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance)
                     "Unable to create XCB Surface!\n");
 }
 
+i32 __XcbFormatString(char *buff, i32 len, char *fmt, va_list Args)
+{
+    i32 needed_chars = vsnprintf(buff, len, fmt, Args);    
+    return needed_chars;    
+}
+
 i32 XcbFormatString(char *buff, i32 len, char* fmt, ...)
 {
-    return 0;
+    i32 Result;
+    va_list Args;
+    va_start(Args, fmt);
+    Result = __XcbFormatString(buff, len, fmt, Args);
+    va_end(Args);
+    
+    return Result;
+}
+
+void __XcbPrintMessage(char *fmt, va_list Args)
+{
+    vprintf(fmt, Args);    
 }
 
 void XcbPrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
 {
+    // TODO(Dustin): Do actual logging, but for now, just print...
+    va_list Args;
+    va_start(Args, fmt);
+    __XcbPrintMessage(fmt, Args);
+    va_end(Args);
+}
 
+void XcbPrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
+{
+    // TODO(Dustin): Do actual logging, but for now, just print...
+    va_list Args;
+    va_start(Args, fmt);
+    __XcbPrintMessage(fmt, Args);
+    va_end(Args);
 }
 
 inline void mprint(char *fmt, ...)
 {
+    // TODO(Dustin): Do actual logging, but for now, just print...
+    va_list Args;
+    va_start(Args, fmt);
+    __XcbPrintMessage(fmt, Args);
+    va_end(Args);
 }
 
 inline void mprinte(char *fmt, ...)
 {
-}
-
-
-void XcbPrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
-{
-
+    // TODO(Dustin): Do actual logging, but for now, just print...
+    va_list Args;
+    va_start(Args, fmt);
+    __XcbPrintMessage(fmt, Args);
+    va_end(Args);
 }
 
 void XcbCopyFileIfChanged(const char *Destination, const char *Source)
 {
+    jstring ExePath = XcbGetExeFilepath();
 
+    jstring DstPath = ExePath + Destination;
+    jstring SrcPath = ExePath + Source;
+
+    struct stat DstFileAttrib;
+    struct stat SrcFileAttrib;
+
+    int DstRet = stat(DstPath.GetCStr(), &DstFileAttrib);
+    int SrcRet = stat(SrcPath.GetCStr(), &SrcFileAttrib);
+
+    if (!SrcRet)
+    {
+	mprinte("Unable to retrieve source file attributes!\n");
+    }
+    else if (!DstRet)
+    {
+	// copy the file - destination does not exist
+	int DstFile = open(DstPath.GetCStr(), O_RDONLY, 0);
+	int SrcFile = open(SrcPath.GetCStr(), O_WRONLY|O_CREAT, 0644);
+
+	struct stat ResultFileStat;
+	fstat(SrcFile, &ResultFileStat);
+
+	if (sendfile(DstFile, SrcFile, 0, ResultFileStat.st_size) == -1)
+	{
+	    mprinte("Something went wrong copying file \"%s\"!\n", Source);
+	}
+
+	close(DstFile);
+	close(SrcFile);
+    }
+    else
+    {
+	// Both source and dst exist, check to see if
+	// the dst file is out of data - if so, perform
+	// the copy, otherwise don't copy the source file
+	time_t DstSec = DstFileAttrib.st_mtim.tv_sec;
+	time_t SrcSec = SrcFileAttrib.st_mtim.tv_sec;
+
+	long DstNs = DstFileAttrib.st_mtim.tv_nsec;
+	long SrcNs = SrcFileAttrib.st_mtim.tv_nsec;
+
+	if (DstSec != SrcSec || DstNs != SrcNs)
+	{ // file has changed
+	    int DstFile = open(DstPath.GetCStr(), O_RDONLY, 0);
+	    int SrcFile = open(SrcPath.GetCStr(), O_WRONLY|O_TRUNC, 0644);
+
+	    struct stat ResultFileStat;
+	    fstat(SrcFile, &ResultFileStat);
+
+	    if (sendfile(DstFile, SrcFile, 0, ResultFileStat.st_size) == -1)
+	    {
+		mprinte("Something went wrong copying file \"%s\"!\n", Source);
+	    }
+
+	    close(DstFile);
+	    close(SrcFile);
+	}
+    }
+
+    DstPath.Clear();
+    SrcPath.Clear();
 }
 
 u64 XcbGetWallClock()
@@ -223,6 +339,7 @@ r32 XcbGetSecondsElapsed(r32 start, u32 end)
     return 0.0f;
 }
 
+// TODO(Dustin): Do this thing...
 void XcbRaiseError(ErrorCode error, char *fmt, ...)
 {
 }
@@ -263,7 +380,6 @@ file_internal void StartupRoutines()
     if (!vk::InitializeVulkan())
     {
         printf("Unable to initialize Vulkan!\n");
-        //glfwTerminate();
         ecs::ShutdownECS();
         mm::ShutdownMemoryManager();
         

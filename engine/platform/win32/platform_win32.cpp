@@ -393,26 +393,7 @@ i32 __Win32FormatString(char *buff, i32 len, char *fmt, va_list list)
         needed_chars = vsnprintf(buff, len, fmt, list);
     }
     
-    return needed_chars;
-    
-#if 0
-    // since jstring contains a stack allocated buffer, we might not
-    // actually need to resize
-    if (needed_chars >= sizeof(result.sptr))
-    {
-        result = InitJString(needed_chars);
-        
-        needed_chars = vsnprintf(result.hptr, needed_chars, fmt, list);
-        result.len = needed_chars;
-        
-        if ((result.heap) && result.len > result.reserved_heap_size)
-        {
-            // TODO(Dustin): Use new print methods
-            mprinte("Failed to format a string!\n");
-            result.Clear();
-        }
-    }
-#endif
+    return needed_chars;    
 }
 
 void __Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char *fmt, va_list args)
