@@ -12,8 +12,8 @@ void InitFrameParams(frame_params *FrameParams)
 
 void FreeFrameParams(frame_params *FrameParams)
 {
-    pfree(FrameParams->RenderCommands);
-    pfree(FrameParams->GpuCommands);
+    //pfree(FrameParams->RenderCommands);
+    //pfree(FrameParams->GpuCommands);
     FrameParams->RenderCommandsCount = 0;
     FrameParams->RenderCommandsCap   = 0;
     FrameParams->GpuCommandsCount    = 0;

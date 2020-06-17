@@ -1310,6 +1310,7 @@ Node List
         {
             if (Type == Asset_Model)
             {
+                // NOTE(Dustin): Yo, this isn't using the passed AssetList!
                 *Assets = talloc<asset>(AssetRegistry.ModelAssets.Size);
                 *Count  = AssetRegistry.ModelAssets.Size;
                 
@@ -1326,7 +1327,37 @@ Node List
         }
         else
         {
-            // TODO(Dustin): If an asset list is not provided, filter from the main Registry
+            switch (Type)
+            {
+                case Asset_Model:
+                {
+                    *Assets = talloc<asset>(AssetRegistry.ModelAssets.Size);
+                    *Count  = AssetRegistry.ModelAssets.Size;
+                    
+                    for (u32 Idx = 0; Idx < *Count; ++Idx)
+                    {
+                        u32 AssetIdx = AssetRegistry.ModelAssets.Ptr[Idx].Index;
+                        (*Assets)[Idx] = *AssetRegistry.Assets[AssetIdx];
+                    }
+                    
+                } break;
+                
+                case Asset_Material:
+                {
+                    *Count = AssetRegistry.MaterialMap.Count;
+                    *Assets = talloc<asset>(*Count);
+                    
+                    u32 MatIdx = 0;
+                    for (u32 AssetIdx = 0; AssetIdx < AssetRegistry.Count; ++AssetIdx)
+                    {
+                        asset *Asset = AssetRegistry.Assets[AssetIdx];
+                        if (Asset->Type == Asset_Material) (*Assets)[MatIdx++] = *Asset;
+                    }
+                    
+                } break;
+                
+                default: break;
+            }
             
         }
     }
@@ -1406,11 +1437,9 @@ Node List
         mm::FreeResourceAllocator(&AssetAllocator);
     }
     
-    
-    //~ Material Asset Functionality
-    
-    
-    
-    //~ Texture Asset Functionality
+    asset_registry* GetAssetRegistry()
+    {
+        return &AssetRegistry;
+    }
     
 }; // masset

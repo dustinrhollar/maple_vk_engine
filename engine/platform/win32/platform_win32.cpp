@@ -1412,6 +1412,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         
 #endif
         
+        // Release frame
+        
         FrameCount++;
     }
     

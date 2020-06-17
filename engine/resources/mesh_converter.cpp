@@ -282,6 +282,9 @@ namespace masset
         Mesh.PrimitivesCount = CgMesh->primitives_count;
         Mesh.PrimitivesIdx   = talloc<i32>(Mesh.PrimitivesCount);
         
+        if (CgMesh->name)
+            Mesh.MeshName = pstring(CgMesh->name);
+        
         for (int i = 0; i < CgMesh->primitives_count; ++i)
         {
             i32 PrimitiveIdx = ConvertPrimitive(Converter, CgMesh->primitives + i);

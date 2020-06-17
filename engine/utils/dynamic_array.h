@@ -306,4 +306,6 @@ void DynamicArray<T>::Resize(unsigned new_capacity)
 
 #endif
 
-#endif //DYNAMIC_ARRAY_H
+
+#endif
+

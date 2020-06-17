@@ -261,6 +261,8 @@ struct asset
 
 namespace masset
 {
+    struct asset_registry;
+    
     void Init();
     void Free();
     
@@ -274,6 +276,10 @@ namespace masset
     
     // Retrieves a list of assets of the specified type
     DynamicArray<asset*> Filter(asset_type Type);
+    
+    // Get the Asset Registry. Used for dev_only!!!!
+    asset_registry* GetAssetRegistry();
+    
 }; // masset
 
 

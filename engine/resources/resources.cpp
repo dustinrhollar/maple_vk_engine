@@ -1,4 +1,6 @@
 
+// TODO(Dustin): Handle Resize for resouces that are dependent on swapchain image...
+
 namespace mm
 {
     void InitDynUniformPool(dyn_uniform_pool *Pool, dynamic_buffer_create_info *Info)

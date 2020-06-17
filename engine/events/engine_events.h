@@ -3,6 +3,9 @@
 
 // Engine events are pre-defined events that a client can
 // register to.
+#define EVENT_KEY_PRESS_CALLBACK(fn) static void fn(void *Instance, KeyPressEvent PressEvent)
+#define EVENT_RESIZE_CALLBACK(fn) static void fn(void *Instance, ResizeEvent Event)
+
 
 // TODO(Dustin): Subscribe to specific key press events
 

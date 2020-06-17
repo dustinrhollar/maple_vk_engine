@@ -1,3 +1,5 @@
+// TODO(Dustin): Create a resizable array for draw commands that
+// use temp. memory rather than global memory...
 
 void RenderStageInit(frame_params *FrameParams)
 {
@@ -9,6 +11,7 @@ void RenderStageEntry(frame_params *FrameParams)
     
     // List of draw commands ordered by material. To determine the material of a list,
     // peek the first element to find its material id.
+    // TODO(Dustin): Use temporary storage instead
     DynamicArray<DynamicArray<render_draw_command*>> MaterialsToDraw =
         DynamicArray<DynamicArray<render_draw_command*>>(10);
     
@@ -230,4 +233,9 @@ void RenderStageEntry(frame_params *FrameParams)
             AddGpuCommand(FrameParams, { GpuCmd_Draw, DrawInfo });
         }
     }
+    
+    //~ Clean Memory
+    for (u32 Mat = 0; Mat < MaterialsToDraw.size; ++Mat)
+        MaterialsToDraw[Mat].Reset();
+    MaterialsToDraw.Reset();
 }
