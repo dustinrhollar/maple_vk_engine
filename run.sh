@@ -37,6 +37,6 @@ fi
 if [ "$1" == "" ];
 then
 	pushd $BUILD_DIR
-		./example
+		./maple.exe
 	popd
 fi

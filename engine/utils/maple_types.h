@@ -1,32 +1,29 @@
-#ifndef MAPLE_TYPES
-#define MAPLE_TYPES
+#ifndef MAPLE_UTILS_MAPLE_TYPES_H
+#define MAPLE_UTILS_MAPLE_TYPES_H
 
 #include <stdint.h>
 
-#define file_internal static
 #define file_global   static
+#define file_internal static
 #define local_persist static
 
-#define i8  int8_t
-#define i16 int16_t
-#define i32 int32_t
-#define i64 int64_t
+typedef int8_t  i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
 
-#define u8  uint8_t
-#define u16 uint16_t
-#define u32 uint32_t
-#define u64 uint64_t
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
 
-#define r32 float
-#define r64 double
-
-#define uptr uintptr_t
-#define iptr intptr_t
+typedef uintptr_t uptr;
+typedef intptr_t iptr;
 
 typedef union
 {
-    struct { i64 upper, lower; };
-    i64 bits[2];
+    struct { i64 Upper, Lower; };
+    i64 Bits[2];
 } u128;
 
 // Defines for calculating size
@@ -46,8 +43,4 @@ typedef union
 #define _256MB _MB(256)
 #define _1GB   _GB(1)
 
-#define EID u64
-
-#define BIT(x) (1<<(x))
-
-#endif
+#endif //MAPLE_UTILS_MAPLE_TYPES_H
