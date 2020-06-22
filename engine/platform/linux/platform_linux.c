@@ -9,6 +9,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <linux/limits.h>
+#include <sys/mman.h>
+#include <errno.h>
+#include <unistd.h>
+#include <string.h>
 
 typedef struct
 {
@@ -31,11 +35,55 @@ file_internal xcb_intern_atom_cookie_t XcbInternAtomCookie(xcb_connection_t *c, 
 file_internal xcb_atom_t XcbInternAtom(xcb_connection_t *c, xcb_intern_atom_cookie_t cookie);
 
 file_internal void XcbHandleEvent(xcb_info *Xinfo, const xcb_generic_event_t *event);
-file_internal void XcbLoopWait();
-file_internal void XcbLoopPoll();
 file_internal void XcbCreateWindow(xcb_info *Info);
 file_internal void XcbInitConnection(xcb_info *Info);
 
+void* PlatformRequestMemory(u64 Size)
+{
+    i32 PageSize = getpagesize();
+    printf("Platform page size is %d\n", PageSize);
+
+    Size = (Size + PageSize - 1) & ~(PageSize - 1);
+
+    printf("Request %ld memory\n", Size);
+    void *Result = mmap(0, Size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (Result == MAP_FAILED)
+    {
+        printf("ERROR: FAILED TO MAP MEMORY: %s\n", strerror(errno));
+
+        Result = NULL;
+    }
+
+    // NOTE(Dustin): mmap should be set to zero with MAP_ANON
+    // What about loading into physical memory?
+    return Result;
+}
+
+// NOTE(Dustin): munmap currently fails. This isn't too big of a deal since
+// mmapp'd memory is released at shutdown, but if I want to stream large files
+// in the future using mmap, then this error has to be fixed.
+void PlatformReleaseMemory(void *Ptr, u64 Size)
+{
+    i32 PageSize = getpagesize();
+    Size = (Size + PageSize - 1) & ~(PageSize - 1);
+    printf("Releasing %ld memory\n", Size);
+    int Res = munmap(Ptr, Size);
+    if (!Res)
+    {
+        printf("ERROR: Failed to unmap memory: %s\n", strerror(errno));
+    }
+}
+
+// Timing
+u64 PlatformGetWallClock()
+{
+    return 0;
+}
+
+r32 PlatformGetElapsedSeconds(u64 Start, u64 End)
+{
+    return 0.0f;
+}
 
 file_internal xcb_intern_atom_cookie_t XcbInternAtomCookie(xcb_connection_t *c, const char* s, u32 len)
 {
@@ -208,12 +256,6 @@ file_internal void XcbHandleEvent(xcb_info *Xinfo, const xcb_generic_event_t *ev
    }
 }
 
-file_internal void XcbLoopWait()
-{}
-
-file_internal void XcbLoopPoll()
-{}
-
 int main(void)
 {
     XcbInitConnection(&XcbInfo);
@@ -221,6 +263,12 @@ int main(void)
 
     xcb_map_window(XcbInfo.Connection, XcbInfo.Window);
     xcb_flush(XcbInfo.Connection);
+
+    // Allocator testing
+    free_allocator GlobalMemory = {0};
+    FreeListAllocatorInit(&GlobalMemory, 4096, &PlatformRequestMemory);
+
+    FreeListAllocatorFree(&GlobalMemory, &PlatformReleaseMemory);
 
     IsRunning = true;
 
