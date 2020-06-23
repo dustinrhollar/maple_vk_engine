@@ -21,6 +21,7 @@ void FreeListAllocatorInit(free_allocator *Allocator, u64 Size, void* Ptr);
 void FreeListAllocatorFree(free_allocator *Allocator);
 
 void* FreeListAllocatorAlloc(free_allocator *Allocator, u64 Size);
+void* FreeListAllocatorRealloc(free_allocator *Allocator, void *Ptr, u64 Size);
 void FreeListAllocatorAllocFree(free_allocator *Allocator, void *Ptr);
 
 #endif //MAPLE_MM_FREE_LIST_ALLOCATOR
