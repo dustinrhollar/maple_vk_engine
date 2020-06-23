@@ -274,6 +274,48 @@ float ReadFloat(char *buffer)
 }
 
 // does not contain the sign
+i8 StrToInt8(char *str, char *stop)
+{
+    i8 result = 0;
+    i8 multiplier = 1;
+    
+    char *c = str;
+    if (str[0] == '-')
+    {
+        multiplier = -1;
+        ++c;
+    }
+    
+    for (; c < stop; ++c)
+    {
+        result = result * 10 + c[0] - '0';
+    }
+    
+    return result * multiplier;
+}
+
+// does not contain the sign
+i16 StrToInt16(char *str, char *stop)
+{
+    i16 result = 0;
+    i16 multiplier = 1;
+    
+    char *c = str;
+    if (str[0] == '-')
+    {
+        multiplier = -1;
+        ++c;
+    }
+    
+    for (; c < stop; ++c)
+    {
+        result = result * 10 + c[0] - '0';
+    }
+    
+    return result * multiplier;
+}
+
+// does not contain the sign
 int StrToInt(char *str, char *stop)
 {
     int result = 0;
@@ -316,6 +358,30 @@ i64 StrToInt64(char *str, char *stop)
 }
 
 // does not contain the sign
+u8 StrToUInt8(char *str, char *stop)
+{
+    u8 result = 0;
+    for (char *c = str; c < stop; ++c)
+    {
+        result = result * 10 + c[0] - '0';
+    }
+    
+    return result;
+}
+
+// does not contain the sign
+u16 StrToUInt16(char *str, char *stop)
+{
+    u16 result = 0;
+    for (char *c = str; c < stop; ++c)
+    {
+        result = result * 10 + c[0] - '0';
+    }
+    
+    return result;
+}
+
+// does not contain the sign
 u32 StrToUInt(char *str, char *stop)
 {
     u32 result = 0;
@@ -343,6 +409,11 @@ u64 StrToUInt64(char *str, char *stop)
 r32 StrToR32(char *buffer)
 {
     return (r32)strtod(buffer, NULL);
+}
+
+r64 StrToR64(char *buffer)
+{
+    return (r64)strtod(buffer, NULL);
 }
 
 /**

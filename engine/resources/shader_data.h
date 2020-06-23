@@ -36,14 +36,7 @@ enum shader_type
     Shader_Compute,
 };
 
-// source: https://github.com/khalladay/VkMaterialSystem/blob/master/ShaderPipeline/shaderdata.h
-struct block_member
-{
-	u32     Size;
-    u32     Offset;
-    jstring Name;
-};
-
+#if 0
 struct input_block_serial
 {
     u32                        Size;
@@ -72,27 +65,6 @@ struct shader_data_serial
     DynamicArray<u32>                StaticSets;
 };
 
-// TODO(Dustin): Determine if it possible to have duplicated bind points.
-// For example, can bind points at set=0 binding=0 be used for Model in the vertex
-// and color in the fragment?
-struct input_block
-{
-    // NOTE(Dustin):
-    // Set and binding can be found by their position
-    // in external arrays...
-    // shader_descriptor_def will be the set position in the
-    // material data struct.
-    // input_block will be the binding position in the shader
-    // descriptor struct.
-    
-    // Block definition
-    jstring       Name;
-    bool          IsTextureBlock;
-    u32           Size;
-    
-    block_member *Members;
-    u32           MembersCount;
-};
 
 struct shader_descriptor_def
 {
@@ -112,15 +84,97 @@ struct shader_descriptor_def
 #endif
 };
 
+#endif
+
+
+enum block_data_type
+{
+    DataType_Unknown,
+    DataType_Void,
+    DataType_Boolean,
+    DataType_SByte,
+    DataType_UByte,
+    DataType_Short,
+    DataType_UShort,
+    DataType_Int,
+    DataType_UInt,
+    DataType_Int64,
+    DataType_UInt64,
+    DataType_AtomicCount, // not supported as of now
+    DataType_Half,
+    DataType_Float,
+    DataType_Double,
+    DataType_Struct,
+    DataType_Image,
+    DataType_SampledImage,
+    DataType_Sampler,
+    DataType_AccelerationStructureNV,
+    
+    // Special types that aren't detected by spirv.
+    DataType_Vec2,
+    DataType_Vec3,
+    DataType_Vec4,
+    DataType_Mat3,
+    DataType_Mat4,
+};
+
+struct data_member_struct
+{
+    struct block_member *Members;
+    u32 MembersCount;
+};
+
+struct block_member
+{
+	jstring     Name;
+    u32         Size;
+    u32         Offset;
+    
+    // Base data type for the data member
+    block_data_type Type = DataType_Unknown;
+    // Used only if the type is DataType_Struct.
+    // The actual values can be found by:
+    // InputBlock.BlockMemory + BlockMember.Offset
+    data_member_struct Struct;
+};
+
+struct input_block
+{
+    u32 Set;
+    i32 Binding;
+    
+    // Block definition
+    jstring       Name;
+    bool          IsTextureBlock;
+    u32           Size;
+    
+    block_member *Members;
+    u32           MembersCount;
+    
+    u32           UniformOffset; // Offset into the uniform allocator. needed to bind this memory slot.
+    void         *BlockMemory; // Members will write their memory here
+};
+
 struct shader_data
 {
-    input_block            PushConstants;
+    u32                    PushConstantsCount;
+    input_block           *PushConstants;
     
+    u32                    GlobalInputBlockCount;
+    input_block           *GlobalInputBlock;
+    
+    u32                    ObjectInputBlockCount;
+    input_block           *ObjectInputBlock;
+    
+    u32                    MaterialInputBlockCount;
+    input_block           *MaterialInputBlock;
+    
+    
+#if 0
     // descriptor ids for all attached descriptor sets
     shader_descriptor_def *DescriptorSets;
     u32                    DescriptorSetsCount;
     
-#if 0
     // NOTE(Dustin): These might not be needed since since the
     // shader_descriptor_def list is ordered by descriptor set.
     // a list of block data is contained within each descriptor

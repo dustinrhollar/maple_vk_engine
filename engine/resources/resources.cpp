@@ -64,6 +64,77 @@ namespace mm
         Pool->Offset = Offset;
     }
     
+    
+    
+    void DynUniformLinearAllocationInit(dyn_uniform_linear_alloc *Allocator, u32 TotalSize)
+    {
+        u64 MinAlignment  = vk::GetMinUniformMemoryOffsetAlignment();
+        u32 SwapChainImageCount = vk::GetSwapChainImageCount();
+        
+        Allocator->Alignment   = MinAlignment;
+        Allocator->Offset      = 0;
+        
+        u64 BufferSize = (MinAlignment + TotalSize - 1) & ~(MinAlignment - 1);
+        
+        VkBufferCreateInfo create_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+        create_info.size  = BufferSize;
+        create_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        
+        VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        vk::CreateVmaBuffer(create_info,
+                            alloc_info,
+                            Allocator->Buffer.Handle,
+                            Allocator->Buffer.Memory,
+                            Allocator->Buffer.AllocationInfo);
+        Allocator->Buffer.Size = BufferSize;
+    }
+    
+    void DynUniformLinearAllocationFree(dyn_uniform_linear_alloc *Allocator)
+    {
+        vk::DestroyVmaBuffer(Allocator->Buffer.Handle,
+                             Allocator->Buffer.Memory);
+        
+        Allocator->Offset = 0;
+        Allocator->Alignment = 0;
+    }
+    
+    // Returns the offset this allocation will be at in the allocator
+    void DynUniformLinearAllocationAlloc(dyn_uniform_linear_alloc *Allocator,
+                                         void                    **Data,
+                                         u32                      *Offset,
+                                         u32                       AllocationSize)
+    {
+        u32 Result = 0;
+        
+        AllocationSize = (Allocator->Alignment + AllocationSize - 1) & ~(Allocator->Alignment - 1);
+        
+        if (Allocator->Offset + AllocationSize > Allocator->Buffer.Size)
+        {
+            mprinte("Attempting to allocate memory from a Dynamic Uniform Linear Allocator, but there is not enough memory for the allocation!\n");
+            
+            // NOTE(Dustin): Probably don't want to handle the error in this manner...
+            Result = Allocator->Buffer.Size;
+        }
+        else
+        {
+            *Offset = Allocator->Offset;
+            *Data = (char*)Allocator->Buffer.AllocationInfo.pMappedData + *Offset;
+            
+            Allocator->Offset += AllocationSize;
+        }
+    }
+    
+    void DynUniformLinearAllocationSetMemory(dyn_uniform_linear_alloc *Allocator, u32 Offset, void *Data, u32 DataSize)
+    {
+        // NOTE(Dustin): Should I vk::Idle() here? I don't really have a good approach right now to update
+        // a buffer like this. It is expected that these buffers are not updated all that often at runtime...
+        memcpy((char*)Allocator->Buffer.AllocationInfo.pMappedData + Offset, Data, DataSize);
+    }
+    
+    
 }; // mm
 
 namespace mresource
@@ -95,6 +166,11 @@ namespace mresource
         u32              MaxSetType;
     } file_global PoolList;
     
+    
+    // 100 is an arbritrily picked constant
+    file_global const u32 MAX_LOADED_COMBINED_IMAGES = 100;
+    
+    
     struct resource_registry
     {
         resource **Resources;
@@ -105,18 +181,34 @@ namespace mresource
         // have to be filled in with an empty descriptor layout
         resource_id_t EmptyDescriptorLayout;
         
+        //~ Global Descriptor Bindings
         // Default Global Descriptor, contains VP buffer
         resource_id_t DefaultGlobalDescriptor;
         resource_id_t DefaultGlobalDescriptorLayout;
+        resource_id_t DefaultGlobalBuffer;
         
+        //~ Object Descriptor Bindings
         // Set = 1 is reserved for Model Descriptor
         // All renderable objects that is not a compute
         // material will use this descriptor.
         resource_id_t ObjectDescriptor;
         resource_id_t ObjectDescriptorLayout;
-        
-        resource_id_t DefaultGlobalBuffer;
         resource_id_t ObjectDynamicBuffer;
+        
+        //~ PBR Metallic Material Information
+        // Dynamic Buffers (Linear Allocators) for shader data
+        resource_id_t MaterialDynUniform;
+        resource_id_t PbrMaterialDescriptorLayout;
+        resource_id_t PbrMaterialDescriptor;
+        VkPushConstantRange PbrMaterialPushConstantRange;
+        
+        //~ Centralized Texture listings
+        // used as an index into the combined image array for both
+        // software and the shader pipeline
+        u32 CombinedImageCount = 0;
+        // List of image infos that can be used for descriptor writes.
+        VkDescriptorImageInfo MaterialImageInfos[MAX_LOADED_COMBINED_IMAGES];
+        DynamicArray<resource_id_t> NewImages;
         
     } file_global ResourceRegistry;
     
@@ -285,6 +377,9 @@ namespace mresource
     {
         InitDescriptorPoolList(&PoolList, 3);
         
+        // a special array that tracks new images
+        ResourceRegistry.NewImages = DynamicArray<resource_id_t>(5);
+        
         //PoolList.AvailableTypes = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER |
         //VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC               |
         //VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -416,6 +511,60 @@ namespace mresource
         DescriptorUpdateInfos->WriteInfosCount = 2;
         
         AddGpuCommand(FrameParams, {GpuCmd_UpdateDescriptor, DescriptorUpdateInfos});
+        
+        
+        //~ Material Allocator for uploading material data.
+        {
+            mm::dyn_uniform_linear_alloc MaterialAllocator;
+            DynUniformLinearAllocationInit(&MaterialAllocator, _KB(1));
+            
+            resource MaterialAllocatorResource = {};
+            MaterialAllocatorResource.Type = Resource_DynamicBufferAllocator;
+            MaterialAllocatorResource.DynBufferAllocator = {MaterialAllocator};
+            
+            ResourceRegistry.MaterialDynUniform = RegistryAdd(&ResourceRegistry, MaterialAllocatorResource);
+        }
+        
+        {
+            // Create the Material Descriptor Information
+            VkDescriptorSetLayoutBinding Bindings[1]= {};
+            Bindings[0].binding            = 0;
+            Bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            Bindings[0].descriptorCount    = MAX_LOADED_COMBINED_IMAGES;
+            Bindings[0].stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
+            Bindings[0].pImmutableSamplers = nullptr;
+            
+            DescriptorLayoutCreateInfo = {};
+            DescriptorLayoutCreateInfo.BindingsCount = 1;
+            DescriptorLayoutCreateInfo.Bindings      = Bindings;
+            
+            ResourceRegistry.PbrMaterialDescriptorLayout = mresource::Load(FrameParams,
+                                                                           Resource_DescriptorSetLayout,
+                                                                           &DescriptorLayoutCreateInfo);
+            
+            
+            DescriptorCreateInfo.DescriptorLayouts = &ResourceRegistry.PbrMaterialDescriptorLayout;
+            DescriptorCreateInfo.SetCount          = 1;
+            
+            ResourceRegistry.PbrMaterialDescriptor = mresource::Load(FrameParams,
+                                                                     Resource_DescriptorSet,
+                                                                     &DescriptorCreateInfo);
+            
+            // Prep the descriptor write info
+            for (u32 Idx = 0; Idx < MAX_LOADED_COMBINED_IMAGES; ++Idx)
+            {
+                ResourceRegistry.MaterialImageInfos[Idx] = {};
+                ResourceRegistry.MaterialImageInfos[Idx].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                //MaterialImageInfos[Idx].imageView   = ImageResource.Image.Image.View;    // Not known right now
+                //MaterialImageInfos[Idx].sampler     = ImageResource.Image.Image.Sampler; // Not known right now
+            }
+            
+            // Push Constants
+            //ResourceRegistry.PbrMaterialPushConstantRange = {};
+            //ResourceRegistry.PbrMaterialPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            //ResourceRegistry.PbrMaterialPushConstantRange.offset     = 0;
+            //ResourceRegistry.PbrMaterialPushConstantRange.size       = 128;
+        }
     }
     
     void Free(frame_params *FrameParams)
@@ -638,6 +787,7 @@ namespace mresource
                 image_create_info *Info = static_cast<image_create_info*>(Data);
                 
                 Resource.Image = {};
+                Resource.Image.TextureIndex = ResourceRegistry.CombinedImageCount++;
                 Result = RegistryAdd(&ResourceRegistry, Resource);
                 
                 gpu_image_create_info *ImageInfo = talloc<gpu_image_create_info>();
@@ -649,6 +799,9 @@ namespace mresource
                 ImageInfo->AddressModeW = Info->AddressModeV;
                 ImageInfo->Image        = &ResourceRegistry.Resources[Result]->Image.Image;
                 AddGpuCommand(FrameParams, { GpuCmd_UploadImage, ImageInfo });
+                
+                // Queue the image to be updated for a descriptor write
+                ResourceRegistry.NewImages.PushBack(Result);
             } break;
             
             case Resource_Pipeline:
@@ -1019,8 +1172,63 @@ namespace mresource
         Result.ObjectDescriptorLayout        = ResourceRegistry.ObjectDescriptorLayout;
         Result.DefaultGlobalBuffer           = ResourceRegistry.DefaultGlobalBuffer;
         Result.ObjectDynamicBuffer           = ResourceRegistry.ObjectDynamicBuffer;
+        Result.MaterialDynUniform            = ResourceRegistry.MaterialDynUniform;
+        Result.PbrMaterialDescriptorLayout   = ResourceRegistry.PbrMaterialDescriptorLayout;
+        Result.PbrMaterialDescriptor         = ResourceRegistry.PbrMaterialDescriptor;
         
         return Result;
+    }
+    
+    // Allocates memory for the material from the Material Uniform Allocator.
+    // Data: pointer that gets set to the memory block
+    // Offset: Offset into the Uniform, needed for binding the material data
+    void AllocateMaterialMemory(void **Data, u32 *Offset, u32 Size)
+    {
+        mm::dyn_uniform_linear_alloc *Allocator = &ResourceRegistry
+            .Resources[ResourceRegistry.MaterialDynUniform]
+            ->DynBufferAllocator.Allocator;
+        
+        DynUniformLinearAllocationAlloc(Allocator, Data, Offset, Size);
+    }
+    
+    inline bool DoesTextureArrayNeedUpdate()
+    {
+        return ResourceRegistry.NewImages.size > 0;
+    }
+    
+    void RebindTextureArray()
+    {
+        while (ResourceRegistry.NewImages.size > 0)
+        {
+            resource_id_t Id;
+            ResourceRegistry.NewImages.Pop(Id);
+            
+            resource_image ResImage = ResourceRegistry.Resources[Id]->Image;
+            
+            ResourceRegistry.MaterialImageInfos[ResImage.TextureIndex].imageView = ResImage.Image.View;
+            ResourceRegistry.MaterialImageInfos[ResImage.TextureIndex].sampler   = ResImage.Image.Sampler;
+        }
+        
+        // one write per swap chain image
+        u32 SwapchainImageCount = vk::GetSwapChainImageCount();
+        VkWriteDescriptorSet *SetWrites = talloc<VkWriteDescriptorSet>(SwapchainImageCount);
+        
+        for (u32 Idx = 0; Idx < SwapchainImageCount; ++Idx)
+        {
+            resource_descriptor_set DescriptorSet = ResourceRegistry.Resources[ResourceRegistry.PbrMaterialDescriptor]
+                ->DescriptorSet;
+            
+            SetWrites[Idx] = {};
+            SetWrites[Idx].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            SetWrites[Idx].dstBinding      = 0;
+            SetWrites[Idx].dstArrayElement = 0;
+            SetWrites[Idx].descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+            SetWrites[Idx].descriptorCount = ResourceRegistry.CombinedImageCount;
+            SetWrites[Idx].dstSet          = DescriptorSet.DescriptorSets[Idx].Handle;
+            SetWrites[Idx].pImageInfo      = ResourceRegistry.MaterialImageInfos;
+        }
+        
+        vk::UpdateDescriptorSets(SetWrites, SwapchainImageCount);
     }
     
 }; // mresource

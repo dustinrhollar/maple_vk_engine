@@ -33,6 +33,7 @@ i64 StrToInt64(char *str, char *stop);
 u32 StrToUInt(char *str, char *stop);
 u64 StrToUInt64(char *str, char *stop);
 r32 StrToR32(char *buffer);
+r64 StrToR64(char *buffer);
 jstring UInt64ToStr(u64 data);
 
 void CharToBinaryBuffer(FileBuffer *buffer, const char *data, u32 count);

@@ -231,7 +231,7 @@ namespace masset
     
     
     //~  Model Asset Functionality
-    
+#if 0
     file_internal input_block_serial LoadInputBlock(FileBuffer *Buffer)
     {
         input_block_serial Result = {};
@@ -258,10 +258,276 @@ namespace masset
         
         return Result;
     }
+#endif
+    
+    block_member ParseMemberBlockFromConfig(config_obj_table *ReflConfig, config_obj *MemberBlockObj,
+                                            void *DataBlock, u32 DataBlockOffset = 0);
+    input_block ParseInputBlockFromConfig(config_obj_table *ReflConfig, config_obj *InputBlockObj);
+    
+    
+    
+    block_member ParseMemberBlockFromConfig(config_obj_table *ReflConfig, config_obj *MemberBlockObj,
+                                            void *DataBlock, u32 DataBlockOffset)
+    {
+        block_member Result = {};
+        
+        Result.Size   = GetConfigU32(MemberBlockObj, "Size");
+        Result.Offset = DataBlockOffset + GetConfigU32(MemberBlockObj, "Offset");
+        
+        u32 Type = GetConfigU32(MemberBlockObj, "Type");
+        Result.Type = static_cast<block_data_type>(Type);
+        
+        switch (Result.Type)
+        {
+            case DataType_Boolean:
+            {
+                bool *Bool = (bool*)((char*)DataBlock + Result.Offset);
+                *Bool = GetConfigBool(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_SByte:
+            {
+                i8 *Val = (i8*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigI8(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_UByte:
+            {
+                u8 *Val = (u8*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigU8(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Short:
+            {
+                i16 *Val = (i16*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigI16(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_UShort:
+            {
+                u16 *Val = (u16*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigU16(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Int:
+            {
+                i32 *Val = (i32*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigI32(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_UInt:
+            {
+                u32 *Val = (u32*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigU32(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Int64:
+            {
+                i64 *Val = (i64*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigI64(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_UInt64:
+            {
+                u64 *Val = (u64*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigU64(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Float:
+            {
+                r32 *Val = (r32*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigR32(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Double:
+            {
+                r64 *Val = (r64*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigR64(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Struct:
+            {
+                jstring *InternalMemberBlocks = nullptr;
+                u32 InternalMemberBlocksCount = 0;
+                GetConfigArray(MemberBlockObj, "Value",
+                               &((void*)InternalMemberBlocks),
+                               &InternalMemberBlocksCount);
+                
+                Result.Struct = {};
+                Result.Struct.MembersCount = InternalMemberBlocksCount;
+                Result.Struct.Members = palloc<block_member>(Result.Struct.MembersCount);
+                
+                for (u32 MemberIdx = 0; MemberIdx < Result.Struct.MembersCount; ++MemberIdx)
+                {
+                    jstring Name = InternalMemberBlocks[MemberIdx];
+                    config_obj MemberBlockObj = GetConfigObj(ReflConfig, Name.GetCStr());
+                    Result.Struct.Members[MemberIdx] = ParseMemberBlockFromConfig(ReflConfig,
+                                                                                  &MemberBlockObj,
+                                                                                  DataBlock,
+                                                                                  Result.Offset);
+                    Result.Struct.Members[MemberIdx].Name = CopyJString(Name);
+                }
+            } break;
+            
+            case DataType_Vec2:
+            {
+                vec2 *Val = (vec2*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigVec2(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Vec3:
+            {
+                vec3 *Val = (vec3*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigVec3(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Vec4:
+            {
+                vec4 *Val = (vec4*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigVec4(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Mat3:
+            {
+                mat3 *Val = (mat3*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigMat3(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Mat4:
+            {
+                mat4 *Val = (mat4*)((char*)DataBlock + Result.Offset);
+                *Val = GetConfigMat4(MemberBlockObj, "Value");
+            } break;
+            
+            case DataType_Unknown:
+            case DataType_Void:
+            case DataType_AtomicCount: // not supported as of now
+            case DataType_Half:
+            case DataType_Image:
+            case DataType_SampledImage:
+            case DataType_Sampler:
+            case DataType_AccelerationStructureNV:
+            default:
+            {
+            } break;
+        }
+        
+        return Result;
+    }
+    
+    input_block ParseInputBlockFromConfig(config_obj_table *ReflConfig, config_obj *InputBlockObj)
+    {
+        input_block Result = {};
+        
+        Result.Size           = GetConfigU32(InputBlockObj, "Size");
+        Result.Set            = GetConfigU32(InputBlockObj, "Set");
+        Result.Binding        = GetConfigU32(InputBlockObj, "Binding");
+        Result.IsTextureBlock = GetConfigU32(InputBlockObj, "IsTextureBlock");
+        
+        if (Result.Size > 0)
+            mresource::AllocateMaterialMemory(&Result.BlockMemory, &Result.UniformOffset, Result.Size);
+        
+        jstring *MemberNames = nullptr;
+        GetConfigArray(InputBlockObj, "MemberNames", &((void*)MemberNames), &Result.MembersCount);
+        
+        if (MemberNames)
+            Result.Members = palloc<block_member>(Result.MembersCount);
+        
+        for (u32 MemberIdx = 0; MemberIdx < Result.MembersCount; ++MemberIdx)
+        {
+            jstring Name = MemberNames[MemberIdx];
+            config_obj MemberBlockObj = GetConfigObj(ReflConfig, Name.GetCStr());
+            Result.Members[MemberIdx] = ParseMemberBlockFromConfig(ReflConfig, &MemberBlockObj, Result.BlockMemory);
+            Result.Members[MemberIdx].Name = CopyJString(Name);
+        }
+        
+        return Result;
+    }
     
     file_internal shader_data LoadReflectionData(jstring ReflectionFile)
     {
-        jstring Data = PlatformLoadFile(ReflectionFile);
+        shader_data MaterialData = {};
+        
+        config_obj_table ReflConfig = LoadConfigFile(ReflectionFile);
+        
+        config_obj GlobalObjs = GetConfigObj(&ReflConfig, "Global Descriptors");
+        config_obj ObjectObjs = GetConfigObj(&ReflConfig, "Object Descriptors");
+        config_obj MaterialObjs = GetConfigObj(&ReflConfig, "Material Descriptors");
+        config_obj PushConstantsObjs = GetConfigObj(&ReflConfig, "Push Constants");
+        
+        //InputBlockNames
+        {
+            jstring *GlobalInputBlocks = nullptr;
+            u32 GlobalInputBlocksCount = 0;
+            GetConfigArray(&GlobalObjs, "InputBlockNames", &((void*)GlobalInputBlocks), &GlobalInputBlocksCount);
+            
+            MaterialData.GlobalInputBlockCount = GlobalInputBlocksCount;
+            MaterialData.GlobalInputBlock      = palloc<input_block>(MaterialData.GlobalInputBlockCount);
+            
+            for (u32 Idx = 0; Idx < GlobalInputBlocksCount; ++Idx)
+            {
+                jstring Name = GlobalInputBlocks[Idx];
+                config_obj InputBlockObj = GetConfigObj(&ReflConfig, Name.GetCStr());
+                
+                MaterialData.GlobalInputBlock[Idx] = ParseInputBlockFromConfig(&ReflConfig, &InputBlockObj);
+            }
+        }
+        
+        {
+            jstring *ObjectInputBlocks = nullptr;
+            u32 ObjectInputBlocksCount = 0;
+            GetConfigArray(&ObjectObjs, "InputBlockNames", &((void*)ObjectInputBlocks), &ObjectInputBlocksCount);
+            
+            MaterialData.ObjectInputBlockCount = ObjectInputBlocksCount;
+            MaterialData.ObjectInputBlock      = palloc<input_block>(MaterialData.ObjectInputBlockCount);
+            
+            for (u32 Idx = 0; Idx < ObjectInputBlocksCount; ++Idx)
+            {
+                jstring Name = ObjectInputBlocks[Idx];
+                config_obj InputBlockObj = GetConfigObj(&ReflConfig, Name.GetCStr());
+                
+                MaterialData.ObjectInputBlock[Idx] = ParseInputBlockFromConfig(&ReflConfig, &InputBlockObj);
+            }
+        }
+        
+        {
+            jstring *MaterialInputBlocks = nullptr;
+            u32 MaterialInputBlocksCount = 0;
+            GetConfigArray(&MaterialObjs, "InputBlockNames", &((void*)MaterialInputBlocks), &MaterialInputBlocksCount);
+            
+            MaterialData.MaterialInputBlockCount = MaterialInputBlocksCount;
+            MaterialData.MaterialInputBlock      = palloc<input_block>(MaterialData.MaterialInputBlockCount);
+            
+            for (u32 Idx = 0; Idx < MaterialInputBlocksCount; ++Idx)
+            {
+                jstring Name = MaterialInputBlocks[Idx];
+                config_obj InputBlockObj = GetConfigObj(&ReflConfig, Name.GetCStr());
+                
+                MaterialData.MaterialInputBlock[Idx] = ParseInputBlockFromConfig(&ReflConfig, &InputBlockObj);
+            }
+        }
+        
+        {
+            jstring *PushConstantsInputBlocks = nullptr;
+            u32 PushConstantsInputBlocksCount = 0;
+            GetConfigArray(&PushConstantsObjs, "PushConstantsNames",
+                           &((void*)PushConstantsInputBlocks), &PushConstantsInputBlocksCount);
+            
+            MaterialData.PushConstantsCount = PushConstantsInputBlocksCount;
+            MaterialData.PushConstants      = palloc<input_block>(MaterialData.PushConstantsCount);
+            
+            for (u32 Idx = 0; Idx < PushConstantsInputBlocksCount; ++Idx)
+            {
+                jstring Name = PushConstantsInputBlocks[Idx];
+                config_obj InputBlockObj = GetConfigObj(&ReflConfig, Name.GetCStr());
+                
+                MaterialData.PushConstants[Idx] = ParseInputBlockFromConfig(&ReflConfig, &InputBlockObj);
+            }
+        }
+        
+        FreeConfigObjTable(&ReflConfig);
+        
+#if 0
         
         DynamicArray<shader_data_serial> ReflectionData = DynamicArray<shader_data_serial>(0);
         if (Data.len > 0)
@@ -623,6 +889,8 @@ Need to make sure there are no gaps in the descriptor sets
         
         SetList.Reset();
         Data.Clear();
+#endif
+        
         
         return MaterialData;
     }
@@ -813,7 +1081,7 @@ Need to make sure there are no gaps in the descriptor sets
             Material.Instance.EmissiveTexture  = LoadTexture(Loader, &EmissiveTextureObj);
             
             //~ Now that textures have been loaded, let's bind the textures to the descriptors...
-            
+#if 0
             if (Material.ShaderData.DescriptorSetsCount > DYNAMIC_SET)
             {
                 shader_descriptor_def MaterialSet = Material.ShaderData.DescriptorSets[DYNAMIC_SET];
@@ -911,6 +1179,8 @@ Need to make sure there are no gaps in the descriptor sets
                 AddGpuCommand(Loader->FrameParams, {GpuCmd_UpdateDescriptor, DescriptorUpdateInfos});
             }
             
+#endif
+            
             //~ Create the Shader Pipeline
             
             // TODO(Dustin): Handle other shader stages
@@ -939,9 +1209,26 @@ Need to make sure there are no gaps in the descriptor sets
             scissor.offset = {0, 0};
             scissor.extent = swapchain_extent;
             
-            resource_id_t *Layouts = talloc<resource_id_t>(Material.ShaderData.DescriptorSetsCount);
-            for (u32 SetIdx = 0; SetIdx < Material.ShaderData.DescriptorSetsCount; ++SetIdx)
-                Layouts[SetIdx] = Material.ShaderData.DescriptorSets[SetIdx].DescriptorSetLayout;
+            mresource::default_resources DefaultIds = mresource::GetDefaultResourcesFromRegistry();
+            resource_id_t Layouts[3];
+            {
+                Layouts[GLOBAL_SET]  = DefaultIds.DefaultGlobalDescriptorLayout;
+                Layouts[STATIC_SET]  = DefaultIds.ObjectDescriptorLayout;
+                Layouts[DYNAMIC_SET] = DefaultIds.PbrMaterialDescriptorLayout;
+            };
+            
+            // Pipeline Layout
+            VkPushConstantRange *PushConstantRanges =
+                talloc<VkPushConstantRange>(Material.ShaderData.PushConstantsCount);
+            
+            for (u32 Idx = 0; Idx < Material.ShaderData.PushConstantsCount; ++Idx)
+            {
+                // TODO(Dustin): Record the stage for the push constants
+                PushConstantRanges[Idx]            = {};
+                PushConstantRanges[Idx].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+                PushConstantRanges[Idx].offset     = 0;
+                PushConstantRanges[Idx].size       = Material.ShaderData.PushConstants[Idx].Size;
+            }
             
             pipeline_create_info PipelineCreateInfo = {};
             PipelineCreateInfo.Shaders      = Shaders;
@@ -961,9 +1248,9 @@ Need to make sure there are no gaps in the descriptor sets
             PipelineCreateInfo.MuliSampleSamples      = VK_SAMPLE_COUNT_1_BIT; // optional
             PipelineCreateInfo.HasDepthStencil        = true;
             PipelineCreateInfo.DescriptorLayoutIds    = Layouts;
-            PipelineCreateInfo.DescriptorLayoutsCount = Material.ShaderData.DescriptorSetsCount;
-            PipelineCreateInfo.PushConstants          = nullptr;
-            PipelineCreateInfo.PushConstantsCount     = 0;
+            PipelineCreateInfo.DescriptorLayoutsCount = 3;
+            PipelineCreateInfo.PushConstants          = PushConstantRanges;
+            PipelineCreateInfo.PushConstantsCount     = Material.ShaderData.PushConstantsCount;
             PipelineCreateInfo.RenderPass             = GetPrimaryRenderPass();
             
             Material.Pipeline = mresource::Load({},

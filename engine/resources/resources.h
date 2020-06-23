@@ -22,6 +22,27 @@ namespace mm
     void FreeDynUniformPool(dyn_uniform_pool *Pool);
     void AllocDynUniformPool(dyn_uniform_pool *Pool, void *Data, u32 Offset, bool IsMapped);
     void ResetDynUniformPool(dyn_uniform_pool *Pool, u32 Offset);
+    
+    // A linear allocator that is a dynamic uniform buffer.
+    // will be primarily used for Material/Instance Information
+    // Allocations with be aligned to the minimum uniform offset alignment
+    // TODO(Dustin): Allow for removing data from the allocator
+    struct dyn_uniform_linear_alloc
+    {
+        u32               Alignment;
+        u32               Offset;
+        // one buffer per-swapchain image, when an allocation/set occurs
+        // all buffers are updated.
+        BufferParameters Buffer;
+    };
+    
+    void DynUniformLinearAllocationInit(dyn_uniform_linear_alloc *Allocator, u32 TotalSize);
+    void DynUniformLinearAllocationFree(dyn_uniform_linear_alloc *Allocator);
+    // Returns the offset this allocation will be at in the allocator
+    void DynUniformLinearAllocationAlloc(dyn_uniform_linear_alloc *Allocator, void **Data, u32 *Offset, u32 AllocationSize);
+    void DynUniformLinearAllocationSetMemory(dyn_uniform_linear_alloc *Pool, u32 Offset, void *Data, u32 DataSize);
+    
+    
 }; // mm
 
 struct dyn_uniform_template
@@ -160,6 +181,7 @@ enum resource_type
     Resource_IndexBuffer,
     Resource_UniformBuffer,
     Resource_DynamicUniformBuffer,
+    Resource_DynamicBufferAllocator,
     Resource_Image,
     Resource_Pipeline,
     Resource_UpdateBuffer,
@@ -189,6 +211,7 @@ struct resource_index_buffer
 struct resource_image
 {
     ImageParameters Image;
+    u32 TextureIndex;
 };
 
 struct resource_pipeline
@@ -213,6 +236,11 @@ struct resource_dynamic_buffer
     bool                  PersistentlyMapped;
 };
 
+struct resource_dynamic_buffer_allocator
+{
+    mm::dyn_uniform_linear_alloc Allocator;
+};
+
 struct resource
 {
     resource_id_t Id;
@@ -228,6 +256,8 @@ struct resource
         resource_dynamic_buffer        DynamicUniformBuffer;
         resource_image                 Image;
         resource_pipeline              Pipeline;
+        
+        resource_dynamic_buffer_allocator DynBufferAllocator;
     };
 };
 
@@ -294,6 +324,11 @@ namespace mresource
         
         // (Different from a default material)
         resource_id_t DefaultPipeline;
+        
+        // PBR Metallic Pipeline info
+        resource_id_t MaterialDynUniform;          // Allocator for the material info
+        resource_id_t PbrMaterialDescriptorLayout; // PBR Metallic Material Layout
+        resource_id_t PbrMaterialDescriptor;       // PBR Metallic Material Descriptor Set
     };
     
     default_resources GetDefaultResourcesFromRegistry();
@@ -301,6 +336,14 @@ namespace mresource
     // Will retrieve the next offset into the dynamic uniform buffer and update
     // the offset for the next request.
     i64 DynUniformGetNextOffset(dyn_uniform_template *DynUniformTemplate);
+    
+    // Allocates memory for the material from the Material Uniform Allocator.
+    // Data: pointer that gets set to the memory block
+    // Offset: Offset into the Uniform, needed for binding the material data
+    void AllocateMaterialMemory(void **Data, u32 *Offset, u32 Size);
+    
+    inline bool DoesTextureArrayNeedUpdate();
+    void RebindTextureArray();
 };
 
 #endif //RESOURCES_H

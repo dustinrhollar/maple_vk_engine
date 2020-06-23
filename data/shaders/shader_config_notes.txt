@@ -1,0 +1,3 @@
+NOTE(Dustin): 
+
+shaders.config exists to adjust the uppoer bound of allowed textures that can be bound in any given frame. To change this value, see the "MaxCombinedTextureImageUnits" settings.

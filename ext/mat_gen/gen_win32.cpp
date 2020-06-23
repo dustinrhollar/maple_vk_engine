@@ -998,17 +998,36 @@ int main(int argc, char *argv[])
     // Initialize Management Routines
     mm::InitializeMemoryManager(_MB(5), _MB(1));
 	
-	#if 0
+#if 0
 	
-	jstring Vert = InitJString("shader.vert.spv");
-	jstring Frag = InitJString("shader.frag.spv");
+	jstring Vert = InitJString("data/shaders/shader.vert.spv");
+	jstring Frag = InitJString("data/shaders/shader.frag.spv");
 	
 	jstring ReflFile = InitJString("TestRefl.refl");
 	
-	#endif 
+    shader VertShader = { Vert, Shader_Vertex   };
+    shader FragShader = { Frag, Shader_Fragment };
+    
+    mprinte("Name of the vertex file: %s\n", Vert.GetCStr());
+    mprinte("Name of the fragment file: %s\n", Frag.GetCStr());
+    
+    DynamicArray<shader> ShaderList = DynamicArray<shader>(2);
+    ShaderList.PushBack(VertShader);
+    ShaderList.PushBack(FragShader);
+    
+    GenerateReflectionInfo(ShaderList, ReflFile);
+    
+    config_obj_table ReflTable = LoadConfigFile(ReflFile);
+    
+    Vert.Clear();
+    Frag.Clear();
+    ReflFile.Clear();
+    ShaderList.Reset();
+	
+#else
 	
 	// only arg that is really important in #1, which is the config file
-	//assert(argc == 2);
+	assert(argc > 1);
     for (i32 i = 0; i < argc; ++i)
 		mprinte("Argument %d:\t%s\n", i, argv[i]);
 	
@@ -1040,7 +1059,9 @@ int main(int argc, char *argv[])
     ShaderList.Reset();
 	
     FreeConfigObjTable(&ConfigTable);
-
+    
+#endif
+    
     Win32ShutdownRoutines();
     return (0);
 }

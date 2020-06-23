@@ -277,7 +277,8 @@ void FreeConfigObj(config_obj *Obj)
 //~ Config Variable Implementation
 
 void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
-                   config_primitive_type Type, void *Data, u32 Size)
+                   config_primitive_type Type, void *Data, u32 Size,
+                   config_primitive_type SecondaryType)
 {
     Var->Name = InitJString(Name, NameLen);
     Var->Type = Type;
@@ -294,7 +295,10 @@ void InitConfigVar(config_var *Var, const char *Name, u32 NameLen,
         case Config_Vec2:  Var->Vec2   = *((vec2*)Data);          break;
         case Config_Vec3:  Var->Vec3   = *((vec3*)Data);          break;
         case Config_Vec4:  Var->Vec4   = *((vec4*)Data);          break;
-        case Config_Str:   Var->Str    = InitJString((char*)Data, Size); break;
+        case Config_Mat3:  Var->Mat3   = *((mat3*)Data);          break;
+        case Config_Mat4:  Var->Mat4   = *((mat4*)Data);          break;
+        case Config_Str:   Var->Str    = InitJString((char*)Data, Size);     break;
+        case Config_Array: Var->Array  = { SecondaryType, Size, Data }; break;
         
         // NOTE(Dustin): These will require some special handling...
         case Config_Obj:
@@ -626,11 +630,12 @@ file_internal config_operator TokenTypeToOperator(token_type type)
 
 file_internal void CreateSyntaxNode(syntax_node *Node, token Token)
 {
-    Node->Token  = Token;
-    Node->Left   = nullptr;
-    Node->Right  = nullptr;
-    Node->Parent = nullptr;
-    Node->Op     = Operator_Unset;
+    Node->Token   = Token;
+    Node->Left    = nullptr;
+    Node->Right   = nullptr;
+    Node->Parent  = nullptr;
+    Node->Op      = Operator_Unset;
+    Node->IsArray = false;
 }
 
 file_internal void BuildSyntaxTree(token_node **Iter, syntax_node **Root)
@@ -647,6 +652,11 @@ file_internal void BuildSyntaxTree(token_node **Iter, syntax_node **Root)
             {
                 (*Cursor) = palloc<syntax_node>(1);
                 CreateSyntaxNode((*Cursor), (*Iter)->Token);
+            }
+            
+            if ((*Iter)->Token.Type == Token_OpenBrace)
+            {
+                (*Cursor)->IsArray = true;
             }
             
             (*Cursor)->Left = palloc<syntax_node>(1);
@@ -684,6 +694,7 @@ file_internal void BuildSyntaxTree(token_node **Iter, syntax_node **Root)
                     syntax_node *ParentNode = palloc<syntax_node>(1);
                     CreateSyntaxNode(ParentNode, (*Iter)->Token);
                     ParentNode->Parent = (*Cursor)->Parent;
+                    ParentNode->IsArray = (*Cursor)->IsArray;
                     
                     if ((*Cursor)->Parent)
                     {
@@ -815,13 +826,33 @@ file_internal config_primitive_type TokenToPrimitiveType(token Token)
     config_primitive_type Result;
     jstring Type = InitJString(Token.Start, Token.Len);
     
-    if (Type == "i32")
+    if (Type == "bool")
+    {
+        Result = Config_Bool;
+    }
+    else if (Type == "i8")
+    {
+        Result = Config_I8;
+    }
+    else if (Type == "i16")
+    {
+        Result = Config_I16;
+    }
+    else if (Type == "i32")
     {
         Result = Config_I32;
     }
     else if (Type == "i64")
     {
         Result = Config_I64;
+    }
+    else if (Type == "u8")
+    {
+        Result = Config_U8;
+    }
+    else if (Type == "u16")
+    {
+        Result = Config_U16;
     }
     else if (Type == "u32")
     {
@@ -834,6 +865,10 @@ file_internal config_primitive_type TokenToPrimitiveType(token Token)
     else if (Type == "r32")
     {
         Result = Config_R32;
+    }
+    else if (Type == "r64")
+    {
+        Result = Config_R64;
     }
     else if (Type == "ivec2")
     {
@@ -859,6 +894,14 @@ file_internal config_primitive_type TokenToPrimitiveType(token Token)
     {
         Result = Config_Vec4;
     }
+    else if (Type == "mat3")
+    {
+        Result = Config_Mat3;
+    }
+    else if (Type == "mat4")
+    {
+        Result = Config_Mat4;
+    }
     else if (Type == "str")
     {
         Result = Config_Str;
@@ -872,45 +915,93 @@ file_internal config_primitive_type TokenToPrimitiveType(token Token)
     return Result;
 }
 
-file_internal void RecurseIVecArray(syntax_node *Root, config_primitive_type Type,
-                                    char *buffer, int *idx)
+file_internal void RecurseArray(syntax_node *Root, char *Buffer, int *Idx, config_primitive_type Type)
 {
     if (!Root->Left && !Root->Right)
     {
-        ((int*)buffer)[*idx] = StrToInt(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+        // NOTE(Dustin): For unbounded arrays, it can be a good idea to do a preprocess pass to get their
+        // size. For that preprocess pass, null is passed as the buffer, so we do not want to attempt to
+        // insert into that buffer for this case.
+        if (Buffer)
+        {
+            switch (Type)
+            {
+                case Config_Bool:
+                {
+                    ((bool*)Buffer)[*Idx] = static_cast<bool>(StrToUInt(Root->Token.Start,
+                                                                        Root->Token.Start + Root->Token.Len));
+                } break;
+                
+                case Config_I8:
+                {
+                    ((i8*)Buffer)[*Idx] = StrToInt8(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_I16:
+                {
+                    ((i16*)Buffer)[*Idx] = StrToInt16(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_I32:
+                {
+                    ((i32*)Buffer)[*Idx] = StrToInt(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_I64:
+                {
+                    ((i64*)Buffer)[*Idx] = StrToInt64(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_U8:
+                {
+                    ((u8*)Buffer)[*Idx] = StrToUInt8(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_U16:
+                {
+                    ((u16*)Buffer)[*Idx] = StrToUInt16(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_U32:
+                {
+                    ((u32*)Buffer)[*Idx] = StrToUInt(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_U64:
+                {
+                    ((u64*)Buffer)[*Idx] = StrToUInt64(Root->Token.Start, Root->Token.Start + Root->Token.Len);
+                } break;
+                
+                case Config_R32:
+                {
+                    ((r32*)Buffer)[*Idx] = StrToR32(Root->Token.Start);
+                } break;
+                
+                case Config_R64:
+                {
+                    ((r64*)Buffer)[*Idx] = StrToR64(Root->Token.Start);
+                } break;
+                
+                case Config_Str:
+                {
+                    ((jstring*)Buffer)[*Idx] = pstring(Root->Token.Start, Root->Token.Len);
+                } break;
+                
+                default: break;
+            }
+        }
         
-        *idx += 1;
+        *Idx += 1;
     }
     
     if (Root->Left)
     { // reached the Left node
-        RecurseIVecArray(Root->Left, Type, buffer, idx);
+        RecurseArray(Root->Left, Buffer, Idx, Type);
     }
     
     if (Root->Right)
     {
-        RecurseIVecArray(Root->Right, Type, buffer, idx);
-    }
-}
-
-file_internal void RecurseVecArray(syntax_node *Root, config_primitive_type Type,
-                                   char *buffer, int *idx)
-{
-    if (!Root->Left && !Root->Right)
-    {
-        ((r32*)buffer)[*idx] = StrToR32(Root->Token.Start);
-        
-        *idx += 1;
-    }
-    
-    if (Root->Left)
-    { // reached the Left node
-        RecurseVecArray(Root->Left, Type, buffer, idx);
-    }
-    
-    if (Root->Right)
-    {
-        RecurseVecArray(Root->Right, Type, buffer, idx);
+        RecurseArray(Root->Right, Buffer, Idx, Type);
     }
 }
 
@@ -930,13 +1021,13 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
         syntax_node *LeftRootNode  = Root->Left;
         syntax_node *RightRootNode = Root->Right;
         
-        if (!LeftRootNode || LeftRootNode->Op != Operator_Colon)
+        if (!LeftRootNode->Left || !LeftRootNode->Right)
         {
             mprinte("Invalid expression. Variable declarion does not follow the syntax: \"name : type = def\"!\n");
             break;
         }
         
-        if (!LeftRootNode->Left || !LeftRootNode->Right)
+        if (!LeftRootNode || LeftRootNode->Op != Operator_Colon)
         {
             mprinte("Invalid expression. Variable declarion does not follow the syntax: \"name : type = def\"!\n");
             break;
@@ -955,7 +1046,235 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
         }
         
         config_var Var = {};
-        if (VarType == Config_I32)
+        if (RightRootNode->IsArray)
+        {
+            int ElementCount = 0;
+            
+            
+            if (VarType == Config_Bool)
+            {
+                bool *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_Bool);
+                
+                Data = palloc<bool>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_Bool);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_I8)
+            {
+                i8 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_I8);
+                
+                Data = palloc<i8>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_I8);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_I16)
+            {
+                i16 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_I16);
+                
+                Data = palloc<i16>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_I16);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_I32)
+            {
+                i32 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_I32);
+                
+                Data = palloc<i32>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_I32);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_I64)
+            {
+                i64 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_I64);
+                
+                Data = palloc<i64>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_I64);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_U8)
+            {
+                u8 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_U8);
+                
+                Data = palloc<u8>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_U8);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_U16)
+            {
+                u16 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_U16);
+                
+                Data = palloc<u16>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_U16);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_U32)
+            {
+                u32 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_U32);
+                
+                Data = palloc<u32>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_U32);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_U64)
+            {
+                u64 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_U64);
+                
+                Data = palloc<u64>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_U64);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_R32)
+            {
+                r32 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_R32);
+                
+                Data = palloc<r32>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_R32);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_R64)
+            {
+                r64 *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_R64);
+                
+                Data = palloc<r64>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_R64);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType == Config_Str)
+            {
+                jstring *Data = nullptr;
+                RecurseArray(RightRootNode, nullptr, &ElementCount, Config_Str);
+                
+                Data = palloc<jstring>(ElementCount);
+                ElementCount = 0;
+                RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_Str);
+                
+                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                              Config_Array, (char*)Data, ElementCount, VarType);
+            }
+            else if (VarType > Config_R32 && VarType < Config_Str)
+            { // type is an array type
+                if (VarType > Config_IVec4 && VarType < Config_Str)
+                {
+                    // max needed space is a vec4
+                    r32 Data[16] = {0};
+                    RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_R32);
+                    
+                    if (VarType == Config_Vec2 && ElementCount != 2)
+                    {
+                        mprinte("Variable type declared as vec2 but does not contain 2 elements!\n");
+                    }
+                    else if (VarType == Config_Vec3 && ElementCount != 3)
+                    {
+                        mprinte("Variable type declared as vec3 but does not contain 3 elements!\n");
+                    }
+                    else if (VarType == Config_Vec4 && ElementCount != 4)
+                    {
+                        mprinte("Variable type declared as vec4 but does not contain 4 elements!\n");
+                    }
+                    else if (VarType == Config_Mat3 && ElementCount != 9)
+                    {
+                        mprinte("Variable type declared as vec4 but does not contain 4 elements!\n");
+                    }
+                    else if (VarType == Config_Mat4 && ElementCount != 16)
+                    {
+                        mprinte("Variable type declared as vec4 but does not contain 4 elements!\n");
+                    }
+                    else
+                    {
+                        InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                                      VarType, (char*)Data);
+                    }
+                }
+                else
+                {
+                    // max needed space is a ivec4
+                    i32 Data[4] = {0};
+                    RecurseArray(RightRootNode, (char*)Data, &ElementCount, Config_I32);
+                    
+                    
+                    if (VarType == Config_IVec2 && ElementCount != 2)
+                    {
+                        mprinte("Variable type declared as ivec2 but does not contain 2 elements!\n");
+                    }
+                    else if (VarType == Config_IVec3 && ElementCount != 3)
+                    {
+                        mprinte("Variable type declared as ivec3 but does not contain 3 elements!\n");
+                    }
+                    else
+                    {
+                        mprinte("Variable type declared as ivec4 but does not contain 4 elements!\n");
+                    }
+                    
+                    InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                                  VarType, (char*)Data);
+                }
+            }
+            else
+            {
+                mprinte("Unknown array type!\n");
+            }
+        }
+        else if (VarType == Config_I8)
+        {
+            i8 Data = StrToInt8(RightRootNode->Token.Start,
+                                RightRootNode->Token.Start + RightRootNode->Token.Len);
+            
+            InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                          VarType, (char*)&Data);
+        }
+        else if (VarType == Config_I16)
+        {
+            i16 Data = StrToInt16(RightRootNode->Token.Start,
+                                  RightRootNode->Token.Start + RightRootNode->Token.Len);
+            
+            InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                          VarType, (char*)&Data);
+        }
+        else if (VarType == Config_I32)
         {
             i32 Data = StrToInt(RightRootNode->Token.Start,
                                 RightRootNode->Token.Start + RightRootNode->Token.Len);
@@ -967,6 +1286,20 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
         {
             i64 Data = StrToInt64(RightRootNode->Token.Start,
                                   RightRootNode->Token.Start + RightRootNode->Token.Len);
+            InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                          VarType, (char*)&Data);
+        }
+        else if (VarType == Config_U8)
+        {
+            u8 Data = StrToUInt8(RightRootNode->Token.Start,
+                                 RightRootNode->Token.Start + RightRootNode->Token.Len);
+            InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                          VarType, (char*)&Data);
+        }
+        else if (VarType == Config_U16)
+        {
+            u16 Data = StrToUInt16(RightRootNode->Token.Start,
+                                   RightRootNode->Token.Start + RightRootNode->Token.Len);
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, (char*)&Data);
         }
@@ -990,65 +1323,22 @@ file_internal void BuildObjMemberTable(config_obj *Obj, syntax_tree_list *Syntax
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, (void*)&Data);
         }
+        else if (VarType == Config_R64)
+        {
+            r64 Data = StrToR64(RightRootNode->Token.Start);
+            InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
+                          VarType, (void*)&Data);
+        }
         else if (VarType == Config_Str)
         {
             char *Data = RightRootNode->Token.Start;
             InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
                           VarType, Data, RightRootNode->Token.Len);
         }
-        else if (VarType > Config_R32 && VarType < Config_Str)
-        { // type is an array type
-            int ElementCount = 0;
-            
-            if (VarType > Config_IVec4 && VarType < Config_Str)
-            {
-                // max needed space is a vec4
-                r32 Data[4] = {0};
-                RecurseVecArray(RightRootNode, VarType,
-                                (char*)Data, &ElementCount);
-                
-                if (VarType == Config_Vec2 && ElementCount != 2)
-                {
-                    mprinte("Variable type declared as vec2 but does not contain 2 elements!\n");
-                }
-                else if (VarType == Config_Vec3 && ElementCount != 3)
-                {
-                    mprinte("Variable type declared as vec3 but does not contain 3 elements!\n");
-                }
-                else if (VarType == Config_Vec4 && ElementCount != 4)
-                {
-                    mprinte("Variable type declared as vec4 but does not contain 4 elements!\n");
-                }
-                else
-                {
-                    InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
-                                  VarType, (char*)Data);
-                }
-            }
-            else
-            {
-                // max needed space is a ivec4
-                i32 Data[4] = {0};
-                RecurseIVecArray(RightRootNode, VarType,
-                                 (char*)Data, &ElementCount);
-                
-                if (VarType == Config_IVec2 && ElementCount != 2)
-                {
-                    mprinte("Variable type declared as ivec2 but does not contain 2 elements!\n");
-                }
-                else if (VarType == Config_IVec3 && ElementCount != 3)
-                {
-                    mprinte("Variable type declared as ivec3 but does not contain 2 elements!\n");
-                }
-                else
-                {
-                    mprinte("Variable type declared as ivec4 but does not contain 2 elements!\n");
-                }
-                
-                InitConfigVar(&Var, VarNameNode->Token.Start, VarNameNode->Token.Len,
-                              VarType, (char*)Data);
-            }
-            
+        else
+        {
+            mprinte("Unknown config type!\n");
+            break;
         }
         
         (*TreeIdx)++;
@@ -1164,6 +1454,60 @@ void SaveConfigFile()
 
 //~ Getters for a config obj
 
+bool GetConfigBool(config_obj *Obj, const char* VarName)
+{
+    bool Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Bool)
+    {
+        mprinte("Requested i32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.Bool;
+    }
+    
+    return Result;
+}
+
+i8 GetConfigI8(config_obj *Obj, const char* VarName)
+{
+    i8 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_I8)
+    {
+        mprinte("Requested i32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.Int8;
+    }
+    
+    return Result;
+}
+
+i16 GetConfigI16(config_obj *Obj, const char* VarName)
+{
+    i16 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_I16)
+    {
+        mprinte("Requested i32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.Int32;
+    }
+    
+    return Result;
+}
+
 i32 GetConfigI32(config_obj *Obj, const char* VarName)
 {
     i32 Result = {};
@@ -1200,6 +1544,42 @@ i64 GetConfigI64(config_obj *Obj, const char* VarName)
     return Result;
 }
 
+u8 GetConfigU8(config_obj *Obj, const char* VarName)
+{
+    u8 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_U8)
+    {
+        mprinte("Requested u32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.UInt8;
+    }
+    
+    return Result;
+}
+
+u16 GetConfigU16(config_obj *Obj, const char* VarName)
+{
+    u16 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_U16)
+    {
+        mprinte("Requested u32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.UInt16;
+    }
+    
+    return Result;
+}
+
 u32 GetConfigU32(config_obj *Obj, const char* VarName)
 {
     u32 Result = {};
@@ -1212,7 +1592,7 @@ u32 GetConfigU32(config_obj *Obj, const char* VarName)
     }
     else
     {
-        Result = Var.UInt64;
+        Result = Var.UInt32;
     }
     
     return Result;
@@ -1249,6 +1629,24 @@ r32 GetConfigR32(config_obj *Obj, const char* VarName)
     else
     {
         Result = Var.R32;
+    }
+    
+    return Result;
+}
+
+r64 GetConfigR64(config_obj *Obj, const char* VarName)
+{
+    r64 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_R64)
+    {
+        mprinte("Requested r32 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.R64;
     }
     
     return Result;
@@ -1360,6 +1758,57 @@ vec4 GetConfigVec4(config_obj *Obj, const char* VarName)
     }
     
     return Result;
+}
+
+mat3 GetConfigMat3(config_obj *Obj, const char* VarName)
+{
+    mat3 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Mat3)
+    {
+        mprinte("Requested vec4 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.Mat3;
+    }
+    
+    return Result;
+}
+
+mat4 GetConfigMat4(config_obj *Obj, const char* VarName)
+{
+    mat4 Result = {};
+    
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Mat4)
+    {
+        mprinte("Requested vec4 variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        Result = Var.Mat4;
+    }
+    
+    return Result;
+}
+
+void GetConfigArray(config_obj *Obj, const char* VarName, void **Data, u32 *Count)
+{
+    config_var Var = ConfigMemberTableGet(&Obj->ObjMembers, VarName);
+    if (Var.Type != Config_Array)
+    {
+        mprinte("Requested array variable \"%s\" from object \"%s\", but it does not exist!\n",
+                Obj->Name.GetCStr(), VarName);
+    }
+    else
+    {
+        *Data  = Var.Array.Ptr;
+        *Count = Var.Array.Len;
+    }
 }
 
 // Returns a COPY of the string

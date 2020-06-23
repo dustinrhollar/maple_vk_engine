@@ -125,6 +125,15 @@ void RenderStageEntry(frame_params *FrameParams)
     
     //~ Now add gpu command for rendering
     
+    // If last frame uploaded/removed textures, we need to update
+    // the descriptor sets for the texture array
+    if (mresource::DoesTextureArrayNeedUpdate())
+    {
+        mresource::RebindTextureArray();
+    }
+    
+    mresource::default_resources DefaultIds = mresource::GetDefaultResourcesFromRegistry();
+    
     // Bind Global Data
     for (u32 MaterialIdx = 0; MaterialIdx < MaterialsToDraw.size; ++MaterialIdx)
     {
@@ -134,17 +143,20 @@ void RenderStageEntry(frame_params *FrameParams)
         asset_material Material = masset::GetAsset(MatId)->Material;
         resource Pipeline = mresource::GetResource(Material.Pipeline);
         
-        if (Material.ShaderData.DescriptorSetsCount > GLOBAL_SET &&
-            Material.ShaderData.DescriptorSets[GLOBAL_SET].InputDataCount > 0)
+#if 0
+        
+        if (Material.ShaderData.GlobalInputBlockCount > 0)
         {
+            // TODO(Dustin): Allow for more than one global set binding
             gpu_descriptor_set_bind_info *GlobalBind = talloc<gpu_descriptor_set_bind_info>(1);
             GlobalBind->PipelineLayout      = Pipeline.Pipeline.Layout;
-            GlobalBind->DescriptorId        = Material.ShaderData.DescriptorSets[GLOBAL_SET].DescriptorSet;
+            GlobalBind->DescriptorId        = DefaultIds.DefaultGlobalDescriptor;
             GlobalBind->DynamicOffsets      = nullptr;
             GlobalBind->DynamicOffsetsCount = 0;
             GlobalBind->FirstSet            = GLOBAL_SET;
             AddGpuCommand(FrameParams, { GpuCmd_BindDescriptorSet, GlobalBind });
         }
+#endif
     }
     
     // Bind Material Data and Draw
@@ -160,18 +172,24 @@ void RenderStageEntry(frame_params *FrameParams)
         PipelineBind->Pipeline = Pipeline.Pipeline.Pipeline;
         AddGpuCommand(FrameParams, { GpuCmd_BindPipeline, PipelineBind });
         
+#if 0
+        for (u32 )
+        {
+        }
+        
         // Bind Descriptor for Material
         if (Material.ShaderData.DescriptorSetsCount > DYNAMIC_SET &&
-            Material.ShaderData.DescriptorSets[DYNAMIC_SET].InputDataCount > 0)
+            Material.ShaderData.MaterialInputBlockCount > 0)
         {
             gpu_descriptor_set_bind_info *MaterialBind = talloc<gpu_descriptor_set_bind_info>(1);
             MaterialBind->PipelineLayout      = Pipeline.Pipeline.Layout;
-            MaterialBind->DescriptorId        = Material.ShaderData.DescriptorSets[DYNAMIC_SET].DescriptorSet;
+            MaterialBind->DescriptorId        = DefaultIds.PbrMaterialDescriptorLayout;
             MaterialBind->DynamicOffsets      = nullptr;
             MaterialBind->DynamicOffsetsCount = 0;
             MaterialBind->FirstSet            = DYNAMIC_SET;
             AddGpuCommand(FrameParams, { GpuCmd_BindDescriptorSet, MaterialBind });
         }
+#endif
         
         u32 OffsetCount = MaterialsToDraw[MaterialIdx].size;
         u32 *ObjOffsets = talloc<u32>(OffsetCount);
@@ -198,18 +216,20 @@ void RenderStageEntry(frame_params *FrameParams)
         
         for (u32 Obj = 0; Obj < MaterialsToDraw[MaterialIdx].size; ++Obj)
         {
+#if 0
             // Bind Descriptor for Object
             if (Material.ShaderData.DescriptorSetsCount > STATIC_SET &&
                 Material.ShaderData.DescriptorSets[STATIC_SET].InputDataCount > 0)
             {
                 gpu_descriptor_set_bind_info *ObjectBind = talloc<gpu_descriptor_set_bind_info>(1);
                 ObjectBind->PipelineLayout      = Pipeline.Pipeline.Layout;
-                ObjectBind->DescriptorId        = Material.ShaderData.DescriptorSets[STATIC_SET].DescriptorSet;
+                ObjectBind->DescriptorId        = DefaultIds.ObjectDescriptorLayout;
                 ObjectBind->DynamicOffsets      = ObjOffsets + Obj;
                 ObjectBind->DynamicOffsetsCount = 1;
                 ObjectBind->FirstSet            = STATIC_SET;
                 AddGpuCommand(FrameParams, { GpuCmd_BindDescriptorSet, ObjectBind });
             }
+#endif
             
             // Issue the draw command for the object
             render_draw_command *Info = MaterialsToDraw[MaterialIdx][Obj];

@@ -46,28 +46,28 @@ inline Vec4 norm(Vec4 vector);
 
 // MATRICES
 
-inline Mat3 Mul(Mat3 const& left, Mat3 const& right);
+inline Mat3 Mul(mat3 const& left, mat3 const& right);
 inline Mat4 Mul(Mat4 const& left, Mat4 const& right);
 inline float DegreesToRadians(float theta);
 inline Mat3 RotateX(float theta);
-inline Mat3 RotateY(float theta);
-inline Mat3 RotateZ(float theta);
-inline Mat3 Rotate(float theta, vec3 axis);
-inline Mat3 Reflect(vec3 vec3);
-inline Mat3 Scale(float sx, float sy, float sz);
-inline Mat3 Scale(float s, vec3 scale);
+inline mat3 RotateY(float theta);
+inline mat3 RotateZ(float theta);
+inline mat3 Rotate(float theta, vec3 axis);
+inline mat3 Reflect(vec3 vec3);
+inline mat3 Scale(float sx, float sy, float sz);
+inline mat3 Scale(float s, vec3 scale);
 // skew is the vector representing the direction along which the skew ocurs
 // perp is the vector perpendicular to skew along which vectors are measured to
 // to determine how to skew.
-inline Mat3 Skew(float theta, vec3 skew, vec3 perp);
+inline mat3 Skew(float theta, vec3 skew, vec3 perp);
 inline Mat4 Translate(vec3 trans);
 
 // QUATERNIONS
 
 vec3 GetQuaternionVector(Quaternion const& quat);
-Mat3 GetQuaternionRotationMatrix(Quaternion const& q);
+mat3 GetQuaternionRotationMatrix(Quaternion const& q);
 // Creates a quaternion from a rotation matrix
-Quaternion CreateQuaternionFromRotationMatrix(const Mat3& m);
+Quaternion CreateQuaternionFromRotationMatrix(const mat3& m);
 Quaternion QuaternionMul(Quaternion const& left, Quaternion const& right);
 // rotates the vector around the quaternion using the sandwich product
 vec3 Transform(const vec3& v, const Quaternion& q);
@@ -315,7 +315,7 @@ struct vec4
 };
 
 // Column major
-struct Mat3
+struct mat3
 {
     union
     {
@@ -341,7 +341,7 @@ struct Mat3
     
     // Expects the data to be passed in row order
     // and is converted to column order
-    Mat3(float a, float b, float c,
+    mat3(float a, float b, float c,
          float e, float f, float g,
          float i, float j, float k)
     {
@@ -358,7 +358,7 @@ struct Mat3
         data[3*2 + 2] = k;
     }
     
-    Mat3(float ptr[3][3])
+    mat3(float ptr[3][3])
     {
         data[3*0 + 0] = ptr[0][0];
         data[3*0 + 1] = ptr[0][1];
@@ -373,7 +373,22 @@ struct Mat3
         data[3*2 + 2] = ptr[2][2];
     }
     
-    Mat3()
+    mat3(float Diagonal)
+    {
+        data[3*0 + 0] = Diagonal;
+        data[3*0 + 1] = 0;
+        data[3*0 + 2] = 0;
+        
+        data[3*1 + 0] = 0;
+        data[3*1 + 1] = Diagonal;
+        data[3*1 + 2] = 0;
+        
+        data[3*2 + 0] = 0;
+        data[3*2 + 1] = 0;
+        data[3*2 + 2] = Diagonal;
+    }
+    
+    mat3()
     {
         data[3*0 + 0] = 1;
         data[3*0 + 1] = 0;
@@ -465,7 +480,7 @@ struct mat4
         data[3][3] = p;
     }
     
-    mat4(Mat3 mat)
+    mat4(mat3 mat)
     {
         
         data[0][0] = mat[0][0];
@@ -543,7 +558,7 @@ inline vec2 operator*(float const& scalar, vec2 left);
 inline vec3 operator*(float const& scalar, vec3 left);
 inline vec4 operator*(float const& scalar, vec4 left);
 
-inline Mat3 operator*(Mat3 const& left, Mat3 const& r);
+inline mat3 operator*(mat3 const& left, mat3 const& r);
 inline mat4 operator*(mat4 const& left, mat4 const& r);
 
 Quaternion operator*(const Quaternion& l, const Quaternion& r);
@@ -587,22 +602,22 @@ inline vec4 norm(vec4 vector);
 
 // MATRICES
 
-inline Mat3 MakeMat3(float *ptr);
+inline mat3 MakeMat3(float *ptr);
 mat4 MakeMat4(float *ptr);
 
-inline Mat3 Mul(Mat3 const& left, Mat3 const& right);
+inline mat3 Mul(mat3 const& left, mat3 const& right);
 mat4 Mul(mat4 const& left, mat4 const& right);
-inline Mat3 RotateX(float theta);
-inline Mat3 RotateY(float theta);
-inline Mat3 RotateZ(float theta);
-inline Mat3 Rotate(float theta, vec3 axis);
-inline Mat3 Reflect(vec3 vec3);
+inline mat3 RotateX(float theta);
+inline mat3 RotateY(float theta);
+inline mat3 RotateZ(float theta);
+inline mat3 Rotate(float theta, vec3 axis);
+inline mat3 Reflect(vec3 vec3);
 mat4 Scale(float sx, float sy, float sz);
 inline mat4 Scale(float s, vec3 scale);
 // skew is the vector representing the direction along which the skew ocurs
 // perp is the vector perpendicular to skew along which vectors are measured to
 // to determine how to skew.
-inline Mat3 Skew(float theta, vec3 skew, vec3 perp);
+inline mat3 Skew(float theta, vec3 skew, vec3 perp);
 
 mat4 Translate(vec3 trans);
 
@@ -611,9 +626,9 @@ mat4 Translate(vec3 trans);
 Quaternion MakeQuaternion(float x, float y, float z, float w);
 Quaternion CreateQuaternion(vec3 axis, float theta);
 vec3 GetQuaternionVector(Quaternion const& quat);
-Mat3 GetQuaternionRotationMatrix(Quaternion const& q);
+mat3 GetQuaternionRotationMatrix(Quaternion const& q);
 // Creates a quaternion from a rotation matrix
-Quaternion CreateQuaternionFromRotationMatrix(const Mat3& m);
+Quaternion CreateQuaternionFromRotationMatrix(const mat3& m);
 Quaternion QuaternionMul(Quaternion const& left, Quaternion const& right);
 // rotates the vector around the quaternion using the sandwich product
 vec3 Transform(const vec3& v, const Quaternion& q);
@@ -914,9 +929,9 @@ inline vec4 norm(vec4 v)
 // Matrix  Implementations
 //----------------------------------------------------------------------------------------//
 
-inline Mat3 MakeMat3(float *ptr)
+inline mat3 MakeMat3(float *ptr)
 {
-    Mat3 result = Mat3();
+    mat3 result = mat3();
     
     result.col0 = MakeVec3(ptr);
     result.col1 = MakeVec3(ptr + 3);
@@ -937,13 +952,13 @@ mat4 MakeMat4(float *ptr)
     return result;
 }
 
-inline Mat3 operator*(Mat3 const& left, Mat3 const& r)
+inline mat3 operator*(mat3 const& left, mat3 const& r)
 {
     vec3 lr0 = { left[0][0], left[1][0], left[2][0] };
     vec3 lr1 = { left[0][1], left[1][1], left[2][1] };
     vec3 lr2 = { left[0][2], left[1][2], left[2][2] };
     
-    return Mat3(dot(lr0, r.col0), dot(lr0, r.col1), dot(lr0, r.col2),
+    return mat3(dot(lr0, r.col0), dot(lr0, r.col1), dot(lr0, r.col2),
                 dot(lr1, r.col0), dot(lr1, r.col1), dot(lr1, r.col2),
                 dot(lr2, r.col0), dot(lr2, r.col1), dot(lr2, r.col2));
 }
@@ -961,7 +976,7 @@ inline mat4 operator*(mat4 const& left, mat4 const& r)
                 dot(lr3, r.col0), dot(lr3, r.col1), dot(lr3, r.col2), dot(lr3, r.col3));
 }
 
-inline Mat3 Mul(Mat3 const& left, Mat3 const& right)
+inline mat3 Mul(mat3 const& left, mat3 const& right)
 {
     return left * right;
 }
@@ -977,43 +992,43 @@ inline float DegreesToRadians(float theta)
     return (float)(theta * (JPI / 180.0f));
 }
 
-inline Mat3 RotateX(float theta)
+inline mat3 RotateX(float theta)
 {
     float rad = DegreesToRadians(theta);
     
     float c = (float)cos(rad);
     float s = (float)sin(rad);
     
-    return Mat3(1.0f, 0.0f, 0.0f,
+    return mat3(1.0f, 0.0f, 0.0f,
                 0.0f, c, -s,
                 0.0f, s, c);
 }
 
-inline Mat3 RotateY(float theta)
+inline mat3 RotateY(float theta)
 {
     float rad = DegreesToRadians(theta);
     
     float c = (float)cos(rad);
     float s = (float)sin(rad);
     
-    return Mat3(c, 0.0f, s,
+    return mat3(c, 0.0f, s,
                 0.0f, 1.0f, 0.0f,
                 -s, 0.0f, c);
 }
 
-inline Mat3 RotateZ(float theta)
+inline mat3 RotateZ(float theta)
 {
     float rad = DegreesToRadians(theta);
     
     float c = (float)cos(rad);
     float s = (float)sin(rad);
     
-    return Mat3(c, -s, 0.0f,
+    return mat3(c, -s, 0.0f,
                 s, c, 0.0f,
                 0.0f, 0.0f, 1.0f);
 }
 
-inline Mat3 Rotate(float theta, vec3 axis)
+inline mat3 Rotate(float theta, vec3 axis)
 {
     float rad = DegreesToRadians(theta);
     axis = norm(axis);
@@ -1029,12 +1044,12 @@ inline Mat3 Rotate(float theta, vec3 axis)
     float axaz = x * axis.z;
     float ayaz = y * axis.z;
     
-    return Mat3(   c + x * axis.x, axay - s * axis.z, axaz + s * axis.y,
+    return mat3(   c + x * axis.x, axay - s * axis.z, axaz + s * axis.y,
                 axay + s * axis.z,    c + y * axis.y, ayaz - s * axis.x,
                 axaz - s * axis.y, ayaz + s * axis.x, c + z * axis.z);
 }
 
-inline Mat3 Reflect(vec3 axis)
+inline mat3 Reflect(vec3 axis)
 {
     axis = norm(axis);
     
@@ -1046,7 +1061,7 @@ inline Mat3 Reflect(vec3 axis)
     float axaz = x * axis.z;
     float ayaz = y * axis.z;
     
-    return Mat3(x * axis.x + 1.0f, axay, axaz,
+    return mat3(x * axis.x + 1.0f, axay, axaz,
                 axay, y * axis.y + 1.0f, ayaz,
                 axaz, ayaz, z * axis.z + 1.0f);
 }
@@ -1103,7 +1118,7 @@ inline mat4 Scale(float s, vec3 scale)
 // skew is the vector representing the direction along which the skew ocurs
 // perp is the vector perpendicular to skew along which vectors are measured to
 // to determine how to skew.
-inline Mat3 Skew(float theta, vec3 skew, vec3 perp)
+inline mat3 Skew(float theta, vec3 skew, vec3 perp)
 {
     float t = DegreesToRadians(theta);
     vec3 a = norm(skew);
@@ -1115,7 +1130,7 @@ inline Mat3 Skew(float theta, vec3 skew, vec3 perp)
     float y = a.y * t;
     float z = a.z * t;
     
-    return Mat3(x * b.x + 1.0f, x * b.y, x * b.z,
+    return mat3(x * b.x + 1.0f, x * b.y, x * b.z,
                 y * b.x, y * b.y + 1.0f, y * b.z,
                 z * b.x, z * b.y, z * b.z + 1.0f);
 }
@@ -1231,7 +1246,7 @@ vec3 Transform(const vec3& v, const Quaternion& q)
         cross(b, v) * (q.w * 2.0f);
 }
 
-Mat3 GetQuaternionRotationMatrix(Quaternion const& quat)
+mat3 GetQuaternionRotationMatrix(Quaternion const& quat)
 {
     Quaternion q = norm(quat);
     
@@ -1245,13 +1260,13 @@ Mat3 GetQuaternionRotationMatrix(Quaternion const& quat)
     float wy = q.w * q.y;
     float wz = q.w * q.z;
     
-    return Mat3(1.0f - 2.0f * (y2 + z2), 2.0f * (xy - wz), 2.0f * (xz + wy),
+    return mat3(1.0f - 2.0f * (y2 + z2), 2.0f * (xy - wz), 2.0f * (xz + wy),
                 2.0f * (xy + wz), 1.0f - 2.0f * (x2 + z2), 2.0f * (yz - wx),
                 2.0f * (xz - wy), 2.0f * (yz + wx), 1.0f - 2.0f * (x2 + y2));
 }
 
 // TODO(Dustin): The if-else might need to swap the matrix indexes
-Quaternion CreateQuaternionFromRotationMatrix(const Mat3& m)
+Quaternion CreateQuaternionFromRotationMatrix(const mat3& m)
 {
     float x, y, z, w;
     
