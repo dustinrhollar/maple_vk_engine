@@ -12,7 +12,6 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <unistd.h>
-#include <string.h>
 
 typedef struct
 {
@@ -30,6 +29,11 @@ file_global u32      ClientWidth;
 file_global u32      ClientHeight;
 file_global bool     IsRunning;
 file_global xcb_info XcbInfo;
+
+// Global Memory Handles
+void *GlobalMemoryPtr;
+free_allocator PermanantMemory;
+// TODO(Dustin): Tagged heap for per frame memory
 
 file_internal xcb_intern_atom_cookie_t XcbInternAtomCookie(xcb_connection_t *c, const char* s, u32 len);
 file_internal xcb_atom_t XcbInternAtom(xcb_connection_t *c, xcb_intern_atom_cookie_t cookie);
@@ -83,6 +87,22 @@ u64 PlatformGetWallClock()
 r32 PlatformGetElapsedSeconds(u64 Start, u64 End)
 {
     return 0.0f;
+}
+
+__inline u32 PlatformClzl(u64 Value)
+{
+    u32 Result;
+    if (Value == 0) Result = 0;
+    else            Result = __builtin_clzl(Value);
+    return Result;
+}
+
+u32 PlatformCtzl(u64 Value)
+{
+    u32 Result;
+    if (Value == 0) Result = 0;
+    else            Result = __builtin_ctzl(Value);
+    return Result;
 }
 
 file_internal xcb_intern_atom_cookie_t XcbInternAtomCookie(xcb_connection_t *c, const char* s, u32 len)
@@ -265,11 +285,70 @@ int main(void)
     xcb_flush(XcbInfo.Connection);
 
     // Allocator testing
-    free_allocator GlobalMemory = {0};
-    FreeListAllocatorInit(&GlobalMemory, 4096, &PlatformRequestMemory);
+    u64 MemorySize = _MB(50);
+    GlobalMemoryPtr = PlatformRequestMemory(MemorySize);
 
-    FreeListAllocatorFree(&GlobalMemory, &PlatformReleaseMemory);
+    // Initialize memory manager
+    FreeListAllocatorInit(&PermanantMemory, MemorySize, GlobalMemoryPtr);
 
+    // Tagged heap. 3 Stages + 1 Resource/Asset = 4 Tags / frame
+    // Keep 3 Blocks for each Tag, allowing for 12 Blocks overall
+    tagged_heap TaggedHeap;
+    TaggedHeapInit(&TaggedHeap, &PermanantMemory, _MB(24), _2MB, 10);
+
+    u64 StringArenaSize  = _MB(1);
+    void *StringArenaPtr = FreeListAllocatorAlloc(&PermanantMemory, StringArenaSize);
+    StringArenaInit(StringArenaPtr, StringArenaSize);
+
+    //~ Tagged Heap testing
+#if 0
+    {
+        // 20MB should get me 10 2MiB blocks
+
+        tag_id_t Tag0 = {0, 0, 0};
+        tag_id_t Tag1 = {0, 1, 0};
+        tag_id_t Tag2 = {0, 2, 0};
+        tag_id_t Tag3 = {0, 3, 0};
+        tag_id_t Tag4 = {0, 4, 0};
+
+        tagged_heap_block Block0 = TaggedHeapRequestAllocation(&TaggedHeap, Tag0);
+        tagged_heap_block Block3 = TaggedHeapRequestAllocation(&TaggedHeap, Tag3);
+        tagged_heap_block Block4 = TaggedHeapRequestAllocation(&TaggedHeap, Tag4);
+        tagged_heap_block Block1 = TaggedHeapRequestAllocation(&TaggedHeap, Tag1);
+        tagged_heap_block Block2 = TaggedHeapRequestAllocation(&TaggedHeap, Tag2);
+
+        tagged_heap_block Block01 = TaggedHeapRequestAllocation(&TaggedHeap, Tag0);
+        tagged_heap_block Block02 = TaggedHeapRequestAllocation(&TaggedHeap, Tag0);
+        tagged_heap_block Block03 = TaggedHeapRequestAllocation(&TaggedHeap, Tag0);
+
+        tagged_heap_block Block11 = TaggedHeapRequestAllocation(&TaggedHeap, Tag1);
+        tagged_heap_block Block12 = TaggedHeapRequestAllocation(&TaggedHeap, Tag1);
+        tagged_heap_block Block13 = TaggedHeapRequestAllocation(&TaggedHeap, Tag1);
+
+        tagged_heap_block Block21 = TaggedHeapRequestAllocation(&TaggedHeap, Tag2);
+        tagged_heap_block Block22 = TaggedHeapRequestAllocation(&TaggedHeap, Tag2);
+        tagged_heap_block Block23 = TaggedHeapRequestAllocation(&TaggedHeap, Tag2);
+        tagged_heap_block Block24 = TaggedHeapRequestAllocation(&TaggedHeap, Tag2);
+
+        // Do some per block allocation
+        // each block is 2MiB, try to alloc two 1MiB allocations.
+        void* ret0 = TaggedHeapBlockAlloc(&Block0, _1MB);
+        assert(ret0 && "Failed to allocate a 1MB allocation from Block0");
+        void* ret1 = TaggedHeapBlockAlloc(&Block0, _1MB);
+        assert(ret1 && "Failed to allocate a second 1MB allocation from Block0");
+        // third allocation should fail
+        void* ret3 = TaggedHeapBlockAlloc(&Block0, _1MB);
+        assert(!ret3 && "Successfully allocated a third 1MB allocation from Block0. This should have failed.");
+
+        TaggedHeapReleaseAllocation(&TaggedHeap, Tag0);
+        TaggedHeapReleaseAllocation(&TaggedHeap, Tag3);
+        TaggedHeapReleaseAllocation(&TaggedHeap, Tag2);
+        TaggedHeapReleaseAllocation(&TaggedHeap, Tag4);
+        TaggedHeapReleaseAllocation(&TaggedHeap, Tag1);
+
+    }
+#endif
+   
     IsRunning = true;
 
     while (IsRunning)
@@ -285,6 +364,17 @@ int main(void)
 
         // TODO(Dustin): TIMING
     }
+
+    // Free up the global string arena
+    StringArenaFree();
+    FreeListAllocatorAllocFree(&PermanantMemory, StringArenaPtr);
+
+    // Free up the tagged heap for per-frame info
+    TaggedHeapFree(&TaggedHeap, &PermanantMemory);
+
+    // free up the global memory
+    FreeListAllocatorFree(&PermanantMemory);
+    PlatformReleaseMemory(GlobalMemoryPtr, MemorySize);
 
     xcb_destroy_window(XcbInfo.Connection, XcbInfo.Window);
     xcb_flush(XcbInfo.Connection);
