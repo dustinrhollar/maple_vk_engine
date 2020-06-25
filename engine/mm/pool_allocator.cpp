@@ -1,59 +1,62 @@
 
-namespace mm {
+#define BLOCK_SIZE 8
+#define MemAlign(n) ((n) + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1)
+
+void PoolAllocatorInit(pool_allocator *Allocator, void *MemoryPtr, u64 Size, u32 Stride)
+{
+    Allocator->UsedMemory     = 0;
+    Allocator->NumAllocations = 0;
+    Allocator->Size           = MemAlign(Size);
+    Allocator->Stride         = Stride;
+    Allocator->Start          = MemoryPtr;
+    Allocator->Pool           = (void**)Allocator->Start;
     
-    PoolAllocator::PoolAllocator(size_t size, void *start, size_t allocation_size, u8 alignment)
-        : Allocator(size, start)
-        , AllocationSize(allocation_size)
+    u64 NumObjects = Size / Stride;
+    void **Iter = Allocator->Pool;
+    
+    // Assign the next pointers in the free list
+    for (u32 i = 0; i < NumObjects; ++i)
     {
-        assert(allocation_size >= sizeof(void*));
-        
-        Alignment = AlignLength(start, alignment);
-        FreeList = (void**)((char*)StartAddr + Alignment);
-        
-        size_t num_objects = (size-alignment) / AllocationSize;
-        
-        // initialize the free list.
-        void **iter = FreeList;
-        for (int i = 0; i < num_objects-1; ++i)
-        {
-            *iter = (char*)iter + AllocationSize;
-            iter = (void**)(*iter);
-        }
-        *iter = nullptr;
+        *Iter = (char*)Iter + Allocator->Stride;
+        Iter = (void**)(*Iter);
     }
     
-    PoolAllocator::~PoolAllocator()
+    *Iter = NULL;
+}
+
+void PoolAllocatorFree(pool_allocator *Allocator)
+{
+    Allocator->Size     = 0;
+    Allocator->Stride   = 0;
+    Allocator->Start    = NULL;
+    Allocator->Pool     = NULL;
+}
+
+void* PoolAllocatorAlloc(pool_allocator *Allocator)
+{
+    void *Result = NULL;
+    
+    if (Allocator->Pool)
     {
-        FreeList = nullptr;
+        Result = Allocator->Pool;
+        Allocator->Pool = (void**)(*Allocator->Pool);
+        
+        Allocator->UsedMemory += Allocator->Stride;
+        Allocator->NumAllocations++;
     }
     
-    void* PoolAllocator::Allocate(size_t size, size_t alignment)
-    {
-        assert(size % AllocationSize == 0 && "Allocation size for the PoolAllocator should be a multiple of AllocationSize.");
-        
-        if (FreeList == nullptr) return nullptr;
-        
-        void *ptr = FreeList;
-        FreeList = (void**)(*FreeList);
-        
-        UsedMemory += AllocationSize;
-        ++NumAllocations;
-        
-        return ptr;
-    }
+    return Result;
+}
+
+void PoolAllocatorFree(pool_allocator *Allocator, void *Ptr)
+{
+    // Insert into the free list
+    *((void**)Ptr) = Allocator->Pool;
+    Allocator->Pool = (void**)Ptr;
     
-    void* PoolAllocator::Reallocate(void *src, size_t size, size_t alignment)
-    {
-        assert(1 && "Cannot call realloc on this allocator!\n");
-        return nullptr;
-    }
-    
-    void PoolAllocator::Free(void * ptr)
-    {
-        *((void**)ptr) = FreeList;
-        FreeList = (void**)ptr;
-        UsedMemory -= AllocationSize;
-        --NumAllocations;
-    }
-    
-} // mm
+    Allocator->UsedMemory -= Allocator->Stride;
+    Allocator->NumAllocations--;
+}
+
+#undef BLOCK_SIZE
+#undef MemAlign

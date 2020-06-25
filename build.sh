@@ -1,9 +1,9 @@
 #!/bin/bash
  
 # External library directories
-VK_COMPILER="~/vulkan/1.2.135.0/x86_64/bin"
-VK_INCLUDE="~/vulkan/1.2.135.0/x86_64/include"
-VK_LIB="~/vulkan/1.2.135.0/x86_64/lib"
+#VK_COMPILER="~/vulkan/1.2.135.0/x86_64/bin"
+#VK_INCLUDE="~/vulkan/1.2.135.0/x86_64/include"
+#VK_LIB="~/vulkan/1.2.135.0/x86_64/lib"
 
 HOST_DIR="$PWD"
 echo Host directory is: $HOST_DIR
@@ -28,8 +28,18 @@ then
 	mkdir build
 fi
 
-pushd $BUILD_DIR
-	echo Building game...
-	echo g++ $CFLAGS -Wno-reorder -Wno-unused-parameter -Wno-missing-field-initializers -fno-strict-aliasing $INC -DVK_USE_PLATFORM_XLIB_KHR -DVK_NO_PROTOTYPES $UNITY_SRC -o example -ldl -lpthread -lX11 -Wl,-rpath=$VK_LIB
-	g++ $CFLAGS -Wno-reorder -Wno-unused-parameter -Wno-unused-function -Wno-missing-field-initializers -fno-strict-aliasing $INC -DVK_USE_PLATFORM_XCB_KHR -DVK_NO_PROTOTYPES $UNITY_SRC -o example -ldl -lpthread -lxcb -Wl,-rpath=$VK_LIB
-popd
+if [ "$1" == "mp" ];
+then
+	gcc -g -Wall engine/engine_unity.c -o build/maple.exe -ldl -lpthread -lxcb -lxcb-keysyms
+fi
+
+if [ "$1" == "gm" ];
+then
+	echo Normally would compile game, but not quite there yet!
+fi
+
+#pushd $BUILD_DIR
+#	echo Building game...
+#echo g++ $CFLAGS -Wno-reorder -Wno-unused-parameter -Wno-missing-field-initializers -fno-strict-aliasing $INC -DVK_USE_PLATFORM_XLIB_KHR -DVK_NO_PROTOTYPES $UNITY_SRC -o example -ldl -lpthread -lX11 -Wl,-rpath=$VK_LIB
+#	g++ $CFLAGS -Wno-reorder -Wno-unused-parameter -Wno-unused-function -Wno-missing-field-initializers -fno-strict-aliasing $INC -DVK_USE_PLATFORM_XCB_KHR -DVK_NO_PROTOTYPES $UNITY_SRC -o example -ldl -lpthread -lxcb -Wl,-rpath=$VK_LIB
+#popd

@@ -1,29 +1,28 @@
+
 #define WINDOWS_LEAN_AND_MEAN
 #include <windows.h>
 
 #include <Tchar.h>
 #include <strsafe.h>
-#include <stdio.h>
-
-#include "imgui/imgui_impl_win32.h"
-#include "imgui/imgui_impl_win32.cpp"
 
 #ifndef LOG_BUFFER_SIZE
 #define LOG_BUFFER_SIZE 512
 #endif
+
+struct platform_window
+{
+    HWND Window;
+};
 
 // Timing information
 file_global i64 GlobalPerfCountFrequency;
 
 // Window information
 file_global HWND ClientWindow;
-file_global RECT ClientWindowRect    = {};
-file_global RECT ClientWindowRectOld = ClientWindowRect;
+file_global RECT ClientWindowRect;
+file_global RECT ClientWindowRectOld;
 file_global bool GlobalIsFullscreen  = false;
 file_global bool ClientIsRunning     = false;
-
-file_global u32 ClientWindowWidth;
-file_global u32 ClientWindowHeight;
 
 // Mouse information
 file_global r32 GlobalMouseXPos;
@@ -36,70 +35,49 @@ file_global bool RenderDevGui    = true;
 // Frame Info
 file_global u64 FrameCount = 0;
 
+// Global Memory Handles
+file_global void             *GlobalMemoryPtr;
+file_global free_allocator    PermanantMemory;
+file_global tagged_heap       TaggedHeap;
+file_global tag_id_t          PlatformTag = {0, TAG_ID_PLATFORM, 0};
+file_global tagged_heap_block PlatformHeap;
 
-struct CodeDLL
+// graphics state
+renderer_t Renderer;
+resource_registry ResourceRegistry;
+
+// File I/O Handling
+struct file
 {
-    HMODULE game;
-} GlobalCodeDLL;
+    HANDLE      Handle;
+    
+    // The current size of the file.
+    u64         FileSize;
+    
+    // Two behaviors for backed memory of a file:
+    // 1. Write operations: When writing to a file, HeapBlock will be
+    //    used. When the tagged block is filled, it is flushed to a file.
+    // 2. Read operations: If the file size is greater than the allowed block
+    //    size for the tagged heap, then the memory is allocated from system memory.
+    //    Otherise, use the TaggedHeap as a linear allocator.
+    union
+    {
+        struct
+        {
+            tag_id_t          FileTag;
+            tagged_heap_block Block;  // heap memory
+        };
+        
+        void                 *Memory; // platform memory
+    };
+};
 
-ErrorCode SetError;
-char ErrorBuffer[512];
+#define MAX_OPEN_FILES 10
+file_global file OpenFiles[MAX_OPEN_FILES];
+file_global u32 NextFileId = 0;
 
+file_internal void SetFullscreen(bool fullscreen);
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-
-// TODO(Dustin): Logging has a bug when printing standard text to a command
-// prompt. Error printing works just fine, but printing to STD_OUTPUT_HANDLE
-// produces no output. This only occurs with command prompt. So far, all other
-// consoles have the expected output. This might be fixed.
-
-// TODO(Dustin): Logging needs to be better handled. The main missing functionality
-// is being able to flush the log console to a file. The two required pieces of
-// functionality are:
-// 1. At program exit flush the log console to a file
-// 2. Detect when the console reaches the max allowed lines and flush the lines about
-//    to be overwritten to a file.
-
-// TODO(Dustin): Adapt FileBuffer functionality to handle TEXT based writes. Currently
-// the FileBuffer only supports binary output, which is rather inconvient. Furthermore,
-// writing to the Binary file is rather inconvientent - requiring unqiue helper functions
-// for every type to write. Need to compress the current approach to make development and
-// maintenance easier.
-//
-// Two potential options:
-// 1. Use snprintf (or other thread safe version)
-// 2. Implement my own snptrinf function
-//   - Potentially could handle binary vs TEXT in a unique implementation?
-//
-// A possible extension of this idea is to implement a wrapper around winapi file
-// descriptors. this could allow for a user to specify if the write operations should
-// be binary for TEXT. Any subsequent calls to write could handle the conversion internally.
-//
-// This idea has sort of been implemented with the PlatformFormatString function. Just needs
-// to be tested.
-
-
-// TODO(Dustin): Allow for mouse capture. This will allow for third/first person camera to
-// be implemented in the client layer.
-
-
-//~ Error Handling
-
-// TODO(Dustin): Finish implementing - Need logging working appropriately
-// NOTE(Dustin): Exception handling -
-// This does not currently support async models.
-// the application does not exit gracefully! The purpose of
-// this function to write an error to the log file BEFORE
-// exiting. For future Async I/O will have to call CancelIoEx
-// and then wait for an outgoing IO requeststo cancel before
-// writing and closing the Logging handle.
-
-void Win32RaiseError(ErrorCode error, char *fmt, ...)
-{
-    SetError = error;
-    
-    
-}
-
 
 // source: Windows API doc: https://docs.microsoft.com/en-us/windows/win32/fileio/opening-a-file-for-reading-or-writing
 file_internal void DisplayError(LPTSTR lpszFunction)
@@ -143,15 +121,323 @@ file_internal void DisplayError(LPTSTR lpszFunction)
     LocalFree(lpDisplayBuf);
 }
 
+// An internal allocation scheme that allocates from the 2MB Platform Linear allcoator.
+// this functions is primarily used by print/formatting functions that need temporary,
+// dynamic memory. When the heap is filled, the allocator is reset.
+file_internal void* PlatformLocalAlloc(u32 Size)
+{
+    void* Result = TaggedHeapBlockAlloc(&PlatformHeap, Size);
+    if (!Result)
+    {
+        PlatformHeap.Brkp = PlatformHeap.Start;
+        
+        Result = TaggedHeapBlockAlloc(&PlatformHeap, Size);
+        if (!Result)
+            mprinte("Error allocating from Platform Heap Allocator!\n");
+    }
+    
+    return Result;
+}
+
+//~ File I/O
+mstring Win32GetExeFilepath();
+
+// Takes a path relative to the executable, and normalizes it into a full path.
+// Tries to handle malformed input, but returns an empty string if unsuccessful.
+mstring Win32NormalizePath(const char* path)
+{
+    // If the string is null or has length < 2, just return an empty one.
+    if (!path || !path[0] || !path[1]) return {};
+    
+    // Start with our relative path appended to the full executable path.
+    mstring exe_path = Win32GetExeFilepath();
+    mstring result;
+    MstringAdd(&result, &exe_path, path, strlen(path));
+    
+    char *Str = GetStr(&result);
+    
+    // Swap any back slashes for forward slashes.
+    for (u32 i = 0; i < (u32)result.Len; ++i) if (Str[i] == '\\') Str[i] = '/';
+    
+    // Strip double separators.
+    for (u32 i = 0; i < (u32)result.Len - 1; ++i)
+    {
+        if (Str[i] == '/' && Str[i + 1] == '/')
+        {
+            for (u32 j = i; j < (u32)result.Len; ++j) Str[j] = Str[j + 1];
+            --result.Len;
+            --i;
+        }
+    }
+    
+    // Evaluate any relative specifiers (./).
+    if (Str[0] == '.' && Str[1] == '/')
+    {
+        for (u32 i = 0; i < (u32)result.Len - 1; ++i) Str[i] = Str[i + 2];
+        result.Len -= 2;
+    }
+    for (u32 i = 0; i < (u32)result.Len - 1; ++i)
+    {
+        if (Str[i] != '.' && Str[i + 1] == '.' && Str[i + 2] == '/')
+        {
+            for (u32 j = i + 1; Str[j + 1]; ++j) Str[j] = Str[j + 2];
+            result.Len -= 2;
+        }
+    }
+    
+    // Evaluate any parent specifiers (../).
+    u32 last_separator = 0;
+    for (u32 i = 0; (i < (u32)result.Len - 1); ++i)
+    {
+        if (Str[i] == '.' && Str[i + 1] == '.' && Str[i + 2] == '/')
+        {
+            u32 base = i + 2;
+            u32 count = result.Len - base;
+            
+            for (u32 j = 0; j <= count; ++j)
+            {
+                Str[last_separator + j] = Str[base + j];
+            }
+            
+            result.Len -= base - last_separator;
+            i = last_separator;
+            
+            if (i > 0)
+            {
+                bool has_separator = false;
+                for (i32 j = last_separator - 1; j >= 0; --j)
+                {
+                    if (Str[j] == '/')
+                    {
+                        last_separator = j;
+                        has_separator = true;
+                        break;
+                    }
+                }
+                if (!has_separator) return {};
+            }
+        }
+        if (i > 0 && Str[i - 1] == '/') last_separator = i - 1;
+    }
+    
+    MstringFree(&exe_path);
+    return result;
+}
+
+#define WIN32_STATE_FILE_NAME_COUNT MAX_PATH
+mstring Win32GetExeFilepath()
+{
+    // Get the full filepath
+    char exe[WIN32_STATE_FILE_NAME_COUNT];
+    size_t filename_size = sizeof(exe);
+    
+    DWORD filepath_size = GetModuleFileNameA(0, exe, filename_size);
+    
+    // find last "\"
+    char *pos = 0;
+    for (char *Scanner = exe; *Scanner; ++Scanner)
+    {
+        if (*Scanner == '\\')
+        {
+            *Scanner = '/'; // normalize the slash to be unix style
+            pos = Scanner + 1;
+        }
+    }
+    
+    int len = (pos - exe) + 1;
+    
+    mstring result;
+    Mstring(&result, exe, (pos - exe));
+    
+    return result;
+}
+
+void PlatformCloseFile(file_t File)
+{
+    if (File->Handle == INVALID_HANDLE_VALUE) return;
+    
+    if (File->FileSize > TaggedHeap.BlockSize)
+    {
+        PlatformReleaseMemory(File->Memory, File->FileSize);
+        File->Memory = nullptr;
+    }
+    else
+    {
+        TaggedHeapReleaseAllocation(&TaggedHeap, File->FileTag);
+        
+        File->Block.Start      = NULL;
+        File->Block.Brkp       = NULL;
+        File->Block.End        = NULL;
+        File->Block.TaggedHeap = NULL;
+    }
+    
+    CloseHandle(File->Handle);
+    File->FileSize = 0;
+    File->Handle   = INVALID_HANDLE_VALUE;
+}
+
+void* GetFileBuffer(file_t File)
+{
+    if (File->FileSize > TaggedHeap.BlockSize)
+    {
+        return File->Memory;
+    }
+    else
+    {
+        return File->Block.Start;
+    }
+}
+
+u64 PlatformGetFileSize(file_t File)
+{
+    return File->FileSize;
+}
+
+file_t PlatformLoadFile(const char *Filename, bool Append)
+{
+    file_t Result = NULL;
+    
+    // Find an open file handle
+    for (u32 i = 0; i < MAX_OPEN_FILES; ++i)
+    {
+        if (OpenFiles[i].Handle == INVALID_HANDLE_VALUE)
+        {
+            Result = OpenFiles + i;
+            break;
+        }
+    }
+    
+    if (Result)
+    {
+        mstring AbsPath = Win32NormalizePath(Filename);
+        
+        Result->Handle = CreateFileA(GetStr(&AbsPath),
+                                     GENERIC_READ,
+                                     0,
+                                     NULL,
+                                     OPEN_EXISTING,
+                                     FILE_ATTRIBUTE_NORMAL,
+                                     NULL);
+        
+        if (Result->Handle == INVALID_HANDLE_VALUE)
+        {
+            DisplayError(TEXT("CreateFile"));
+            MstringFree(&AbsPath);
+            
+            return Result;
+        }
+        
+        // retrieve the file information the
+        BY_HANDLE_FILE_INFORMATION file_info;
+        // NOTE(Dustin): This can also be used to query the last time the file has been written to
+        BOOL err = GetFileInformationByHandle(Result->Handle, &file_info);
+        
+        if (!err)
+        {
+            DisplayError(TEXT("GetFileInformationByHandle"));
+            CloseHandle(Result->Handle);
+            Result->Handle = INVALID_HANDLE_VALUE;
+            MstringFree(&AbsPath);
+            
+            return Result;
+        }
+        
+        // size of a DWORD is always 32 bits
+        // NOTE(Dustin): Will there be a case where the file size will
+        // be greater than 2^32? If so, might want to stream the data.
+        // ReadFile max size seems to be 2^32.
+        DWORD low_size  = file_info.nFileSizeLow;
+        DWORD high_size = file_info.nFileSizeHigh;
+        
+        // NOTE(Dustin): Instead of OR'ing the values together, could probably
+        // just check to see if high_size is greater than 0
+        u64 file_size = (((u64)high_size)<<32) | (((u64)low_size)<<0);
+        if (file_size >= ((u64)1<<32))
+        {
+            mprinte("File \"%s\" is too large and should probably be streamed from disc!\n", GetStr(&AbsPath));
+            CloseHandle(Result->Handle);
+            Result->Handle = INVALID_HANDLE_VALUE;
+            MstringFree(&AbsPath);
+            
+            return Result;
+        }
+        
+        DWORD bytes_read = 0;
+        Result->FileSize = file_size;
+        
+        if (file_size > TaggedHeap.BlockSize)
+        { // we need to allocate from platform memory
+            Result->Memory = PlatformRequestMemory(file_size);
+            
+            err = ReadFile(Result->Handle,
+                           Result->Memory,
+                           low_size,
+                           &bytes_read,
+                           NULL);
+        }
+        else
+        { // we can just allocate from the tag heap
+            Result->FileTag = { NextFileId++, TAG_ID_FILE, 0 };
+            Result->Block   = TaggedHeapRequestAllocation(&TaggedHeap, Result->FileTag);
+            
+            err = ReadFile(Result->Handle,
+                           Result->Block.Start,
+                           low_size,
+                           &bytes_read,
+                           NULL);
+            
+            Result->Block.Brkp += bytes_read;
+        }
+        
+        
+        if (err == 0)
+        {
+            // NOTE(Dustin): Note that 0 can be returned if the
+            // read operating is occuring asynchronously
+            DisplayError(TEXT("ReadFile"));
+            CloseHandle(Result->Handle);
+            
+            MstringFree(&AbsPath);
+            
+            return Result;
+        }
+        
+        MstringFree(&AbsPath);
+    }
+    else
+    {
+        mprinte("Unable to find an open file handle. Please close a file handle to open another!\n");
+    }
+    
+    return Result;
+}
+
+file_t PlatformOpenFile(const char *Filename, bool Append)
+{
+    file_t Result;
+    return Result;
+}
+
+void PlatformFlushFile(file_t File)
+{
+    
+}
+
+void CopyFileIfChanged(const char *Dst, const char *Src)
+{
+    
+}
+
+
 //~ Logging
 
-struct Win32StandardStream
+typedef struct
 {
     HANDLE handle; // Stream handle (STD_OUTPUT_HANDLE or STD_ERROR_HANDLE).
     bool is_redirected; // True if redirected to file.
     bool is_wide; // True if appending to a UTF-16 file.
     bool is_little_endian; // True if file is UTF-16 little endian.
-};
+} Win32StandardStream;
 
 file_internal bool RedirectConsoleIO()
 {
@@ -183,9 +469,9 @@ file_internal bool RedirectConsoleIO()
 }
 
 // Sets up a standard stream (stdout or stderr).
-file_internal Win32StandardStream Win32GetStandardStream(u32 stream_type)
+file_internal Win32StandardStream Win32GetStandardStream(DWORD stream_type)
 {
-    Win32StandardStream result = {};
+    Win32StandardStream result = {0};
     
     // If we don't have our own stream and can't find a parent console,
     // allocate a new console.
@@ -213,10 +499,11 @@ file_internal Win32StandardStream Win32GetStandardStream(u32 stream_type)
             GetFileSizeEx(result.handle, &file_size);
             if (file_size.QuadPart > 1)
             {
+                LARGE_INTEGER large = {0};
                 u16 bom = 0;
-                SetFilePointerEx(result.handle, {}, 0, FILE_BEGIN);
+                SetFilePointerEx(result.handle, large, 0, FILE_BEGIN);
                 ReadFile(result.handle, &bom, 2, &dummy, 0);
-                SetFilePointerEx(result.handle, {}, 0, FILE_END);
+                SetFilePointerEx(result.handle, large, 0, FILE_END);
                 result.is_wide = (bom == (u16)0xfeff || bom == (u16)0xfffe);
                 result.is_little_endian = (bom == (u16)0xfffe);
             }
@@ -226,54 +513,54 @@ file_internal Win32StandardStream Win32GetStandardStream(u32 stream_type)
 }
 
 // Translates foreground/background color into a WORD text attribute.
-file_internal WORD Win32TranslateConsoleColors(EConsoleColor text_color, EConsoleColor background_color)
+file_internal WORD Win32TranslateConsoleColors(console_color text_color, console_color background_color)
 {
     WORD result = 0;
     switch (text_color)
     {
-        case EConsoleColor::White:
+        case ConsoleColor_White:
         result |=  FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkGrey:
+        case ConsoleColor_DarkGrey:
         result |= FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::Grey:
+        case ConsoleColor_Grey:
         result |= FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
         break;
-        case EConsoleColor::DarkRed:
+        case ConsoleColor_DarkRed:
         result |= FOREGROUND_RED;
         break;
-        case EConsoleColor::Red:
+        case ConsoleColor_Red:
         result |= FOREGROUND_RED | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkGreen:
+        case ConsoleColor_DarkGreen:
         result |= FOREGROUND_GREEN;
         break;
-        case EConsoleColor::Green:
+        case ConsoleColor_Green:
         result |= FOREGROUND_GREEN | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkBlue:
+        case ConsoleColor_DarkBlue:
         result |= FOREGROUND_BLUE;
         break;
-        case EConsoleColor::Blue:
+        case ConsoleColor_Blue:
         result |= FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkCyan:
+        case ConsoleColor_DarkCyan:
         result |= FOREGROUND_GREEN | FOREGROUND_BLUE;
         break;
-        case EConsoleColor::Cyan:
+        case ConsoleColor_Cyan:
         result |= FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkPurple:
+        case ConsoleColor_DarkPurple:
         result |= FOREGROUND_RED | FOREGROUND_BLUE;
         break;
-        case EConsoleColor::Purple:
+        case ConsoleColor_Purple:
         result |= FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkYellow:
+        case ConsoleColor_DarkYellow:
         result |= FOREGROUND_RED | FOREGROUND_GREEN;
         break;
-        case EConsoleColor::Yellow:
+        case ConsoleColor_Yellow:
         result |= FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
         break;
         default:
@@ -282,49 +569,49 @@ file_internal WORD Win32TranslateConsoleColors(EConsoleColor text_color, EConsol
     
     switch (background_color)
     {
-        case EConsoleColor::White:
+        case ConsoleColor_White:
         result |=  FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkGrey:
+        case ConsoleColor_DarkGrey:
         result |=  FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::Grey:
+        case ConsoleColor_Grey:
         result |= FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
         break;
-        case EConsoleColor::DarkRed:
+        case ConsoleColor_DarkRed:
         result |= FOREGROUND_RED;
         break;
-        case EConsoleColor::Red:
+        case ConsoleColor_Red:
         result |= FOREGROUND_RED | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkGreen:
+        case ConsoleColor_DarkGreen:
         result |= FOREGROUND_GREEN;
         break;
-        case EConsoleColor::Green:
+        case ConsoleColor_Green:
         result |= FOREGROUND_GREEN | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkBlue:
+        case ConsoleColor_DarkBlue:
         result |= FOREGROUND_BLUE;
         break;
-        case EConsoleColor::Blue:
+        case ConsoleColor_Blue:
         result |= FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkCyan:
+        case ConsoleColor_DarkCyan:
         result |= FOREGROUND_GREEN | FOREGROUND_BLUE;
         break;
-        case EConsoleColor::Cyan:
+        case ConsoleColor_Cyan:
         result |= FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkPurple:
+        case ConsoleColor_DarkPurple:
         result |= FOREGROUND_RED | FOREGROUND_BLUE;
         break;
-        case EConsoleColor::Purple:
+        case ConsoleColor_Purple:
         result |= FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
         break;
-        case EConsoleColor::DarkYellow:
+        case ConsoleColor_DarkYellow:
         result |= FOREGROUND_RED | FOREGROUND_GREEN;
         break;
-        case EConsoleColor::Yellow:
+        case ConsoleColor_Yellow:
         result |= FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
         break;
         default:
@@ -336,7 +623,7 @@ file_internal WORD Win32TranslateConsoleColors(EConsoleColor text_color, EConsol
 
 // Prints a message to a platform stream. If the stream is a console, uses
 // supplied colors.
-file_internal void Win32PrintToStream(const char* message, Win32StandardStream stream, EConsoleColor text_color, EConsoleColor background_color)
+file_internal void Win32PrintToStream(const char* message, Win32StandardStream stream, console_color text_color, console_color background_color)
 {
     
     // If redirected, write to a file instead of console.
@@ -394,32 +681,13 @@ i32 __Win32FormatString(char *buff, i32 len, char *fmt, va_list list)
     }
     
     return needed_chars;
-    
-#if 0
-    // since jstring contains a stack allocated buffer, we might not
-    // actually need to resize
-    if (needed_chars >= sizeof(result.sptr))
-    {
-        result = InitJString(needed_chars);
-        
-        needed_chars = vsnprintf(result.hptr, needed_chars, fmt, list);
-        result.len = needed_chars;
-        
-        if ((result.heap) && result.len > result.reserved_heap_size)
-        {
-            // TODO(Dustin): Use new print methods
-            mprinte("Failed to format a string!\n");
-            result.Clear();
-        }
-    }
-#endif
 }
 
-void __Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char *fmt, va_list args)
+void __Win32PrintMessage(console_color text_color, console_color background_color, char *fmt, va_list args)
 {
-    char *message = nullptr;
+    char *message = NULL;
     int chars_read = 1 + __Win32FormatString(message, 1, fmt, args);
-    message = talloc<char>(chars_read);
+    message = (char*)PlatformLocalAlloc(chars_read);
     __Win32FormatString(message, chars_read, fmt, args);
     
     // If we are in the debugger, output there.
@@ -430,16 +698,16 @@ void __Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_colo
     else
     {
         // Otherwise, output to stdout.
-        local_persist Win32StandardStream stream = Win32GetStandardStream(STD_OUTPUT_HANDLE);
+        Win32StandardStream stream = Win32GetStandardStream(STD_OUTPUT_HANDLE);
         Win32PrintToStream(message, stream, text_color, background_color);
     }
 }
 
-void __Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, char *fmt, va_list args)
+void __Win32PrintError(console_color text_color, console_color background_color, char *fmt, va_list args)
 {
-    char *message = nullptr;
+    char *message = NULL;
     int chars_read = 1 + __Win32FormatString(message, 1, fmt, args);
-    message = talloc<char>(chars_read);
+    message = (char*)PlatformLocalAlloc(chars_read);
     __Win32FormatString(message, chars_read, fmt, args);
     
     if (IsDebuggerPresent())
@@ -449,12 +717,12 @@ void __Win32PrintError(EConsoleColor text_color, EConsoleColor background_color,
     else
     {
         // Otherwise, output to stderr.
-        local_persist Win32StandardStream stream = Win32GetStandardStream(STD_ERROR_HANDLE);
+        Win32StandardStream stream = Win32GetStandardStream(STD_ERROR_HANDLE);
         Win32PrintToStream(message, stream, text_color, background_color);
     }
 }
 
-i32 Win32FormatString(char *buff, i32 len, char* fmt, ...)
+i32 PlatformFormatString(char *buff, i32 len, char* fmt, ...)
 {
     va_list list;
     va_start(list, fmt);
@@ -464,7 +732,7 @@ i32 Win32FormatString(char *buff, i32 len, char* fmt, ...)
     return chars_read;
 }
 
-void Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
+void PlatformPrintMessage(console_color text_color, console_color background_color, char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -472,7 +740,7 @@ void Win32PrintMessage(EConsoleColor text_color, EConsoleColor background_color,
     va_end(args);
 }
 
-void Win32PrintError(EConsoleColor text_color, EConsoleColor background_color, char* fmt, ...)
+void PlatformPrintError(console_color text_color, console_color background_color, char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -484,7 +752,7 @@ inline void mprint(char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    __Win32PrintMessage(EConsoleColor::White, EConsoleColor::DarkGrey, fmt, args);
+    __Win32PrintMessage(ConsoleColor_White, ConsoleColor_DarkGrey, fmt, args);
     va_end(args);
 }
 
@@ -492,565 +760,13 @@ inline void mprinte(char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    __Win32PrintError(EConsoleColor::Red, EConsoleColor::DarkGrey, fmt, args);
+    __Win32PrintError(ConsoleColor_Red, ConsoleColor_DarkGrey, fmt, args);
     va_end(args);
 }
 
-//~ File I/O
+//~ Bit shifting
 
-// Takes a path relative to the executable, and normalizes it into a full path.
-// Tries to handle malformed input, but returns an empty string if unsuccessful.
-jstring Win32NormalizePath(const char* path)
-{
-    // If the string is null or has length < 2, just return an empty one.
-    if (!path || !path[0] || !path[1]) return {};
-    
-    // Start with our relative path appended to the full executable path.
-    jstring exe_path = Win32GetExeFilepath();
-    jstring result = exe_path + path;
-    
-    // Swap any back slashes for forward slashes.
-    for (u32 i = 0; i < (u32)result.len; ++i) if (result[i] == '\\') result[i] = '/';
-    
-    // Strip double separators.
-    for (u32 i = 0; i < (u32)result.len - 1; ++i)
-    {
-        if (result[i] == '/' && result[i + 1] == '/')
-        {
-            for (u32 j = i; j < (u32)result.len; ++j) result[j] = result[j + 1];
-            --result.len;
-            --i;
-        }
-    }
-    
-    // Evaluate any relative specifiers (./).
-    if (result[0] == '.' && result[1] == '/')
-    {
-        for (u32 i = 0; i < (u32)result.len - 1; ++i) result[i] = result[i + 2];
-        result.len -= 2;
-    }
-    for (u32 i = 0; i < (u32)result.len - 1; ++i)
-    {
-        if (result[i] != '.' && result[i + 1] == '.' && result[i + 2] == '/')
-        {
-            for (u32 j = i + 1; result[j + 1]; ++j) result[j] = result[j + 2];
-            result.len -= 2;
-        }
-    }
-    
-    // Evaluate any parent specifiers (../).
-    u32 last_separator = 0;
-    for (u32 i = 0; (i < (u32)result.len - 1); ++i)
-    {
-        if (result[i] == '.' && result[i + 1] == '.' && result[i + 2] == '/')
-        {
-            u32 base = i + 2;
-            u32 count = result.len - base;
-            
-            for (u32 j = 0; j <= count; ++j)
-            {
-                result[last_separator + j] = result[base + j];
-            }
-            
-            result.len -= base - last_separator;
-            i = last_separator;
-            
-            if (i > 0)
-            {
-                bool has_separator = false;
-                for (i32 j = last_separator - 1; j >= 0; --j)
-                {
-                    if (result[j] == '/')
-                    {
-                        last_separator = j;
-                        has_separator = true;
-                        break;
-                    }
-                }
-                if (!has_separator) return {};
-            }
-        }
-        if (i > 0 && result[i - 1] == '/') last_separator = i - 1;
-    }
-    
-    // Strip any leading or trailing separators.
-    // NOTE(Dustin): Not sure i want this to occur
-    /*
-    if (result[0] == '/')
-    {
-        for (u32 i = 0; i < (u32)result.len; ++i) result[i] = result[i + 1];
-        --result.len;
-    }
-    
-    if (result[result.len - 1] == '/')
-    {
-        result[result.len - 1] = '\0';
-        --result.len;
-    }
-    */
-    
-    exe_path.Clear();
-    return result;
-}
-
-DynamicArray<jstring> Win32FindAllFilesInDirectory(jstring &directory, jstring delimiter)
-{
-    DynamicArray<jstring> files = DynamicArray<jstring>();
-    
-    jstring abs_path = Win32NormalizePath(directory.GetCStr());
-    jstring path =  abs_path + delimiter;
-    
-    WIN32_FIND_DATA fd;
-    HANDLE hfind = FindFirstFile(path.GetCStr(), &fd);
-    
-    if (hfind != INVALID_HANDLE_VALUE)
-    {
-        do
-        {
-            // read all files in current folder
-            // ignore directories
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-            {
-                jstring file = InitJString(fd.cFileName);
-                files.PushBack(file);
-            }
-        } while (FindNextFile(hfind, &fd));
-        
-        FindClose(hfind);
-    }
-    
-    abs_path.Clear();
-    path.Clear();
-    
-    return files;
-}
-
-#define WIN32_STATE_FILE_NAME_COUNT MAX_PATH
-jstring Win32GetExeFilepath()
-{
-    // Get the full filepath
-    char exe[WIN32_STATE_FILE_NAME_COUNT];
-    size_t filename_size = sizeof(exe);
-    
-    DWORD filepath_size = GetModuleFileNameA(0, exe, filename_size);
-    
-    // find last "\"
-    char *pos = 0;
-    for (char *Scanner = exe; *Scanner; ++Scanner)
-    {
-        if (*Scanner == '\\')
-        {
-            *Scanner = '/'; // normalize the slash to be unix style
-            pos = Scanner + 1;
-        }
-    }
-    
-    int len = (pos - exe) + 1;
-    jstring result = InitJString(exe, (pos - exe));
-    
-    return result;
-}
-
-void Win32DetermineFileEncoding(HANDLE handle)
-{
-    Win32StandardStream result = {};
-    
-    DWORD type = GetFileType(result.handle) & (~FILE_TYPE_REMOTE);
-    DWORD dummy;
-    result.is_redirected = (type == FILE_TYPE_CHAR) ? !GetConsoleMode(result.handle, &dummy) : true;
-    if (type == FILE_TYPE_DISK)
-    {
-        LARGE_INTEGER file_size;
-        GetFileSizeEx(result.handle, &file_size);
-        if (file_size.QuadPart > 1)
-        {
-            u16 bom = 0;
-            SetFilePointerEx(result.handle, {}, 0, FILE_BEGIN);
-            ReadFile(result.handle, &bom, 2, &dummy, 0);
-            SetFilePointerEx(result.handle, {}, 0, FILE_END);
-            result.is_wide = (bom == (u16)0xfeff || bom == (u16)0xfffe);
-            result.is_little_endian = (bom == (u16)0xfffe);
-        }
-    }
-    else if (type == FILE_TYPE_UNKNOWN)
-    {
-        DisplayError(TEXT("GetFileType"));
-    }
-}
-
-void Win32CopyFileIfChanged(const char *Destination, const char *Source)
-{
-    jstring DestinationFull = Win32NormalizePath(Destination);
-    jstring SourceFull      = Win32NormalizePath(Source);
-    
-    BY_HANDLE_FILE_INFORMATION DestinationFileInfo;
-    BY_HANDLE_FILE_INFORMATION SourceFileInfo;
-    
-    BOOL DstErr = GetFileAttributesEx(DestinationFull.GetCStr(),
-                                      GetFileExInfoStandard,
-                                      &DestinationFileInfo);
-    
-    BOOL SrcErr = GetFileAttributesEx(SourceFull.GetCStr(),
-                                      GetFileExInfoStandard,
-                                      &SourceFileInfo);
-    
-    if (!SrcErr)
-    {
-        DisplayError(TEXT("Could not find source file for copy!"));
-    }
-    else if (!DstErr)
-    {
-        BOOL Err = CopyFile(SourceFull.GetCStr(),
-                            DestinationFull.GetCStr(),
-                            NULL);
-        
-        if (!Err) DisplayError(TEXT("CopyFile"));
-    }
-    else
-    {
-        FILETIME DestinationLastWrite = DestinationFileInfo.ftLastWriteTime;
-        FILETIME SourceLastWrite      = SourceFileInfo.ftLastWriteTime;
-        
-        if (DestinationLastWrite.dwLowDateTime < SourceLastWrite.dwLowDateTime &&
-            DestinationLastWrite.dwHighDateTime < SourceLastWrite.dwHighDateTime)
-        {
-            BOOL Err = CopyFile(SourceFull.GetCStr(),
-                                DestinationFull.GetCStr(),
-                                NULL);
-            
-            if (!Err) DisplayError(TEXT("CopyFile"));
-        }
-    }
-    
-    DestinationFull.Clear();
-    SourceFull.Clear();
-}
-
-jstring Win32LoadFile(jstring &filename)
-{
-    jstring abs_path = Win32NormalizePath(filename.GetCStr());
-    
-    HANDLE handle = CreateFileA(abs_path.GetCStr(),
-                                GENERIC_READ,
-                                0,
-                                NULL,
-                                OPEN_EXISTING,
-                                FILE_ATTRIBUTE_NORMAL,
-                                NULL);
-    
-    if (handle == INVALID_HANDLE_VALUE)
-    {
-        DisplayError(TEXT("CreateFile"));
-        CloseHandle(handle);
-        
-        abs_path.Clear();
-        
-        jstring result = {};
-        return result;
-    }
-    
-    // retrieve the file information the
-    BY_HANDLE_FILE_INFORMATION file_info;
-    // NOTE(Dustin): This can also be used to query the last time the file has been written to
-    BOOL err = GetFileInformationByHandle(handle, &file_info);
-    
-    if (!err)
-    {
-        DisplayError(TEXT("GetFileInformationByHandle"));
-        CloseHandle(handle);
-        
-        abs_path.Clear();
-        
-        jstring result = {};
-        return result;
-    }
-    
-    // size of a DWORD is always 32 bits
-    // NOTE(Dustin): Will there be a case where the file size will
-    // be greater than 2^32? If so, might want to stream the data.
-    // ReadFile max size seems to be 2^32.
-    DWORD low_size  = file_info.nFileSizeLow;
-    DWORD high_size = file_info.nFileSizeHigh;
-    
-    // NOTE(Dustin): Instead of OR'ing the values together, could probably
-    // just check to see if high_size is greater than 0
-    u64 file_size = (((u64)high_size)<<32) | (((u64)low_size)<<0);
-    if (file_size >= ((u64)1<<32))
-    {
-        mprinte("File \"%s\" is too large and should probably be streamed from disc!\n", abs_path.GetCStr());
-        CloseHandle(handle);
-        
-        abs_path.Clear();
-        
-        jstring result = {};
-        return result;
-    }
-    
-    jstring result = InitJString(file_size);
-    
-    DWORD bytes_read = 0;
-    err = ReadFile(handle,
-                   (result.heap) ? result.hptr : result.sptr,
-                   low_size,
-                   &bytes_read,
-                   NULL);
-    
-    if (err == 0)
-    {
-        // NOTE(Dustin): Note that 0 can be returned if the
-        // read operating is occuring asynchronously
-        DisplayError(TEXT("ReadFile"));
-        CloseHandle(handle);
-        
-        abs_path.Clear();
-        
-        jstring result = {};
-        return result;
-    }
-    
-    result.len = bytes_read;
-    if (result.heap)
-    {
-        result.hptr[bytes_read] = 0;
-    }
-    else
-    {
-        result.sptr[bytes_read] = 0;
-    }
-    CloseHandle(handle);
-    
-    abs_path.Clear();
-    
-    return result;
-}
-
-// TODO(Dustin): Allow for appending to a file
-void Win32WriteBufferToFile(jstring &file, void *buffer, u32 size)
-{
-    jstring abs_path = Win32NormalizePath(file.GetCStr());
-    HANDLE handle = CreateFileA(abs_path.GetCStr(), GENERIC_WRITE, 0, 0,
-                                TRUNCATE_EXISTING,
-                                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
-    
-    if (handle == INVALID_HANDLE_VALUE)
-    {
-        handle = CreateFileA(abs_path.GetCStr(), GENERIC_WRITE, 0, 0, CREATE_NEW,
-                             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
-    }
-    
-    if (handle == INVALID_HANDLE_VALUE)
-    {
-        DisplayError(TEXT("CreateFile"));
-        _tprintf(TEXT("Terminal failure: Unable to open file \"%s\" for write.\n"), abs_path.GetCStr());
-    }
-    else
-    {
-        DWORD bytes_written = 0;
-        BOOL err = WriteFile(handle,         // open file handle
-                             buffer,         // start of data to write
-                             size,           // number of bytes to write
-                             &bytes_written, // number of bytes that were written
-                             NULL);          // no overlapped structure
-        
-        if (err == FALSE)
-        {
-            DisplayError(TEXT("WriteFile"));
-            mprinte("Terminal failure: Unable to write to file.\n");
-        }
-        else
-        {
-            if (bytes_written != size)
-            {
-                // This is an error because a synchronous write that results in
-                // success (WriteFile returns TRUE) should write all data as
-                // requested. This would not necessarily be the case for
-                // asynchronous writes.
-                mprinte("Error: dwBytesWritten != dwBytesToWrite\n");
-            }
-        }
-        
-    }
-    
-    abs_path.Clear();
-    CloseHandle(handle);
-}
-
-void Win32DeleteFile(jstring &file)
-{
-    jstring abs_path = Win32NormalizePath(file.GetCStr());
-    
-    if (!DeleteFile(abs_path.GetCStr()))
-    {
-        DisplayError(TEXT("DeleteFile"));
-    }
-    
-    abs_path.Clear();
-}
-
-//~
-// NOTE(Dustin): Keep? Depends on how I end up setting up the
-// Engine - Game toolchain
-#if 0
-GameApi LoadGameApi(const char *libname)
-{
-    GameApi gc = {};
-    
-    GlobalCodeDLL.game = LoadLibrary(TEXT(libname));
-    
-    if (GlobalCodeDLL.game != NULL)
-    {
-        gc.Initialize =
-            (game_initialize *)GetProcAddress(GlobalCodeDLL.game, "GameInitialize");
-        gc.Update     = (game_update   *)GetProcAddress(GlobalCodeDLL.game, "GameUpdate");
-        gc.Resize     = (game_resize   *)GetProcAddress(GlobalCodeDLL.game, "GameResize");
-        gc.Shutdown   = (game_shutdown *)GetProcAddress(GlobalCodeDLL.game, "GameShutdown");
-        if (gc.Initialize && gc.Update && gc.Resize && gc.Shutdown)
-        {
-            gc.is_valid = true;
-        }
-    }
-    
-    return gc;
-}
-#endif
-
-void Win32ExecuteCommand(jstring &system_cmd)
-{
-    STARTUPINFO si = { 0 };
-    PROCESS_INFORMATION pi;
-    si.cb = sizeof(si);
-    
-    LPSTR input = (LPSTR)system_cmd.GetCStr();
-    
-    DWORD err;
-    if (!CreateProcess(NULL, input, NULL, NULL, FALSE,
-                       0, 0, 0, &si, &pi)) {
-        DisplayError(TEXT("CreateProcess"));
-    }
-    else
-    {
-        // Wait till process completes
-        WaitForSingleObject(pi.hProcess, INFINITE);
-        // Check process’s exit code
-        GetExitCodeProcess(pi.hProcess, &err);
-        // Avoid memory leak by closing process handle
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-    }
-}
-
-void Win32WaitForEvents()
-{
-    // pause while the app is de-iconified
-}
-
-u64 Win32GetWallClock()
-{
-    LARGE_INTEGER Result;
-    QueryPerformanceCounter(&Result);
-    return (Result.QuadPart);
-    
-}
-
-r32 Win32GetSecondsElapsed(u64 start, u64 end)
-{
-    r32 Result = ((r32)(end - start) /
-                  (r32)GlobalPerfCountFrequency);
-    return(Result);
-}
-
-// TODO(Dustin): Collect all required extensions for a platform
-// requires that a Dynamic Array is returned
-const char* Win32GetRequiredInstanceExtensions(bool validation_layers)
-{
-    VkResult err;
-    VkExtensionProperties* ep;
-    u32 count = 0;
-    err = vk::vkEnumerateInstanceExtensionProperties(NULL, &count, NULL);
-    if (err)
-    {
-        mprinte("Error enumerating Instance extension properties!\n");
-    }
-    
-    ep = palloc<VkExtensionProperties>();
-    err = vk::vkEnumerateInstanceExtensionProperties(NULL, &count, ep);
-    if (err)
-    {
-        mprinte("Unable to retrieve enumerated extension properties!\n");
-        count = 0;
-    }
-    
-    for (u32 i = 0;  i < count;  i++)
-    {
-        if (strcmp(ep[i].extensionName, "VK_KHR_win32_surface") == 0)
-        {
-            const char *plat_exts = "VK_KHR_win32_surface";
-            
-            pfree(ep);
-            
-            return plat_exts;
-        }
-    }
-    
-    pfree(ep);
-    mprinte("Could not find win32 vulkan surface extension!\n");
-    
-    return "";
-};
-
-void Win32VulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance)
-{
-    VkWin32SurfaceCreateInfoKHR surface_info = {};
-    surface_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    surface_info.hinstance = GetModuleHandle(NULL);;
-    surface_info.hwnd      = ClientWindow;
-    
-    VK_CHECK_RESULT(vk::vkCreateWin32SurfaceKHR(vulkan_instance, &surface_info, nullptr, surface),
-                    "Unable to create XCB Surface!\n");
-}
-
-void Win32GetClientWindowDimensions(u32 *width, u32 *height)
-{
-    RECT rect;
-    GetClientRect(ClientWindow, &rect);
-    
-    *width  = rect.right - rect.left;
-    *height = rect.bottom - rect.top;
-}
-
-file_internal void Win32ShutdownRoutines()
-{
-    ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
-    event::ManagerShutdown();
-    vk::ShutdownVulkan();
-    ecs::ShutdownECS();
-    mm::ShutdownMemoryManager();
-}
-
-file_internal void WindowResizeEventCallback(void *instance, WindowResizeEvent event)
-{
-    CoreVulkanResizeEvent cv_event;
-    cv_event.Width  = event.Width;
-    cv_event.Height = event.Height;
-    
-    event::Dispatch<CoreVulkanResizeEvent>(cv_event);
-}
-
-file_internal void CoreVulkanResizeEventCallback(void *instance, CoreVulkanResizeEvent event)
-{
-    // Idle <- wait for last frame to finish rendering
-    vk::Idle();
-    vk::Resize();
-    
-    ResizeEvent r_event;
-    r_event.Width  = event.Width;
-    r_event.Height = event.Height;
-    
-    event::Dispatch<ResizeEvent>(r_event);
-}
-
-u32 __inline Win32ComputeTrailingZero(u64 Value)
+u32 PlatformCtzl(u64 Value)
 {
     unsigned long TrailingZero = 0;
     
@@ -1060,7 +776,7 @@ u32 __inline Win32ComputeTrailingZero(u64 Value)
         return 32;
 }
 
-u32 __inline Win32ComputeLeadingZero(u64 Value)
+u32 PlatformClzl(u64 Value)
 {
     unsigned long LeadingZero = 0;
     
@@ -1070,7 +786,7 @@ u32 __inline Win32ComputeLeadingZero(u64 Value)
         return 32;
 }
 
-void* Win32RequestMemory(u64 Size)
+void* PlatformRequestMemory(u64 Size)
 {
     SYSTEM_INFO sSysInfo;
     DWORD       dwPageSize;
@@ -1085,12 +801,12 @@ void* Win32RequestMemory(u64 Size)
     lpvBase = VirtualAlloc(NULL,                    // System selects address
                            ActualSize,              // Size of allocation
                            MEM_COMMIT|MEM_RESERVE,  // Allocate reserved pages
-                           PAGE_NOACCESS);          // Protection = no access
+                           PAGE_READWRITE);          // Protection = no access
     
     return lpvBase;
 }
 
-void Win32ReleaseMemory(void *Ptr)
+void PlatformReleaseMemory(void *Ptr, u64 Size)
 {
     BOOL bSuccess = VirtualFree(Ptr,           // Base address of block
                                 0,             // Bytes of committed pages
@@ -1098,9 +814,36 @@ void Win32ReleaseMemory(void *Ptr)
     assert(bSuccess && "Unable to free a VirtualAlloc allocation!");
 }
 
-INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-                   PSTR lpCmdLine, INT nCmdShow)
+u64 PlatformGetWallClock()
 {
+    LARGE_INTEGER Result;
+    QueryPerformanceCounter(&Result);
+    return (Result.QuadPart);
+    
+}
+
+r32 PlatformGetSecondsElapsed(u64 start, u64 end)
+{
+    r32 Result = ((r32)(end - start) /
+                  (r32)GlobalPerfCountFrequency);
+    return(Result);
+}
+
+void PlatformGetClientWindowDimensions(u32 *Width, u32 *Height)
+{
+    RECT rect;
+    GetClientRect(ClientWindow, &rect);
+    
+    *Width  = rect.right - rect.left;
+    *Height = rect.bottom - rect.top;
+}
+
+INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, INT nCmdShow)
+{
+    //~ Set the defaults of open files
+    for (u32 i = 0; i < MAX_OPEN_FILES; ++i)
+        OpenFiles[i].Handle = INVALID_HANDLE_VALUE;
+    
     //~ Timing information
     // Setup timing information
     LARGE_INTEGER PerfCountFrequencyResult;
@@ -1108,41 +851,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     GlobalPerfCountFrequency = PerfCountFrequencyResult.QuadPart;
     
     UINT desired_scheduler_ms = 1;
-    bool sleep_is_granular = (timeBeginPeriod(desired_scheduler_ms) == TIMERR_NOERROR);
+    bool SleepIsGranular = (timeBeginPeriod(desired_scheduler_ms) == TIMERR_NOERROR);
     
-    
-    //~ Get the engine settings from the config file.
-    char AppName[256];
-    
-    // Temporarily Create a Memory Manager with a small footprint
-    mm::InitializeMemoryManager(_KB(10), _KB(1));
-    
-    jstring EngineConf = pstring("data/configs/engine.conf");
-    
-    config_obj_table Table = LoadConfigFile(EngineConf);
-    
-    config_obj EngineSettingsObj = GetConfigObj(&Table, "Engine Settings");
-    
-    u64 MemoryUsage     = GetConfigU64(&EngineSettingsObj, "MemoryUsage");
-    u64 TransientMemory = GetConfigU64(&EngineSettingsObj, "TransientMemory");
-    
-    config_obj ClientSettingsObj = GetConfigObj(&Table, "Client Settings");
-    jstring JAppName = GetConfigStr(&ClientSettingsObj, "AppName");
-    strncpy(AppName, JAppName.GetCStr(), JAppName.len);
-    AppName[JAppName.len] = 0;
-    
-    FreeConfigObjTable(&Table);
-    
-    JAppName.Clear();
-    EngineConf.Clear();
-    
-    mm::ShutdownMemoryManager();
-    
-    //~ Create Client Window
-    
-    ClientWindowWidth = 1080;
-    ClientWindowHeight = 720;
-    
+    char AppName[] = "Maple Engine";
     const char CLASS_NAME[] = "Maple Window Class";
     
     WNDCLASS wc = {0};
@@ -1151,6 +862,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     wc.hInstance = hInstance;
     wc.lpszClassName = CLASS_NAME;
     RegisterClass(&wc);
+    
+    u32 ClientWindowWidth  = 1080;
+    u32 ClientWindowHeight = 720;
     
     ClientWindow = CreateWindowEx(0,
                                   CLASS_NAME,
@@ -1170,110 +884,48 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     GetClientRect(ClientWindow, &ClientWindowRect);
     ClientWindowRectOld = ClientWindowRect;
     
-    //~ Initialize routines
+    //~ Memory Setup
+    u64 MemorySize = _MB(50);
+    GlobalMemoryPtr = PlatformRequestMemory(MemorySize);
     
-    // Initialize Management Routines
-    mm::InitializeMemoryManager(MemoryUsage, TransientMemory);
-    ecs::InitializeECS();
+    // Initialize memory manager
+    FreeListAllocatorInit(&PermanantMemory, MemorySize, GlobalMemoryPtr);
     
-    // Enable graphics
-    if (!vk::InitializeVulkan())
-    {
-        mprinte("Unable to initialize Vulkan!\n");
-        ecs::ShutdownECS();
-        mm::ShutdownMemoryManager();
-        
-        exit(1);
-    }
+    // Tagged heap. 3 Stages + 1 Resource/Asset = 4 Tags / frame
+    // Keep 3 Blocks for each Tag, allowing for 12 Blocks overall
+    TaggedHeapInit(&TaggedHeap, &PermanantMemory, _MB(24), _2MB, 10);
+    PlatformHeap = TaggedHeapRequestAllocation(&TaggedHeap, PlatformTag);
     
-    //~ Event Initialization
-    event::ManagerInit();
+    u64 StringArenaSize  = _MB(1);
+    void *StringArenaPtr = FreeListAllocatorAlloc(&PermanantMemory, StringArenaSize);
+    StringArenaInit(StringArenaPtr, StringArenaSize);
     
-    event::Subscribe<WindowResizeEvent>(&WindowResizeEventCallback, nullptr);
-    event::Subscribe<CoreVulkanResizeEvent>(&CoreVulkanResizeEventCallback, nullptr);
+    mprint("Regular print.\n");
+    mprinte("Error print.\n");
     
-    //~ Client Initialization
-    {
-        mm::ResetTransientMemory();
-        
-        // Collect this frame's parameters
-        frame_params FrameParams = {};
-        InitFrameParams(&FrameParams);
-        
-        GpuStageInit(&FrameParams);
-        //RenderStageInit(&FrameParams);
-        masset::Init();
-        mresource::Init(&FrameParams);
-        //GameStageInit(&FrameParams);
-        
-        //~ Asset Loading
-        {
-#if 1
-            //jstring ExampleGltfModel = InitJString("data/glTF/Fox/glTF/fox.gltf");
-            jstring ExampleGltfModel = InitJString("data/glTF/Lantern/Lantern.gltf");
-            
-            masset::ConvertGlTF(ExampleGltfModel);
-            ExampleGltfModel.Clear();
-#endif
-            
-#if 1
-            //jstring ExampleModel = InitJString("data/models/models/fox.model");
-            jstring ExampleModel = InitJString("data/models/models/Lantern.model");
-            
-            model_create_info *ModelCreateInfo = talloc<model_create_info>(1);
-            ModelCreateInfo->Filename          = ExampleModel;
-            ModelCreateInfo->FrameParams       = &FrameParams;
-            masset::Load(Asset_Model, ModelCreateInfo);
-            
-            ExampleModel.Clear();
-#endif
-        }
-        
-        
-        // Game Init will probably init some render/gpu commands...
-        RenderStageEntry(&FrameParams);
-        GpuStageEntry(&FrameParams);
-    }
+    //~ Setup Graphics
+    ResourceRegistryInit(&ResourceRegistry, &PermanantMemory, 100);
     
-    //~ Initialize ImGui information
+    platform_window pWindow = {ClientWindow};
     
-    ImGuiContext *ctx = ImGui::CreateContext();
-    if (!ImGui_ImplWin32_Init(ClientWindow))
-    {
-        mprinte("Unable to initialize Win32 ImGui!\n");
-        vk::ShutdownVulkan();
-        ecs::ShutdownECS();
-        mm::ShutdownMemoryManager();
-        
-        exit(1);
-    }
+    RendererInit(&Renderer,
+                 &PermanantMemory,
+                 &ResourceRegistry,
+                 &pWindow,
+                 ClientWindowWidth,
+                 ClientWindowHeight,
+                 60);
     
-    // Init Dev UI
-    maple_dev_gui *DevGui = palloc<maple_dev_gui>();
-    MapleDevGuiInit(DevGui, GetPrimaryRenderPass(), &MapleDevUi);
-    
-    //~ Init Dev + player cameras
-    camera PlayerCamera = {};
-    camera DevCamera    = {};
-    
-    vec3 InitialPlayerPos = { 0.0f, 0.0f, -2.0f };
-    InitCamera(&PlayerCamera, &PlayerCameraCallback, InitialPlayerPos);
-    InitCamera(&DevCamera, &DevCameraCallback, InitialPlayerPos);
-    
-    if (GlobalIsDevMode)
-        DevCamera.IsActive = true;
-    else
-        PlayerCamera.IsActive = true;
     
     //~ App Loop
-    ::ShowWindow(ClientWindow, nCmdShow);
+    ShowWindow(ClientWindow, nCmdShow);
     
-    u64 last_frame_time = Win32GetWallClock();
-    r32 refresh_rate = 60.0f;
-    r32 target_seconds_per_frame = 1 / refresh_rate;
+    u64 LastFrameTime = PlatformGetWallClock();
+    r32 RefreshRate = 60.0f;
+    r32 TargetSecondsPerFrame = 1 / RefreshRate;
     
     ClientIsRunning = true;
-    MSG msg = {};
+    MSG msg = {0};
     while (ClientIsRunning)
     {
         // Message loop
@@ -1283,21 +935,21 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             DispatchMessage(&msg);
         }
         
-        u64 clock_now = Win32GetWallClock();
-        r32 seconds_elapsed_update = Win32GetSecondsElapsed(last_frame_time, clock_now);
+        u64 ClockNow = PlatformGetWallClock();
+        r32 SecondsElapsedUpdate = PlatformGetSecondsElapsed(LastFrameTime, ClockNow);
         
-        r32 seconds_elapsed_per_frame = seconds_elapsed_update;
-        if (seconds_elapsed_per_frame < target_seconds_per_frame)
+        r32 SecondsElapsedPerFrame = SecondsElapsedUpdate;
+        if (SecondsElapsedPerFrame < TargetSecondsPerFrame)
         {
-            if (sleep_is_granular)
+            if (SleepIsGranular)
             {
-                DWORD sleep_ms = (DWORD)(1000.0f * (target_seconds_per_frame - seconds_elapsed_per_frame));
-                if (sleep_ms > 0)
+                DWORD SleepMs = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedPerFrame));
+                if (SleepMs > 0)
                 {
-                    Sleep(sleep_ms);
+                    Sleep(SleepMs);
                 }
                 
-                seconds_elapsed_per_frame = Win32GetSecondsElapsed(last_frame_time, Win32GetWallClock());
+                SecondsElapsedPerFrame = PlatformGetSecondsElapsed(LastFrameTime, PlatformGetWallClock());
             }
         }
         else
@@ -1305,135 +957,27 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             // LOG: Missed frame rate!
         }
         
-        last_frame_time = Win32GetWallClock();
+        LastFrameTime = PlatformGetWallClock();
         
-        mm::ResetTransientMemory();
-        
-        //~ Collect this frame's parameters
-        // TODO(Dustin): Set frame timers, frame number, etc...
-        frame_params FrameParams = {};
-        InitFrameParams(&FrameParams);
-        FrameParams.Frame = FrameCount;
-        FrameParams.FrameStartTime = Win32GetWallClock();
-        CopyModelAssets(&FrameParams);
-        
-        //~ Emit start frame commands
-        {
-            if (GlobalIsDevMode)
-            {
-                FrameParams.ActiveCamera = &DevCamera;
-                
-                PlayerCamera.IsActive = false;
-                DevCamera.IsActive    = true;
-            }
-            else
-            {
-                FrameParams.ActiveCamera = &PlayerCamera;
-                
-                PlayerCamera.IsActive = true;
-                DevCamera.IsActive    = false;
-            }
-            
-            // Prep the frame for rendering
-            u32 Width, Height;
-            Win32GetClientWindowDimensions(&Width, &Height);
-            VkExtent2D Extent = vk::GetSwapChainExtent();
-            
-            mat4 Projection = PerspectiveProjection(90.0f, (r32)Width/(r32)Height, 0.1f, 1000.0f);
-            Projection[1][1] *= -1;
-            
-            gpu_begin_frame_info *BeginFrame = talloc<gpu_begin_frame_info>(1);
-            BeginFrame->Color    = {0.67f, 0.85f, 0.90f, 1.0f};
-            BeginFrame->HasDepth = true;
-            BeginFrame->Depth    = 1.0f;
-            BeginFrame->Stencil  = 0;
-            BeginFrame->GlobalShaderData.Projection = Projection;
-            BeginFrame->GlobalShaderData.View       = GetViewMatrix(FrameParams.ActiveCamera);
-            AddGpuCommand(&FrameParams, { GpuCmd_BeginFrame, BeginFrame });
-            
-            render_set_scissor_info *ScissorInfo = talloc<render_set_scissor_info>(1);
-            ScissorInfo->Extent  = Extent;
-            ScissorInfo->XOffset = 0;
-            ScissorInfo->YOffset = 0;
-            AddRenderCommand(&FrameParams, { RenderCmd_SetScissor, ScissorInfo });
-            
-            render_set_viewport_info *ViewportInfo = talloc<render_set_viewport_info>(1);
-            ViewportInfo->Width  = static_cast<r32>(Extent.width);
-            ViewportInfo->Height = static_cast<r32>(Extent.height);
-            ViewportInfo->X      = 0.0f;
-            ViewportInfo->Y      = 0.0f;
-            AddRenderCommand(&FrameParams, { RenderCmd_SetViewport, ViewportInfo });
-        }
-        
-        //~ Game Stage
-        // TODO(Dustin): Have the game define a callback function
-        // that will be "GameStageEntry".
-        GameStageEntry(&FrameParams);
-        FrameParams.GameStageEndTime = Win32GetWallClock();
-        
-        //~ Render Stage
-        FrameParams.RenderStageStartTime = Win32GetWallClock();
-        RenderStageEntry(&FrameParams);
-        FrameParams.RenderStageEndTime   = Win32GetWallClock();
-        
-        //~ Engine UI
-        if (GlobalIsDevMode && RenderDevGui)
-        {
-            ImGui_ImplWin32_NewFrame();
-            gpu_draw_dev_gui_info *DevGuiDraw = talloc<gpu_draw_dev_gui_info>();
-            DevGuiDraw->DevGui = DevGui;
-            AddGpuCommand(&FrameParams, { GpuCmd_DrawDevGui, DevGuiDraw });
-        }
-        
-        //~ Gpu Stage
-        FrameParams.GpuStageStartTime = Win32GetWallClock();
-        GpuStageEntry(&FrameParams);
-        FrameParams.GpuStageEndTime = Win32GetWallClock();
-        
-#if 0
-        // Log frame timings...
-        local_persist r32 FrameAccumulator = 0.0f;
-        
-        r32 GameElapsed   = Win32GetSecondsElapsed(FrameParams.FrameStartTime, FrameParams.GameStageEndTime);
-        r32 RenderElapsed = Win32GetSecondsElapsed(FrameParams.RenderStageStartTime, FrameParams.RenderStageEndTime);
-        r32 GpuElapsed    = Win32GetSecondsElapsed(FrameParams.GpuStageStartTime, FrameParams.GpuStageEndTime);;
-        
-        u32 Fps = static_cast<u32>(1.0f / (GameElapsed + RenderElapsed + GpuElapsed));
-        
-        // Prints the ms for each stage in the frame
-        Win32PrintMessage(EConsoleColor::Red, EConsoleColor::DarkGrey, "Frame: %ld\n", FrameParams.Frame);
-        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tGame Stage Time:  \t%f ms\n",
-                          GameElapsed * 1000.0f);
-        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tRender Stage Time:\t%f ms\n",
-                          RenderElapsed * 1000.0f);
-        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tGpu Stage Time:   \t%f ms\n",
-                          GpuElapsed * 1000.0f);
-        Win32PrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tFPS:              \t%d\n", Fps);
-        
-#endif
-        
-        // Release frame
-        
-        FrameCount++;
+        RendererEntry(Renderer, &ResourceRegistry);
     }
     
-    {
-        mm::ResetTransientMemory();
-        
-        // NOTE(Dustin): Copy assets, create a frame_params init function
-        frame_params FrameParams = {};
-        InitFrameParams(&FrameParams);
-        
-        GameStageShutdown(&FrameParams);
-        masset::Free();
-        mresource::Free(&FrameParams);
-        GpuStageShutdown(&FrameParams);
-        
-        MapleDevGuiFree(DevGui);
-        pfree(DevGui);
-    }
+    //~ Free Graphics layer
+    RendererShutdown(&Renderer, &PermanantMemory);
+    ResourceRegistryFree(&ResourceRegistry, &PermanantMemory);
     
-    Win32ShutdownRoutines();
+    //~ Close up the memory pools
+    // Free up the global string arena
+    StringArenaFree();
+    FreeListAllocatorAllocFree(&PermanantMemory, StringArenaPtr);
+    
+    // Free up the tagged heap for per-frame info
+    TaggedHeapFree(&TaggedHeap, &PermanantMemory);
+    
+    // free up the global memory
+    FreeListAllocatorFree(&PermanantMemory);
+    PlatformReleaseMemory(GlobalMemoryPtr, MemorySize);
+    
     
     return (0);
 }
@@ -1446,129 +990,47 @@ file_internal void SetFullscreen(bool fullscreen)
         
         if (GlobalIsFullscreen)
         {
-            ::GetWindowRect(ClientWindow, &ClientWindowRect);
+            GetWindowRect(ClientWindow, &ClientWindowRect);
             
             UINT window_style = WS_OVERLAPPEDWINDOW & ~(WS_CAPTION |
                                                         WS_SYSMENU |
                                                         WS_THICKFRAME |
                                                         WS_MINIMIZEBOX |
                                                         WS_MAXIMIZEBOX);
-            ::SetWindowLong(ClientWindow, GWL_STYLE, window_style);
+            SetWindowLong(ClientWindow, GWL_STYLE, window_style);
             
-            HMONITOR hmonitor = ::MonitorFromWindow(ClientWindow, MONITOR_DEFAULTTONEAREST);
+            HMONITOR hmonitor = MonitorFromWindow(ClientWindow, MONITOR_DEFAULTTONEAREST);
             MONITORINFOEX monitor_info = {};
-            ::GetMonitorInfo(hmonitor, &monitor_info);
+            GetMonitorInfo(hmonitor, (LPMONITORINFO)&monitor_info);
             
-            ::SetWindowPos(ClientWindow, HWND_TOP,
-                           monitor_info.rcMonitor.left,
-                           monitor_info.rcMonitor.top,
-                           monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
-                           monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
-                           SWP_FRAMECHANGED | SWP_NOACTIVATE);
+            SetWindowPos(ClientWindow, HWND_TOP,
+                         monitor_info.rcMonitor.left,
+                         monitor_info.rcMonitor.top,
+                         monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
+                         monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
+                         SWP_FRAMECHANGED | SWP_NOACTIVATE);
             
-            ::ShowWindow(ClientWindow, SW_MAXIMIZE);
+            ShowWindow(ClientWindow, SW_MAXIMIZE);
         }
         else
         {
-            ::SetWindowLong(ClientWindow, GWL_STYLE, WS_OVERLAPPEDWINDOW);
+            SetWindowLong(ClientWindow, GWL_STYLE, WS_OVERLAPPEDWINDOW);
             
-            ::SetWindowPos(ClientWindow, HWND_NOTOPMOST,
-                           ClientWindowRectOld.left,
-                           ClientWindowRectOld.top,
-                           ClientWindowRectOld.right - ClientWindowRectOld.left,
-                           ClientWindowRectOld.bottom - ClientWindowRectOld.top,
-                           SWP_FRAMECHANGED | SWP_NOACTIVATE);
+            SetWindowPos(ClientWindow, HWND_NOTOPMOST,
+                         ClientWindowRectOld.left,
+                         ClientWindowRectOld.top,
+                         ClientWindowRectOld.right - ClientWindowRectOld.left,
+                         ClientWindowRectOld.bottom - ClientWindowRectOld.top,
+                         SWP_FRAMECHANGED | SWP_NOACTIVATE);
             
-            ::ShowWindow(ClientWindow, SW_NORMAL);
+            ShowWindow(ClientWindow, SW_NORMAL);
         }
     }
-}
-
-file_internal EventKey Win32KeyToEventKey(WPARAM wParam)
-{
-    EventKey result;
-    
-    bool ctrl  = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
-    bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
-    bool alt   = (::GetKeyState(VK_MENU) & 0x8000) != 0;
-    
-    switch (wParam)
-    {
-        case 'A': (shift) ? result = KEY_A : result = KEY_a; break;
-        case 'B': (shift) ? result = KEY_B : result = KEY_b; break;
-        case 'C': (shift) ? result = KEY_C : result = KEY_c; break;
-        case 'D': (shift) ? result = KEY_D : result = KEY_d; break;
-        case 'E': (shift) ? result = KEY_E : result = KEY_e; break;
-        case 'F': (shift) ? result = KEY_F : result = KEY_f; break;
-        case 'G': (shift) ? result = KEY_G : result = KEY_g; break;
-        case 'H': (shift) ? result = KEY_H : result = KEY_h; break;
-        case 'I': (shift) ? result = KEY_I : result = KEY_i; break;
-        case 'J': (shift) ? result = KEY_J : result = KEY_j; break;
-        case 'K': (shift) ? result = KEY_K : result = KEY_k; break;
-        case 'L': (shift) ? result = KEY_K : result = KEY_l; break;
-        case 'M': (shift) ? result = KEY_M : result = KEY_m; break;
-        case 'N': (shift) ? result = KEY_N : result = KEY_n; break;
-        case 'O': (shift) ? result = KEY_O : result = KEY_o; break;
-        case 'P': (shift) ? result = KEY_P : result = KEY_p; break;
-        case 'Q': (shift) ? result = KEY_Q : result = KEY_q; break;
-        case 'R': (shift) ? result = KEY_R : result = KEY_r; break;
-        case 'S': (shift) ? result = KEY_S : result = KEY_s; break;
-        case 'T': (shift) ? result = KEY_T : result = KEY_t; break;
-        case 'U': (shift) ? result = KEY_U : result = KEY_u; break;
-        case 'V': (shift) ? result = KEY_V : result = KEY_v; break;
-        case 'W': (shift) ? result = KEY_W : result = KEY_w; break;
-        case 'X': (shift) ? result = KEY_X : result = KEY_x; break;
-        case 'Y': (shift) ? result = KEY_Y : result = KEY_y; break;
-        case 'Z': (shift) ? result = KEY_Z : result = KEY_z; break;
-        
-        case '0': result = KEY_0; break;
-        case '1': result = KEY_1; break;
-        case '2': result = KEY_2; break;
-        case '3': result = KEY_3; break;
-        case '4': result = KEY_4; break;
-        case '5': result = KEY_5; break;
-        case '6': result = KEY_6; break;
-        case '7': result = KEY_7; break;
-        case '8': result = KEY_8; break;
-        case '9': result = KEY_9; break;
-        
-        case VK_F1:  result = KEY_F1;  break;
-        case VK_F2:  result = KEY_F2;  break;
-        case VK_F3:  result = KEY_F3;  break;
-        case VK_F4:  result = KEY_F4;  break;
-        case VK_F5:  result = KEY_F5;  break;
-        case VK_F6:  result = KEY_F6;  break;
-        case VK_F7:  result = KEY_F7;  break;
-        case VK_F8:  result = KEY_F8;  break;
-        case VK_F9:  result = KEY_F9;  break;
-        case VK_F10: result = KEY_F10; break;
-        case VK_F11: result = KEY_F11; break;
-        case VK_F12: result = KEY_F12; break;
-        
-        case VK_SPACE: result = KEY_Space; break;
-        
-        case VK_UP:    result = KEY_Up;    break;
-        case VK_DOWN:  result = KEY_Down;  break;
-        case VK_LEFT:  result = KEY_Left;  break;
-        case VK_RIGHT: result = KEY_Right; break;
-        
-        default: result = KEY_Unknown;
-    }
-    
-    return result;
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    // messages can get sent before window has finished initialize and after WM_Close
-    // has be sent...
-    if (!ClientIsRunning)
-        return DefWindowProc(hwnd, uMsg, wParam, lParam);
-    
-    // Update ImGui
-    ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
-    
-    ImGuiIO& io = ImGui::GetIO();
+    if (!ClientIsRunning) return DefWindowProc(hwnd, uMsg, wParam, lParam);
     
     switch (uMsg)
     {
@@ -1596,74 +1058,41 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         case WM_SYSKEYDOWN:
         case WM_KEYDOWN:
         {
-            if (!io.WantCaptureKeyboard)
+            bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+            switch (wParam)
             {
-                bool alt = (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-                switch (wParam)
+                case VK_ESCAPE:
                 {
-                    case VK_F5:
+                    ClientIsRunning = false;
+                } break;
+                case VK_RETURN:
+                {
+                    if (alt)
                     {
-                        // F5 toggles DevMode
-                        GlobalIsDevMode = !GlobalIsDevMode;
-                        
-                        // Do not dispatch a generic key event for the F5 key
-                        return DefWindowProc(hwnd, uMsg, wParam, lParam);
-                    } break;
-                    
-                    case VK_SPACE:
-                    {
-                        RenderDevGui = !RenderDevGui;
-                        
-                        KeySpacePressEvent event;
-                        event.Key = KEY_Space;
-                        event::Dispatch<KeySpacePressEvent>(event);
-                    } break;
-                    
-                    case VK_ESCAPE:
-                    {
-                        ClientIsRunning = false;
-                    } break;
-                    case VK_RETURN:
-                    {
-                        if (alt)
+                        case VK_F11:
                         {
-                            case VK_F11:
-                            {
-                                // NOTE(Dustin): Disabling fullscreen fails to restore the
-                                // previous window's position and defaults to the top left
-                                // corner
-                                if (!GlobalIsFullscreen)
-                                    GetClientRect(hwnd, &ClientWindowRectOld);
-                                
-                                SetFullscreen(!GlobalIsFullscreen);
-                            } break;
-                        }
+                            // NOTE(Dustin): Disabling fullscreen fails to restore the
+                            // previous window's position and defaults to the top left
+                            // corner
+                            if (!GlobalIsFullscreen)
+                                GetClientRect(hwnd, &ClientWindowRectOld);
+                            
+                            SetFullscreen(!GlobalIsFullscreen);
+                        } break;
                     } break;
-                    
-                    default: break;
-                }
-                
-                KeyPressEvent event = {};
-                event.Key = Win32KeyToEventKey(wParam);
-                event::Dispatch<KeyPressEvent>(event);
+                } break;
             }
         } break;
-        
-        case WM_SYSCHAR: break;
         
         case WM_SIZE:
         {
             //ClientWindowRectOld = ClientWindowRect;
             GetClientRect(hwnd, &ClientWindowRect);
             
-            int width = ClientWindowRect.right - ClientWindowRect.left;
-            int height = ClientWindowRect.bottom - ClientWindowRect.top;
+            int Width  = ClientWindowRect.right - ClientWindowRect.left;
+            int Height = ClientWindowRect.bottom - ClientWindowRect.top;
             
-            WindowResizeEvent event;
-            event.Width  = (width >= 1) ? width : 1;
-            event.Height = (height >= 1) ? height : 1;
-            
-            event::Dispatch<WindowResizeEvent>(event);
+            RendererResize(Renderer, &ResourceRegistry);
         } break;
         
         default: break;

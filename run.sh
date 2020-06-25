@@ -34,9 +34,23 @@ then
 	CompileShaders
 fi
 
+if [ "$1" == "gdb" ];
+then
+	pushd $BUILD_DIR
+		gdb ./maple.exe
+	popd
+fi
+
+if [ "$1" == "val" ];
+then
+	pushd $BUILD_DIR
+		valgrind ./maple.exe
+	popd
+fi
+
 if [ "$1" == "" ];
 then
 	pushd $BUILD_DIR
-		./example
+		./maple.exe
 	popd
 fi
