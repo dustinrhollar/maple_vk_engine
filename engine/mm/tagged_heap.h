@@ -1,6 +1,13 @@
 #ifndef MAPLE_MM_TAGGED_HEAP_H
 #define MAPLE_MM_TAGGED_HEAP_H
 
+#define TAG_ID_PLATFORM 0
+#define TAG_ID_FILE     1
+#define TAG_ID_GAME     2
+#define TAG_ID_RENDER   3
+#define TAG_ID_GPU      4
+
+
 struct binary_tag_tree_node;
 
 typedef struct
@@ -11,16 +18,16 @@ typedef struct
 
 typedef struct
 {
-    i64 Frame:32;  // current frame number
-    i64 Id:16;     // randomely generated id
-    i64 Pad:16;    // reserved space for future use
+    i64 Frame:48;  // current frame number
+    i64 Id:8;      // randomely generated id
+    i64 Pad:8;     // reserved space for future use
 } tag_id_t;
 
 typedef struct
 {
     // Id
     tag_id_t Tag;
-
+    
     // bitlist of all allocations in the heap for THIS tag
     bit_list AllocationsMask;
 } tagged_heap_tag;
@@ -28,12 +35,12 @@ typedef struct
 typedef struct
 {
     void                 *Start; // start of the memory allcoations
-
+    
     u64                   Size;       // total size of the allocation
     u64                   BlockSize;  // size per block
-
+    
     bit_list              AllocationList; // bitlist of all allocations in the heap
-
+    
     // This array keeps track of all active tags and their allocated tagged blocks
     tagged_heap_tag *ActiveTags;
     u32              ActiveTagsCount;
@@ -52,7 +59,7 @@ typedef struct
     char        *Start; // start of the block memory
     char        *End;   // end of the block memory
     char        *Brkp;  // current location in the block memory
-
+    
     // NOTE(Dustin): Need this back pointer to the TaggedHeap?
     tagged_heap *TaggedHeap;
 } tagged_heap_block;

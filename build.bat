@@ -3,7 +3,7 @@ setlocal EnableDelayedExpansion
 
 :: External library directories
 SET VK_COMPILER="C:\VulkanSDK\1.2.135.0\Bin"
-
+SET D3D_COMPILER="C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Lib\x64"
 
 :: Project directories
 SET HOST_DIR=%~dp0
@@ -25,11 +25,11 @@ SET ENGINE_EXE=%BUILD_DIR%\maple.exe
 SET CFLAGS=/Zi /std:c++17 /EHsc
 
 :: Format: /LIBPATH:library
-SET LIB_PATH=/LIBPATH:%VK_COMPILER%
+SET LIB_PATH=/LIBPATH:%D3D_COMPILER%
 SET EXT_LIB=
-SET GBL_LIB=%LIB_PATH% %EXT_LIB% libcpmtd.lib user32.lib Gdi32.lib winmm.lib
+SET GBL_LIB=%LIB_PATH% libcpmtd.lib user32.lib Gdi32.lib winmm.lib d3d11.lib d3dx11.lib
 
-SET INC=/I%EXT_DIR%
+SET INC=/I"C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include"
 
 IF NOT EXIST build\data\models\models\ (
     1>NUL MKDIR build\data\models\models\
@@ -51,11 +51,17 @@ IF NOT EXIST build\data\textures\ (
     1>NUL MKDIR build\data\textures\
 )
 
-pushd %BUILD_DIR%\%GAME%
-	
-	echo Building platform...
-	echo cl /MTd -DVK_USE_PLATFORM_WIN32_KHR %CFLAGS% %INC% %UNITY_SRC% /Fe%ENGINE_EXE% /link %GBL_LIB%
-	cl /MTd -DVK_USE_PLATFORM_WIN32_KHR %CFLAGS% %INC% %UNITY_SRC% /Fe%ENGINE_EXE% /link %GBL_LIB%
+IF "%1" == "gm" (
+    pushd build\
+        echo Building game...
+    popd
+    EXIT /B %ERRORLEVEL%
+)
 
-popd
-
+IF "%1" == "mp" (
+    pushd build\
+        echo Building maple engine...
+        cl /MTd /Zi /EHsc %INC% %HOST_DIR%\engine\engine_unity.cpp /Femaple.exe /link %GBL_LIB%
+    popd
+    EXIT /B %ERRORLEVEL%
+)

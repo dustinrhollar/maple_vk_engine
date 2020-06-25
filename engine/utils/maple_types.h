@@ -46,4 +46,6 @@ typedef union
 #define _256MB _MB(256)
 #define _1GB   _GB(1)
 
+#define BIT(x) 1<<(x)
+
 #endif //MAPLE_UTILS_MAPLE_TYPES_H
