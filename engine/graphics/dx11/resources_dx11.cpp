@@ -1,4 +1,10 @@
 
+struct vertex
+{
+    vec3 Position;
+    vec4 Color;
+};
+
 struct resource_device
 {
     IDXGISwapChain      *Swapchain;
@@ -46,6 +52,34 @@ struct resource
         resource_pipeline_layout PipelineLayout;
         resource_pipeline        Pipeline;
     };
+};
+
+struct resource_registry
+{
+    // NOTE(Dustin): It is not unresasonable to put a hard cap on resource count
+    // It would remove the need for this pointer.
+    //
+    // Global allocator - needed for resizing
+    //free_allocator *GlobalMemoryAllocator;
+    
+    // Allocator managing device resources
+    pool_allocator  ResourceAllocator;
+    
+    // Resource list -  non-resizable, from global memory
+    resource_t     *Resources;
+    u32             ResourcesMax;
+    u32             ResourcesCount;
+    
+    // TODO(Dustin): Unimplemented. Right now, resources are not
+    // created and destroyed dynamically. This functionality is
+    // here for future use, but is currently unimplemented.
+    //
+    // Free Indices list - resizable, from global memory
+    // Requires a minimum count in order to start pulling from
+    // in order to prevent re-using an index too many times
+    u32            *FreeResourceIndices;
+    u32             FreeResourceIndicesCap;
+    u32             FreeResourceIndicesCount;
 };
 
 void ResourceRegistryInit(resource_registry *Registry, free_allocator *GlobalMemoryAllocator,

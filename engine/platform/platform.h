@@ -54,4 +54,8 @@ u32 PlatformCtzl(u64 Value);
 
 void PlatformGetClientWindowDimensions(u32 *Width, u32 *Height);
 
+struct frame_params;
+#define GAME_STAGE_ENTRY(fn) void fn(frame_params *FrameParams)
+typedef GAME_STAGE_ENTRY(game_stage_entry);
+
 #endif //MAPLE_PLATFORM_PLATFORM_H

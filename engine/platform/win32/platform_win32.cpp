@@ -78,6 +78,8 @@ file_global u32 NextFileId = 0;
 
 file_internal void SetFullscreen(bool fullscreen);
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+mstring Win32GetExeFilepath();
+mstring Win32NormalizePath(const char* path);
 
 // source: Windows API doc: https://docs.microsoft.com/en-us/windows/win32/fileio/opening-a-file-for-reading-or-writing
 file_internal void DisplayError(LPTSTR lpszFunction)
@@ -139,8 +141,53 @@ file_internal void* PlatformLocalAlloc(u32 Size)
     return Result;
 }
 
+//~ Game Code Hot loading
+
+struct game_code
+{
+    HMODULE Handle;
+    
+    game_stage_entry *GameStageEntry;
+};
+
+GAME_STAGE_ENTRY(GameStageEntryStub)
+{
+}
+
+void Win32LoadGameCode(game_code *GameCode, const char *GameDllName)
+{
+    mstring GameDllPath = Win32NormalizePath(GameDllName);
+    mstring GameDllCopy = Win32NormalizePath("game_temp.dll");
+    CopyFile(GetStr(&GameDllPath), GetStr(&GameDllCopy), FALSE);
+    
+    GameCode->Handle = LoadLibrary(GetStr(&GameDllCopy));
+    GameCode->GameStageEntry = NULL;
+    
+    if (GameCode->Handle)
+    {
+        GameCode->GameStageEntry = (game_stage_entry*)GetProcAddress(GameCode->Handle, "GameStageEntry");
+    }
+    else
+    {
+        mprinte("Unable to load game dll!\n");
+    }
+    
+    if (!GameCode->GameStageEntry)
+    {
+        mprinte("Unable to find proc address for \"GameStageEntry\"!\n");
+        GameCode->GameStageEntry = &GameStageEntryStub;
+    }
+}
+
+void Win32UnloadGameCode(game_code *GameCode)
+{
+    if (GameCode->Handle)
+        FreeLibrary(GameCode->Handle);
+    GameCode->Handle = 0;
+    GameCode->GameStageEntry = &GameStageEntryStub;
+}
+
 //~ File I/O
-mstring Win32GetExeFilepath();
 
 // Takes a path relative to the executable, and normalizes it into a full path.
 // Tries to handle malformed input, but returns an empty string if unsuccessful.
@@ -151,7 +198,7 @@ mstring Win32NormalizePath(const char* path)
     
     // Start with our relative path appended to the full executable path.
     mstring exe_path = Win32GetExeFilepath();
-    mstring result;
+    mstring result = {0};
     MstringAdd(&result, &exe_path, path, strlen(path));
     
     char *Str = GetStr(&result);
@@ -916,6 +963,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
                  ClientWindowHeight,
                  60);
     
+    //~ Load game code
+    game_code GameCode = {};
+    Win32LoadGameCode(&GameCode, "example.dll");
+    
     
     //~ App Loop
     ShowWindow(ClientWindow, nCmdShow);
@@ -924,10 +975,19 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     r32 RefreshRate = 60.0f;
     r32 TargetSecondsPerFrame = 1 / RefreshRate;
     
+    u32 LoadCount = 0;
+    
     ClientIsRunning = true;
     MSG msg = {0};
     while (ClientIsRunning)
     {
+        if (LoadCount++ > 120)
+        {
+            Win32UnloadGameCode(&GameCode);
+            Win32LoadGameCode(&GameCode, "example.dll");
+            LoadCount = 0;
+        }
+        
         // Message loop
         while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
         {
@@ -958,6 +1018,13 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         }
         
         LastFrameTime = PlatformGetWallClock();
+        
+        frame_params FrameParams = {};
+        
+        GameCode.GameStageEntry(&FrameParams);
+        
+        PlatformPrintMessage(ConsoleColor_Yellow, ConsoleColor_DarkGrey,
+                             "Dynamically set end stage time: %d\n", FrameParams.GameStageEndTime);
         
         RendererEntry(Renderer, &ResourceRegistry);
     }

@@ -43,9 +43,12 @@
 
 // Resources
 
+#include "frame_info/frame_params.h"
+
 // Platform Specific Code & Entry point
-#include "platform/platform_entry.cpp"
 
 #include "graphics/dx11/maple_dx11.cpp"
 #include "graphics/dx11/resources_dx11.cpp"
 #include "graphics/dx11/renderer_dx11.cpp"
+
+#include "platform/platform_entry.cpp"
