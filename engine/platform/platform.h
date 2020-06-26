@@ -39,10 +39,13 @@ void PlatformPrintError(console_color text_color, console_color background_color
 file_t PlatformLoadFile(const char *Filename, bool Append = false);
 file_t PlatformOpenFile(const char *Filename, bool Append = false);
 void* GetFileBuffer(file_t File);
+void PlatformWriteToFile(file_t File, const char *Fmt, ...);
+void PlatformWriteBinaryStreamToFile(file_t File, void *DataPtr, u64 DataSize);
+void PlatformWriteBinaryToFile(file_t File, const char *Fmt, void *Data, u32 DataLen);
 u64 PlatformGetFileSize(file_t File);
 void PlatformFlushFile(file_t File);
 void PlatformCloseFile(file_t File);
-void CopyFileIfChanged(const char *Dst, const char *Src);
+void PlatformCopyFileIfChanged(const char *Dst, const char *Src);
 
 // Timing
 u64 PlatformGetWallClock();

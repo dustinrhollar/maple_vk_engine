@@ -1,4 +1,11 @@
 
+// TODO(Dustin):
+// Build script - change name of pdb file so that hot reloading works with VS debugger
+// Loop editor, useful for fine tuning gameplay mechanics, HH Day 23 is a good walkthrough
+// Profiling Tools
+// Debug Tools
+// Audio
+
 #define WINDOWS_LEAN_AND_MEAN
 #include <windows.h>
 
@@ -72,6 +79,16 @@ struct file
     };
 };
 
+
+struct game_code
+{
+    HMODULE Handle;
+    FILETIME DllLastWriteTime;
+    
+    game_stage_entry *GameStageEntry;
+};
+
+
 #define MAX_OPEN_FILES 10
 file_global file OpenFiles[MAX_OPEN_FILES];
 file_global u32 NextFileId = 0;
@@ -143,22 +160,33 @@ file_internal void* PlatformLocalAlloc(u32 Size)
 
 //~ Game Code Hot loading
 
-struct game_code
-{
-    HMODULE Handle;
-    
-    game_stage_entry *GameStageEntry;
-};
-
 GAME_STAGE_ENTRY(GameStageEntryStub)
 {
 }
 
+inline FILETIME Win32GetLastWriteTime(const char *Filename)
+{
+    FILETIME LastWriteTime = {};
+    
+    BY_HANDLE_FILE_INFORMATION FileInfo;
+    
+    BOOL Err = GetFileAttributesEx(Filename,
+                                   GetFileExInfoStandard,
+                                   &FileInfo);
+    
+    if (Err)
+        LastWriteTime = FileInfo.ftLastWriteTime;
+    
+    return LastWriteTime;
+}
+
 void Win32LoadGameCode(game_code *GameCode, const char *GameDllName)
 {
-    mstring GameDllPath = Win32NormalizePath(GameDllName);
     mstring GameDllCopy = Win32NormalizePath("game_temp.dll");
-    CopyFile(GetStr(&GameDllPath), GetStr(&GameDllCopy), FALSE);
+    
+    GameCode->DllLastWriteTime = Win32GetLastWriteTime(GameDllName);
+    
+    CopyFile(GameDllName, GetStr(&GameDllCopy), FALSE);
     
     GameCode->Handle = LoadLibrary(GetStr(&GameDllCopy));
     GameCode->GameStageEntry = NULL;
@@ -177,6 +205,8 @@ void Win32LoadGameCode(game_code *GameCode, const char *GameDllName)
         mprinte("Unable to find proc address for \"GameStageEntry\"!\n");
         GameCode->GameStageEntry = &GameStageEntryStub;
     }
+    
+    MstringFree(&GameDllCopy);
 }
 
 void Win32UnloadGameCode(game_code *GameCode)
@@ -461,18 +491,292 @@ file_t PlatformLoadFile(const char *Filename, bool Append)
 
 file_t PlatformOpenFile(const char *Filename, bool Append)
 {
-    file_t Result;
+    file_t Result = NULL;
+    
+    // Find an open file handle
+    for (u32 i = 0; i < MAX_OPEN_FILES; ++i)
+    {
+        if (OpenFiles[i].Handle == INVALID_HANDLE_VALUE)
+        {
+            Result = OpenFiles + i;
+            break;
+        }
+    }
+    
+    if (Result)
+    {
+        mstring AbsPath = Win32NormalizePath(Filename);
+        
+        if (Append)
+        {
+            Result->Handle = CreateFileA(GetStr(&AbsPath), GENERIC_WRITE, 0, 0,
+                                         OPEN_EXISTING,
+                                         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
+        }
+        else
+        {
+            Result->Handle = CreateFileA(GetStr(&AbsPath), GENERIC_WRITE, 0, 0,
+                                         TRUNCATE_EXISTING,
+                                         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
+        }
+        
+        // file doesn't currently exist
+        if (Result->Handle == INVALID_HANDLE_VALUE)
+        {
+            Result->Handle= CreateFileA(GetStr(&AbsPath), GENERIC_WRITE, 0, 0, CREATE_NEW,
+                                        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, 0);
+        }
+        
+        if (Result->Handle == INVALID_HANDLE_VALUE)
+        {
+            DisplayError(TEXT("CreateFile"));
+            _tprintf(TEXT("Terminal failure: Unable to open file \"%s\" for write.\n"), GetStr(&AbsPath));
+            
+            Result = NULL;
+        }
+        else
+        {
+            Result->FileTag = { NextFileId++, TAG_ID_FILE, 0 };
+            Result->Block   = TaggedHeapRequestAllocation(&TaggedHeap, Result->FileTag);
+        }
+        
+        
+        MstringFree(&AbsPath);
+    }
+    else
+    {
+        mprinte("Unable to find an open file handle. Please close a file handle to open another!\n");
+    }
+    
     return Result;
 }
 
+// NOTE(Dustin): Right now I am assuming all file writes are using
+// the tagged block.
 void PlatformFlushFile(file_t File)
 {
+    void *MemPtr = File->Block.Start;
+    u64 FileSize = File->Block.Brkp - File->Block.Start;
     
+    DWORD BytesWritten;
+    BOOL err = WriteFile(File->Handle,
+                         MemPtr,
+                         FileSize,
+                         &BytesWritten,
+                         NULL);
+    
+    if (err == FALSE)
+    {
+        DisplayError(TEXT("WriteFile"));
+        mprinte("Terminal failure: Unable to write to file.\n");
+    }
+    
+    // Reset the linear allocator
+    File->Block.Brkp = File->Block.Start;
 }
 
-void CopyFileIfChanged(const char *Dst, const char *Src)
+inline void FlushBinaryWriteIfNeeded(file_t File, u32 ReqSize)
 {
+    if (ReqSize > TaggedHeap.BlockSize)
+    {
+        mprinte("Yo, binary write is over 2MB. Please avoid doing that!\n");
+    }
+    else
+    {
+        if (File->Block.Brkp + ReqSize > File->Block.End)
+        {
+            PlatformFlushFile(File);
+        }
+    }
+}
+
+void PlatformWriteBinaryStreamToFile(file_t File, void *DataPtr, u64 DataSize)
+{
+    PlatformFlushFile(File);
     
+    DWORD BytesWritten;
+    BOOL err = WriteFile(File->Handle,
+                         DataPtr,
+                         DataSize,
+                         &BytesWritten,
+                         NULL);
+    
+    if (err == FALSE)
+    {
+        DisplayError(TEXT("WriteFile"));
+        mprinte("Terminal failure: Unable to write to file.\n");
+    }
+}
+
+void PlatformWriteBinaryToFile(file_t File, const char *Fmt, void *DataPtr, u32 DataLen)
+{
+    u32 ReqSize = 0;
+    
+    if (strcmp("c", Fmt) == 0)
+    { // character
+        ReqSize = DataLen * sizeof(char);
+    }
+    else if (strcmp("s", Fmt) == 0)
+    { // c string
+        ReqSize = DataLen * sizeof(char);
+    }
+    else if (strcmp("m", Fmt) == 0)
+    { // mstring
+        mstring *Data = (mstring*)DataPtr;
+        for (u32 i = 0; i < DataLen; ++i)
+        {
+            ReqSize += sizeof(u32) + Data[i].Len * sizeof(char);
+        }
+    }
+    else if (strcmp("i8", Fmt) == 0)
+    { // i8
+        ReqSize = DataLen * sizeof(i8);
+    }
+    else if (strcmp("i16", Fmt) == 0)
+    { // i16
+        ReqSize = DataLen * sizeof(i16);
+    }
+    else if (strcmp("i32", Fmt) == 0)
+    { // i32
+        ReqSize = DataLen * sizeof(i32);
+    }
+    else if (strcmp("i64", Fmt) == 0)
+    { // i64
+        ReqSize = DataLen * sizeof(i64);
+    }
+    else if (strcmp("u8", Fmt) == 0)
+    {
+        ReqSize = DataLen * sizeof(u8);
+    }
+    else if (strcmp("u16", Fmt) == 0)
+    {
+        ReqSize = DataLen * sizeof(u16);
+    }
+    else if (strcmp("u32", Fmt) == 0)
+    {
+        ReqSize = DataLen * sizeof(u32);
+    }
+    else if (strcmp("u64", Fmt) == 0)
+    {
+        ReqSize = DataLen * sizeof(u64);
+    }
+    else if (strcmp("r32", Fmt) == 0)
+    {
+        ReqSize = DataLen * sizeof(r32);
+    }
+    else if (strcmp("r64", Fmt) == 0)
+    {
+        ReqSize = DataLen * sizeof(r64);
+    }
+    else
+    {
+        mprinte("ERROR: Unknown binary print code!\n");
+    }
+    
+    FlushBinaryWriteIfNeeded(File, ReqSize);
+    
+    if (strcmp("m", Fmt)  == 0)
+    { // mstring, special print case
+        mstring *Data = (mstring*)DataPtr;
+        for (u32 i = 0; i < DataLen; ++i)
+        {
+            u32 Len = Data[i].Len;
+            
+            memcpy(File->Block.Brkp, &Len, sizeof(u32));
+            File->Block.Brkp += sizeof(u32);
+            
+            memcpy(File->Block.Brkp, GetStr(&Data[i]), Data[i].Len * sizeof(char));
+            File->Block.Brkp += Data[i].Len * sizeof(char);
+        }
+    }
+    else if (ReqSize > 0)
+    {
+        // NOTE(Dustin): Will I ever need to worry about
+        // reversing the byte order for standard filesystems?
+        
+        memcpy(File->Block.Brkp, DataPtr, ReqSize);
+        File->Block.Brkp += ReqSize;
+    }
+}
+
+void PlatformWriteToFile(file_t File, const char *Fmt, ...)
+{
+    va_list Args, Copy;
+    va_start(Args, Fmt);
+    
+    // quick copy - need to determine if there is enough space in the buffer
+    // for this write.
+    va_copy(Copy, Args);
+    u32 NeededChars = 1 + vsnprintf(NULL, 0, Fmt, Copy);
+    va_end(Copy);
+    
+    char *Mem = File->Block.Brkp;
+    File->Block.Brkp += NeededChars - 1;
+    if (!Mem)
+    {
+        PlatformFlushFile(File);
+        Mem = halloc<char>(&File->Block, NeededChars);
+        
+        if (!Mem)
+        {
+            mprinte("Platform write is larger than 2MB. Consider another approach!\n");
+            
+            va_end(Args);
+            return;
+        }
+    }
+    
+    NeededChars = vsnprintf(Mem, NeededChars, Fmt, Args);
+    
+    va_end(Args);
+}
+
+
+void PlatformCopyFileIfChanged(const char *Destination, const char *Source)
+{
+    mstring DestinationFull = Win32NormalizePath(Destination);
+    mstring SourceFull      = Win32NormalizePath(Source);
+    
+    BY_HANDLE_FILE_INFORMATION DestinationFileInfo;
+    BY_HANDLE_FILE_INFORMATION SourceFileInfo;
+    
+    BOOL DstErr = GetFileAttributesEx(GetStr(&DestinationFull),
+                                      GetFileExInfoStandard,
+                                      &DestinationFileInfo);
+    
+    BOOL SrcErr = GetFileAttributesEx(GetStr(&SourceFull),
+                                      GetFileExInfoStandard,
+                                      &SourceFileInfo);
+    
+    if (!SrcErr)
+    {
+        DisplayError(TEXT("Could not find source file for copy!"));
+    }
+    else if (!DstErr)
+    {
+        BOOL Err = CopyFile(GetStr(&SourceFull),
+                            GetStr(&DestinationFull),
+                            NULL);
+        
+        if (!Err) DisplayError(TEXT("CopyFile"));
+    }
+    else
+    {
+        FILETIME DestinationLastWrite = DestinationFileInfo.ftLastWriteTime;
+        FILETIME SourceLastWrite      = SourceFileInfo.ftLastWriteTime;
+        
+        if (CompareFileTime(&DestinationLastWrite, &SourceLastWrite) != 0)
+        {
+            BOOL Err = CopyFile(GetStr(&SourceFull),
+                                GetStr(&DestinationFull),
+                                NULL);
+            
+            if (!Err) DisplayError(TEXT("CopyFile"));
+        }
+    }
+    
+    MstringFree(&DestinationFull);
+    MstringFree(&SourceFull);
 }
 
 
@@ -947,9 +1251,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     void *StringArenaPtr = FreeListAllocatorAlloc(&PermanantMemory, StringArenaSize);
     StringArenaInit(StringArenaPtr, StringArenaSize);
     
-    mprint("Regular print.\n");
-    mprinte("Error print.\n");
-    
     //~ Setup Graphics
     ResourceRegistryInit(&ResourceRegistry, &PermanantMemory, 100);
     
@@ -963,10 +1264,20 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
                  ClientWindowHeight,
                  60);
     
+    //~ Load some assets
+    {
+        tag_id_t Tag = {0, TAG_ID_ASSET, 0};
+        tagged_heap_block HeapBlock = TaggedHeapRequestAllocation(&TaggedHeap, Tag);
+        ConvertGltfMesh(&HeapBlock, "data/glTF/Fox/glTF/Fox.gltf");
+        
+        TaggedHeapReleaseAllocation(&TaggedHeap, Tag);
+    }
+    
     //~ Load game code
     game_code GameCode = {};
-    Win32LoadGameCode(&GameCode, "example.dll");
     
+    mstring GameDllCopy = Win32NormalizePath("example.dll");
+    Win32LoadGameCode(&GameCode, GetStr(&GameDllCopy));
     
     //~ App Loop
     ShowWindow(ClientWindow, nCmdShow);
@@ -975,17 +1286,16 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     r32 RefreshRate = 60.0f;
     r32 TargetSecondsPerFrame = 1 / RefreshRate;
     
-    u32 LoadCount = 0;
-    
     ClientIsRunning = true;
     MSG msg = {0};
     while (ClientIsRunning)
     {
-        if (LoadCount++ > 120)
+        // Reload Dll if necessary
+        FILETIME DllWriteTime = Win32GetLastWriteTime(GetStr(&GameDllCopy));
+        if (CompareFileTime(&DllWriteTime, &GameCode.DllLastWriteTime) != 0)
         {
             Win32UnloadGameCode(&GameCode);
-            Win32LoadGameCode(&GameCode, "example.dll");
-            LoadCount = 0;
+            Win32LoadGameCode(&GameCode, GetStr(&GameDllCopy));
         }
         
         // Message loop
@@ -1028,6 +1338,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         
         RendererEntry(Renderer, &ResourceRegistry);
     }
+    
+    MstringFree(&GameDllCopy);
     
     //~ Free Graphics layer
     RendererShutdown(&Renderer, &PermanantMemory);

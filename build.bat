@@ -51,10 +51,12 @@ IF NOT EXIST build\data\textures\ (
     1>NUL MKDIR build\data\textures\
 )
 
+:: TODO(Dustin): Get unique names for the games pdb file so that we can hot reload in the debugger
 IF "%1" == "gm" (
+	:: /PDB:maple_game_%time%.pdb
     pushd build\
         echo Building game...
-		cl /MT -nologo /Zi /EHsc /I%HOST_DIR%\engine %HOST_DIR%\example\example_unity.cpp /LD /Feexample.dll /link /DLL -EXPORT:GameStageEntry
+		cl /MT -nologo /Zi /EHsc /I%HOST_DIR%\engine %HOST_DIR%\example\example_unity.cpp /LD /Feexample.dll /link /EXPORT:GameStageEntry
 	popd
     EXIT /B %ERRORLEVEL%
 )

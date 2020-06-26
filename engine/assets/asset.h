@@ -1,0 +1,6 @@
+#ifndef ENGINE_ASSETS_ASSET_H
+#define ENGINE_ASSETS_ASSET_H
+
+
+
+#endif //ENGINE_ASSETS_ASSET_H

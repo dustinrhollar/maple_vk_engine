@@ -130,7 +130,7 @@ void MstringAdd(mstring *Result, const mstring *Left, const mstring *Right)
                 Result->Hptr = NewPtr;
             }
             
-            memcpy(Result->Hptr + Left->Len, (Right->Heap) ? Right->Hptr : Right->Sptr, Right->Len);
+            memcpy(Result->Hptr + Left->Len, GetStr(Right), Right->Len);
             Result->Hptr[NewSize] = 0;
         }
         else if (NewSize > STRING_STACK_SIZE - 1)
@@ -142,7 +142,7 @@ void MstringAdd(mstring *Result, const mstring *Left, const mstring *Right)
             memcpy(NewPtr, Result->Sptr, Result->Len);
             Result->Hptr = NewPtr;
             
-            memcpy(Result->Hptr + Left->Len, (Right->Heap) ? Right->Hptr : Right->Sptr, Right->Len);
+            memcpy(Result->Hptr + Left->Len, GetStr(Right), Right->Len);
             Result->Hptr[NewSize] = 0;
         }
         else
@@ -169,8 +169,8 @@ void MstringAdd(mstring *Result, const mstring *Left, const mstring *Right)
                 Result->Hptr = NewPtr;
             }
             
-            memcpy(Result->Hptr + Result->Len, (Left->Heap) ? Left->Hptr : Left->Sptr, Left->Len);
-            memcpy(Result->Hptr + Result->Len + Left->Len, (Right->Heap) ? Right->Hptr : Right->Sptr, Right->Len);
+            memcpy(Result->Hptr + Result->Len, GetStr(Left), Left->Len);
+            memcpy(Result->Hptr + Result->Len + Left->Len, GetStr(Right), Right->Len);
             Result->Hptr[NewSize] = 0;
         }
         else if (NewSize > STRING_STACK_SIZE - 1)
@@ -253,7 +253,7 @@ void MstringAdd(mstring *Result, const mstring *Left, const char *Right, u32 Rig
                 Result->Hptr = NewPtr;
             }
             
-            memcpy(Result->Hptr + Result->Len, (Left->Heap) ? Left->Hptr : Left->Sptr, Left->Len);
+            memcpy(Result->Hptr + Result->Len, GetStr(Left), Left->Len);
             memcpy(Result->Hptr + Result->Len + Left->Len, Right, RightLen);
             Result->Hptr[NewSize] = 0;
         }
@@ -292,7 +292,45 @@ void TstringAdd(tstring *Result, tagged_heap_block *TaggedHeap, const tstring *L
 
 void StringAdd(mstring *Result, const char *Left, u32 LeftLen, const char *Right, u32 RightLen)
 {
+    u32 Size = Result->Len + LeftLen + RightLen;
     
+    if (Result->Heap)
+    {
+        if (Size > Result->ReservedHeapSize)
+        {
+            Result->ReservedHeapSize = (Result->ReservedHeapSize * 2 > Size) ? Result->ReservedHeapSize*2 : Size + 1;
+            
+            char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+            memcpy(NewPtr, Result->Hptr, Result->Len);
+            pfree<char>(&StringArena, Result->Hptr);
+            Result->Hptr = NewPtr;
+        }
+        
+        memcpy(Result->Hptr + Result->Len, Left, LeftLen);
+        memcpy(Result->Hptr + Result->Len + LeftLen, Right, RightLen);
+        Result->Hptr[Size] = 0;
+    }
+    else if (Size > STRING_STACK_SIZE - 1)
+    {
+        Result->Heap = 1;
+        Result->ReservedHeapSize = Size + 1;
+        
+        char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+        memcpy(NewPtr, Result->Sptr, Result->Len);
+        Result->Hptr = NewPtr;
+        
+        memcpy(Result->Hptr + Result->Len, Left, LeftLen);
+        memcpy(Result->Hptr + Result->Len + LeftLen, Right, RightLen);
+        Result->Hptr[Size] = 0;
+    }
+    else
+    {
+        memcpy(Result->Sptr + Result->Len, Left, LeftLen);
+        memcpy(Result->Sptr + Result->Len + LeftLen, Right, RightLen);
+        Result->Sptr[Size] = 0;
+    }
+    
+    Result->Len = Size;
 }
 
 void TaggedStringAdd(tstring *Result, tagged_heap_block *TaggedHeap, const char *Left, u32 LeftLen, const char *Right, u32 RightLen)

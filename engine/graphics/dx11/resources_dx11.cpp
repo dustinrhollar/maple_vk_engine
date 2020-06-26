@@ -1,10 +1,4 @@
 
-struct vertex
-{
-    vec3 Position;
-    vec4 Color;
-};
-
 struct resource_device
 {
     IDXGISwapChain      *Swapchain;

@@ -46,7 +46,7 @@ void RendererInit(renderer_t *Renderer, free_allocator *Allocator, resource_regi
     PipelineInfo.PipelineLayoutCount = 2;
     pRenderer->SimplePipeline = CreateResource(Registry, Resource_Pipeline, &PipelineInfo);
     
-    vertex Vertices[] =
+    simple_vertex Vertices[] =
     {
         { {0.0f, 0.5f, 0.0f    } , { 1.0f, 0.0f, 0.0f, 1.0f } },
         { {0.45f, -0.5, 0.0f   } , { 0.0f, 1.0f, 0.0f, 1.0f } },
@@ -55,7 +55,7 @@ void RendererInit(renderer_t *Renderer, free_allocator *Allocator, resource_regi
     
     buffer_create_info BufferInfo = {};
     BufferInfo.Device              = pRenderer->Device;
-    BufferInfo.Size                = sizeof(vertex) * 3;
+    BufferInfo.Size                = sizeof(simple_vertex) * 3;
     BufferInfo.Usage               = BufferUsage_Default;
     BufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
     BufferInfo.BindFlags           = BufferBind_VertexBuffer;
@@ -142,7 +142,7 @@ void RendererEntry(renderer_t Renderer, resource_registry *Registry)
     DeviceContext->VSSetShader(VertexShader, 0, 0);
     DeviceContext->PSSetShader(PixelShader, 0, 0);
     
-    UINT Stride = sizeof(vertex);
+    UINT Stride = sizeof(simple_vertex);
     UINT Offset = 0;
     DeviceContext->IASetVertexBuffers(0, 1, &VBuffer, &Stride, &Offset);
     

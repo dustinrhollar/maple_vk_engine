@@ -4,6 +4,20 @@
 typedef struct resource* resource_t;
 struct resource_registry;
 
+struct vertex
+{
+    vec3 Position;
+    vec3 Normals;
+    vec4 Color;
+    vec2 Tex0;
+};
+
+struct simple_vertex
+{
+    vec3 Position;
+    vec4 Color;
+};
+
 enum resource_type
 {
     Resource_Device,
