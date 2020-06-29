@@ -1301,6 +1301,17 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         CreateAsset(&AssetRegistry, Asset_SimpleModel, &CreateInfo);
     }
     
+    //~ Initialize ImGui stuff
+    ImGuiContext *ctx = ImGui::CreateContext();
+    if (!ImGui_ImplWin32_Init(ClientWindow))
+        mprinte("Failed to initialzie ImGui!\n");
+    
+    resource_id DeviceId = Renderer->Device;
+    
+    ID3D11Device* Device = ResourceRegistry.Resources[DeviceId.Index]->Device.Handle;
+    ID3D11DeviceContext* DeviceContext = ResourceRegistry.Resources[DeviceId.Index]->Device.Context;
+    MapleDevGuiInit(Device, DeviceContext);
+    
     //~ Load game code
     game_code GameCode = {};
     
@@ -1373,6 +1384,11 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     MstringFree(&GameDllCopy);
     
+    //~ Close down ImGui
+    MapleDevGuiFree();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    
     //~ Free Graphics layer
     RendererShutdown(&Renderer, &PermanantMemory);
     AssetRegistryFree(&AssetRegistry, &PermanantMemory);
@@ -1442,6 +1458,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     if (!ClientIsRunning) return DefWindowProc(hwnd, uMsg, wParam, lParam);
     
+    // Update ImGui
+    ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
+    ImGuiIO& io = ImGui::GetIO();
+    
     switch (uMsg)
     {
         case WM_CLOSE:
@@ -1468,29 +1488,32 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         case WM_SYSKEYDOWN:
         case WM_KEYDOWN:
         {
-            bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-            switch (wParam)
+            if (!io.WantCaptureKeyboard)
             {
-                case VK_ESCAPE:
+                bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+                switch (wParam)
                 {
-                    ClientIsRunning = false;
-                } break;
-                case VK_RETURN:
-                {
-                    if (alt)
+                    case VK_ESCAPE:
                     {
-                        case VK_F11:
+                        ClientIsRunning = false;
+                    } break;
+                    case VK_RETURN:
+                    {
+                        if (alt)
                         {
-                            // NOTE(Dustin): Disabling fullscreen fails to restore the
-                            // previous window's position and defaults to the top left
-                            // corner
-                            if (!GlobalIsFullscreen)
-                                GetClientRect(hwnd, &ClientWindowRectOld);
-                            
-                            SetFullscreen(!GlobalIsFullscreen);
+                            case VK_F11:
+                            {
+                                // NOTE(Dustin): Disabling fullscreen fails to restore the
+                                // previous window's position and defaults to the top left
+                                // corner
+                                if (!GlobalIsFullscreen)
+                                    GetClientRect(hwnd, &ClientWindowRectOld);
+                                
+                                SetFullscreen(!GlobalIsFullscreen);
+                            } break;
                         } break;
                     } break;
-                } break;
+                }
             }
         } break;
         

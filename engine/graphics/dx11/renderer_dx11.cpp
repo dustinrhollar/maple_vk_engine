@@ -144,5 +144,19 @@ void RendererEntry(renderer_t Renderer, frame_params *FrameParams)
         }
     }
     
+    
+    // Draw dev gui
+    MapleDevGuiNewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    {
+        ImGui::ShowDemoWindow();
+    }
+    ImGui::Render();
+    ImDrawData* ImDrawData = ImGui::GetDrawData();
+    MapleDevGuiRenderDrawData(ImDrawData);
+    ImGui::EndFrame();
+    
+    
     Swapchain->Present(0, 0);
 }

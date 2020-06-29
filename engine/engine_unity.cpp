@@ -62,6 +62,10 @@
 
 #include "graphics/render_command.h"
 
+//~ UI
+
+#include "ui/imgui/imgui.h"
+
 //~ Frame Info
 
 #include "frame_info/frame_params.h"
@@ -69,8 +73,19 @@
 
 //~ Platform Specific Code & Entry point
 
+#include "ui/ui.h"
+#include "ui/win32/imgui_impl_win32.h"
+
 #include "graphics/dx11/maple_dx11.cpp"
 #include "graphics/dx11/resources_dx11.cpp"
 #include "graphics/dx11/renderer_dx11.cpp"
 
 #include "platform/platform_entry.cpp"
+
+// NOTE(Dustin): Not sure why, but including imgui above the entry point
+// produces an error with timeBeginPeriod
+// imgui
+#include "ui/imgui/imgui.cpp"
+#include "ui/imgui/imgui_demo.cpp"
+#include "ui/imgui/imgui_draw.cpp"
+#include "ui/imgui/imgui_widgets.cpp"
