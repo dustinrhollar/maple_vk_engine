@@ -34,10 +34,14 @@
 #define MAPLE_MSTRING_IMPLEMENTATION
 #define MAPLE_VECTOR_MATH_IMPLEMENTATION
 #define MAPLE_HASH_FUNCTIONS_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define CGLTF_IMPLEMENTATION
 
 #include "utils/mstring.h"
 #include "utils/vector_math.h"
 #include "utils/hash_functions.h"
+#include "graphics/stb_image.h"
+#include "assets/cgtlf.h"
 
 //~ Graphics API
 
@@ -47,16 +51,21 @@
 
 //~ Assets
 
-#define CGLTF_IMPLEMENTATION
-#include "assets/cgtlf.h"
-
 // gltf converter
 #include "assets/gltf_converter.h"
 #include "assets/gltf_converter.cpp"
 
+#include "assets/asset.h"
+#include "assets/asset.cpp"
+
+//~ Renderer API
+
+#include "graphics/render_command.h"
+
 //~ Frame Info
 
 #include "frame_info/frame_params.h"
+#include "frame_info/frame_params.cpp"
 
 //~ Platform Specific Code & Entry point
 

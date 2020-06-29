@@ -1,9 +1,13 @@
 
 extern "C" void GameStageEntry(frame_params* FrameParams)
 {
-#if 1
-    FrameParams->GameStageEndTime = 100;
-#else
-    FrameParams->GameStageEndTime = 500;
-#endif
+    for (u32 i = 0; i < FrameParams->AssetsCount; ++i)
+    {
+        asset Asset = FrameParams->Assets[i];
+        if (Asset.Id.Type == Asset_SimpleModel)
+        {
+            render_command Cmd = { RenderCmd_Draw, Asset.Id };
+            FrameParams->RenderCommands[FrameParams->RenderCommandsCount++] = Cmd;
+        }
+    }
 }

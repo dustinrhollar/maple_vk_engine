@@ -33,6 +33,12 @@ struct resource_buffer
     ID3D11Buffer *Handle;
 };
 
+struct resource_texture
+{
+    ID3D11Texture2D          *Handle;
+    ID3D11ShaderResourceView *View;
+};
+
 struct resource
 {
     resource_id Id;
@@ -45,6 +51,7 @@ struct resource
         resource_render_target   RenderTarget;
         resource_pipeline_layout PipelineLayout;
         resource_pipeline        Pipeline;
+        resource_texture         Texture;
     };
 };
 
@@ -102,6 +109,21 @@ void ResourceRegistryFree(resource_registry *Registry, free_allocator *GlobalMem
     
     Registry->ResourcesMax   = 0;
     Registry->ResourcesCount = 0;
+}
+
+resource_id CreateDummyResource()
+{
+    resource_id Result = {};
+    Result.Type        = Resource_None;
+    Result.Gen         = 0;
+    Result.Active      = 0; // start off as not active
+    
+    return Result;
+}
+
+inline bool IsValidResource(resource_t Resources, resource_id ResourceId)
+{
+    return (ResourceId.Active) && (Resources[ResourceId.Index].Id.Gen == ResourceId.Gen);
 }
 
 resource_id CreateResource(resource_registry *Registry, resource_type Type, void *CreateInfo)
@@ -266,7 +288,7 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
                 return Result;
             }
             
-            Device->CreatePixelShader(Info->PixelData, Info->PixelDataSize, NULL, &Pipeline.PixelShader);
+            hr = Device->CreatePixelShader(Info->PixelData, Info->PixelDataSize, NULL, &Pipeline.PixelShader);
             if (FAILED(hr))
             {
                 mprinte("Failed to create pixel shader %d!\n", hr);
@@ -282,6 +304,7 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
                 
                 switch (Info->PipelineLayout[i].InputFormat)
                 {
+                    case PipelineFormat_R32G32_FLOAT:       ied[i].Format = DXGI_FORMAT_R32G32_FLOAT;       break;
                     case PipelineFormat_R32G32B32_FLOAT:    ied[i].Format = DXGI_FORMAT_R32G32B32_FLOAT;    break;
                     case PipelineFormat_R32G32B32A32_FLOAT: ied[i].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; break;
                     default: mprinte("Format not currently supported!\n");
@@ -298,9 +321,14 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
                 ied[i].InstanceDataStepRate = Info->PipelineLayout[i].InstanceRate;
             }
             
-            Device->CreateInputLayout(ied, Info->PipelineLayoutCount,
-                                      Info->VertexData, Info->VertexDataSize,
-                                      &Pipeline.Layout);
+            hr = Device->CreateInputLayout(ied, Info->PipelineLayoutCount,
+                                           Info->VertexData, Info->VertexDataSize,
+                                           &Pipeline.Layout);
+            if (FAILED(hr))
+            {
+                mprinte("Failed to create pipeline layout %d!\n", hr);
+                return Result;
+            }
             
             // Active the Id
             Result.Index  = Registry->ResourcesCount++;
@@ -418,7 +446,125 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
             
         } break;
         
+        case Resource_Texture2D:
+        {
+            texture2d_create_info *Info = (texture2d_create_info*)CreateInfo;
+            ID3D11Device *Device = Registry->Resources[Info->Device.Index]->Device.Handle;
+            
+            i32 Width, Height, Channels;
+            unsigned char *Data = stbi_load(Info->TextureFile, &Width, &Height, &Channels, STBI_rgb_alpha);
+            u64 ImageSize = Width * Height * 4;
+            
+            if (!Data)
+            {
+                mprinte("Failed to load texture from file %s!\n", Info->TextureFile);
+                return Result;
+            }
+            
+            {
+                D3D11_TEXTURE2D_DESC desc;
+                memset( &desc, 0, sizeof(desc));
+                
+                desc.Width = 256;
+                desc.Height = 256;
+                desc.MipLevels = 1;
+                desc.ArraySize = 1;
+                desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                desc.SampleDesc.Count = 1;
+                desc.Usage = D3D11_USAGE_DYNAMIC;
+                desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+                desc.MiscFlags = 0;
+                
+                ID3D11Device *pd3dDevice; // Don't forget to initialize this
+                ID3D11Texture2D *pTexture = NULL;
+                HRESULT hr = Device->CreateTexture2D( &desc, NULL, &pTexture );
+                
+                
+                if (FAILED(hr))
+                {
+                    mprinte("Failed to create exampel 2D image texture %d!\n", hr);
+                    return Result;
+                }
+                
+            }
+            
+            resource_texture Texture = {};
+            
+            D3D11_TEXTURE2D_DESC desc;
+            memset( &desc, 0, sizeof(desc));
+            
+            // TODO(Dustin): Handle mipping
+            desc.Width            = Width;
+            desc.Height           = Height;
+            desc.MipLevels        = 1;
+            desc.ArraySize        = 1;
+            desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
+            desc.SampleDesc.Count = 1;
+            desc.Usage            = D3D11_USAGE_IMMUTABLE;
+            desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
+            desc.CPUAccessFlags   = 0;
+            desc.MiscFlags        = 0;
+            
+            D3D11_SUBRESOURCE_DATA InitData = {0};
+            InitData.pSysMem          = Data;
+            InitData.SysMemPitch      = Width * 4;
+            InitData.SysMemSlicePitch = 0;
+            
+            HRESULT hr = Device->CreateTexture2D( &desc, &InitData, &Texture.Handle );
+            
+            if (FAILED(hr))
+            {
+                mprinte("Failed to create 2D image texture %d!\n", hr);
+                return Result;
+            }
+            
+            D3D11_SHADER_RESOURCE_VIEW_DESC SRVDesc;
+            memset( &SRVDesc, 0, sizeof( SRVDesc ) );
+            
+            SRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            SRVDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+            SRVDesc.Texture2D.MipLevels = 1;
+            
+            hr = Device->CreateShaderResourceView(Texture.Handle, &SRVDesc, &Texture.View);
+            if ( FAILED(hr) )
+            {
+                mprinte("Failed to create 2D image texture image view %d!\n", hr);
+                
+                Texture.Handle->Release();
+                return Result;
+            }
+            
+            // Active the Id
+            Result.Index  = Registry->ResourcesCount++;
+            Result.Active = 1;
+            
+            // Create the resource
+            resource *Resource = (resource*)PoolAllocatorAlloc(&Registry->ResourceAllocator);
+            Resource->Id       = Result;
+            Resource->Texture   = Texture;
+            
+            // Insert it into the list
+            Registry->Resources[Resource->Id.Index] = Resource;
+            
+        } break;
+        
     };
     
     return Result;
+}
+
+void CopyResources(resource_t *Resources, u32 *ResourcesCount, resource_registry *ResourceRegistry, tag_block_t Heap)
+{
+    // TODO(Dustin): Account for hoels in the registry
+    
+    resource_t ResourcesCopy = halloc<resource>(Heap, ResourceRegistry->ResourcesCount);
+    
+    for (u32 i = 0; i < ResourceRegistry->ResourcesCount; ++i)
+    {
+        ResourcesCopy[i] = *ResourceRegistry->Resources[i];
+    }
+    
+    *ResourcesCount = ResourceRegistry->ResourcesCount;
+    *Resources = ResourcesCopy;
 }

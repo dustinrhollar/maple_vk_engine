@@ -52,6 +52,7 @@ file_global tagged_heap_block PlatformHeap;
 // graphics state
 renderer_t Renderer;
 resource_registry ResourceRegistry;
+asset_registry AssetRegistry;
 
 // File I/O Handling
 struct file
@@ -1264,6 +1265,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
                  ClientWindowHeight,
                  60);
     
+    AssetRegistryInit(&AssetRegistry, Renderer, &PermanantMemory, 100);
+    
     //~ Load some assets
     {
         tag_id_t Tag = {0, TAG_ID_ASSET, 0};
@@ -1271,6 +1274,31 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         ConvertGltfMesh(&HeapBlock, "data/glTF/Fox/glTF/Fox.gltf");
         
         TaggedHeapReleaseAllocation(&TaggedHeap, Tag);
+    }
+    
+    {
+        simple_vertex Vertices[] = {
+            // positions          // colors           // texture coords
+            { {  0.5f,  0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 0.0f }, { 0.5f, 1.0f } },   // top right
+            { {  0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },   // bottom right
+            { { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 0.0f }, { 0.0f, 1.0f } },   // bottom left
+        };
+        
+        u32 SimpleStride = sizeof(simple_vertex);
+        
+        simple_model_create_info CreateInfo = {};;
+        CreateInfo.ResourceRegistry = &ResourceRegistry;
+        CreateInfo.Vertices               = Vertices;
+        CreateInfo.VerticesCount          = 3;
+        CreateInfo.VertexStride           = sizeof(simple_vertex);
+        CreateInfo.Indices                = NULL;
+        CreateInfo.IndicesCount           = 0;
+        CreateInfo.IndicesStride          = 0;
+        CreateInfo.VertexShader           = "data/shaders/simple_vert.cso";
+        CreateInfo.PixelShader            = "data/shaders/simple_frag.cso";
+        CreateInfo.DiffuseTextureFilename = "W:/maple_engine/build/data/textures/wall.jpg";
+        
+        CreateAsset(&AssetRegistry, Asset_SimpleModel, &CreateInfo);
     }
     
     //~ Load game code
@@ -1330,23 +1358,27 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         LastFrameTime = PlatformGetWallClock();
         
         frame_params FrameParams = {};
+        FrameParamsInit(&FrameParams, FrameCount++, LastFrameTime, &TaggedHeap, Renderer,
+                        &ResourceRegistry, &AssetRegistry);
         
         GameCode.GameStageEntry(&FrameParams);
         
-        PlatformPrintMessage(ConsoleColor_Yellow, ConsoleColor_DarkGrey,
-                             "Dynamically set end stage time: %d\n", FrameParams.GameStageEndTime);
+        FrameParams.GameStageEndTime     = PlatformGetWallClock();
+        FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
         
-        RendererEntry(Renderer, &ResourceRegistry);
+        RendererEntry(Renderer, &FrameParams);
+        
+        FrameParamsFree(&FrameParams);
     }
     
     MstringFree(&GameDllCopy);
     
     //~ Free Graphics layer
     RendererShutdown(&Renderer, &PermanantMemory);
+    AssetRegistryFree(&AssetRegistry, &PermanantMemory);
     ResourceRegistryFree(&ResourceRegistry, &PermanantMemory);
     
     //~ Close up the memory pools
-    // Free up the global string arena
     StringArenaFree();
     FreeListAllocatorAllocFree(&PermanantMemory, StringArenaPtr);
     
@@ -1356,7 +1388,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     // free up the global memory
     FreeListAllocatorFree(&PermanantMemory);
     PlatformReleaseMemory(GlobalMemoryPtr, MemorySize);
-    
     
     return (0);
 }

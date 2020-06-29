@@ -16,16 +16,19 @@ struct simple_vertex
 {
     vec3 Position;
     vec4 Color;
+    vec2 Tex0;
 };
 
 enum resource_type
 {
+    Resource_None,
     Resource_Device,
     Resource_Swapchain,
     Resource_RenderTarget,
     Resource_Buffer,
     Resource_PipelineLayout,
     Resource_Pipeline,
+    Resource_Texture2D,
 };
 
 struct resource_id
@@ -105,8 +108,15 @@ struct buffer_create_info
     u32                     SysMemSlicePitch;
 };
 
+struct texture2d_create_info
+{
+    resource_id Device;
+    const char *TextureFile;
+};
+
 enum pipeline_layout_format
 {
+    PipelineFormat_R32G32_FLOAT,
     PipelineFormat_R32G32B32_FLOAT,
     PipelineFormat_R32G32B32A32_FLOAT,
 };
@@ -142,5 +152,11 @@ void ResourceRegistryInit(resource_registry *Registry, free_allocator *GlobalMem
 void ResourceRegistryFree(resource_registry *Registry, free_allocator *GlobalMemoryAllocator);
 
 resource_id CreateResource(resource_registry *Registry, resource_type Type, void *CreateInfo);
+resource_id CreateDummyResource();
+void CopyResources(resource_t *Resources, u32 *ResourcesCount, resource_registry *ResourceRegistry, tag_block_t Heap);
+
+// A valid resource is a resource that is active and its generation matches the generation at
+// the designated index.
+inline bool IsValidResource(resource_t Resources, resource_id ResourceId);
 
 #endif //RESOURCES_H

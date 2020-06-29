@@ -5,4 +5,6 @@
 // engine development tooling
 #define MAPLE_DEV 1
 
+#define _DEBUG 1
+
 #endif
