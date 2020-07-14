@@ -238,9 +238,9 @@ file_internal header_t Split(header_t* FreeList, header_t Header, u64 Size)
       | 8b |  x >= 16b            |
       -----------------------------
       After split:
-      -----------------------------
-      | 8b | size | 8b | leftover |
-      -----------------------------
+      ------------------------------------------
+      | 8b | size | 8b | leftover at least 16b |
+      ------------------------------------------
     
     */
     
@@ -251,9 +251,9 @@ file_internal header_t Split(header_t* FreeList, header_t Header, u64 Size)
     // Requested memory is over budget
     if (ReqSize >= HeaderDataSize) return Header;
     
-    u64 Leftover  = HeaderDataSize - ReqSize;
-    // not enough leftover space for an allocation
-    if (Leftover < HEADER_SIZE)
+    u64 Leftover = HeaderDataSize - Size;
+    // is there enough space for the split? Need: 8 byte core header + 16 bytes for the links
+    if (Leftover < HeaderAdjustedSize(BLOCK_SIZE))
     {
         return Header;
     }

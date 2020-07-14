@@ -22,9 +22,14 @@ load_paths = {
 };
 
 command_list = {
- { .name = "build",
+ { .name = "build_engine",
    .out = "*compilation*", .footer_panel = true, .save_dirty_files = true,
-   .cmd = { { "build.bat" , .os = "win"   },
+   .cmd = { { "build.bat mp" , .os = "win"   },
+            { "./build.sh", .os = "linux" },
+            { "./build.sh", .os = "mac"   }, }, },
+ { .name = "build_game",
+   .out = "*compilation*", .footer_panel = true, .save_dirty_files = true,
+   .cmd = { { "build.bat gm" , .os = "win"   },
             { "./build.sh", .os = "linux" },
             { "./build.sh", .os = "mac"   }, }, },
  { .name = "run",
@@ -33,5 +38,6 @@ command_list = {
             { "./run.sh" , .os = "linux" },
             { "./run.sh" , .os = "mac"   }, }, },
 };
-fkey_command[1] = "build";
-fkey_command[2] = "run";
+fkey_command[1] = "build_engine";
+fkey_command[2] = "build_game";
+fkey_command[3] = "run";

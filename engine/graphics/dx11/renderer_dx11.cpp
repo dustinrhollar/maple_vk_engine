@@ -1,14 +1,4 @@
 
-struct renderer
-{
-    resource_id Device;
-    resource_id RenderTarget;
-    
-    // Temporary Code
-    resource_id VertexBuffer;
-    resource_id SimplePipeline;
-};
-
 void RendererInit(renderer_t *Renderer, free_allocator *Allocator, resource_registry *Registry,
                   window_t Window, u32 Width, u32 Height, u32 RefreshRate)
 {
@@ -25,46 +15,6 @@ void RendererInit(renderer_t *Renderer, free_allocator *Allocator, resource_regi
     render_target_create_info RenderTargetInfo = {};
     RenderTargetInfo.Device = pRenderer->Device;
     pRenderer->RenderTarget = CreateResource(Registry, Resource_RenderTarget, &RenderTargetInfo);
-    
-    
-    pipeline_layout_create_info LayoutInfo[2] = {
-        {"POSITION", 0, PipelineFormat_R32G32B32_FLOAT,    0, 0,  true, 0},
-        {"COLOR",    0, PipelineFormat_R32G32B32A32_FLOAT, 0, 12, true, 0},
-    };
-    
-    
-    file_t VertFile = PlatformLoadFile("data/shaders/simple_vert.cso");
-    file_t FragFile = PlatformLoadFile("data/shaders/simple_frag.cso");
-    
-    pipeline_create_info PipelineInfo = {};
-    PipelineInfo.Device              = pRenderer->Device;
-    PipelineInfo.VertexData          = GetFileBuffer(VertFile);
-    PipelineInfo.PixelData           = GetFileBuffer(FragFile);
-    PipelineInfo.VertexDataSize      = PlatformGetFileSize(VertFile);
-    PipelineInfo.PixelDataSize       = PlatformGetFileSize(FragFile);
-    PipelineInfo.PipelineLayout      = LayoutInfo;
-    PipelineInfo.PipelineLayoutCount = 2;
-    pRenderer->SimplePipeline = CreateResource(Registry, Resource_Pipeline, &PipelineInfo);
-    
-    vertex Vertices[] =
-    {
-        { {0.0f, 0.5f, 0.0f    } , { 1.0f, 0.0f, 0.0f, 1.0f } },
-        { {0.45f, -0.5, 0.0f   } , { 0.0f, 1.0f, 0.0f, 1.0f } },
-        { {-0.45f, -0.5f, 0.0f } , { 0.0f, 0.0f, 1.0f, 1.0f } }
-    };
-    
-    buffer_create_info BufferInfo = {};
-    BufferInfo.Device              = pRenderer->Device;
-    BufferInfo.Size                = sizeof(vertex) * 3;
-    BufferInfo.Usage               = BufferUsage_Default;
-    BufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
-    BufferInfo.BindFlags           = BufferBind_VertexBuffer;
-    BufferInfo.MiscFlags           = BufferMisc_None;
-    BufferInfo.StructureByteStride = 0;
-    BufferInfo.Data                = Vertices;
-    BufferInfo.SysMemPitch         = 0;
-    BufferInfo.SysMemSlicePitch    = 0;
-    pRenderer->VertexBuffer = CreateResource(Registry, Resource_Buffer, &BufferInfo);
     
     *Renderer = pRenderer;
 }
@@ -109,15 +59,14 @@ void RendererResize(renderer_t Renderer, resource_registry *Registry)
     pBuffer->Release();
 }
 
-void RendererEntry(renderer_t Renderer, resource_registry *Registry)
+void RendererEntry(renderer_t Renderer, frame_params *FrameParams)
 {
-    ID3D11DeviceContext *DeviceContext = Registry->Resources[Renderer->Device.Index]->Device.Context;
-    IDXGISwapChain *Swapchain = Registry->Resources[Renderer->Device.Index]->Device.Swapchain;
-    ID3D11RenderTargetView *RenderTarget = Registry->Resources[Renderer->RenderTarget.Index]->RenderTarget.Handle;
-    ID3D11InputLayout  *Layout       = Registry->Resources[Renderer->SimplePipeline.Index]->Pipeline.Layout;
-    ID3D11VertexShader *VertexShader = Registry->Resources[Renderer->SimplePipeline.Index]->Pipeline.VertexShader;
-    ID3D11PixelShader  *PixelShader  = Registry->Resources[Renderer->SimplePipeline.Index]->Pipeline.PixelShader;
-    ID3D11Buffer *VBuffer = Registry->Resources[Renderer->VertexBuffer.Index]->Buffer.Handle;
+    ID3D11DeviceContext *DeviceContext =
+        FrameParams->Resources[Renderer->Device.Index].Device.Context;
+    IDXGISwapChain *Swapchain =
+        FrameParams->Resources[Renderer->Device.Index].Device.Swapchain;
+    ID3D11RenderTargetView *RenderTarget =
+        FrameParams->Resources[Renderer->RenderTarget.Index].RenderTarget.Handle;
     
     DeviceContext->OMSetRenderTargets(1, &RenderTarget, NULL);
     
@@ -136,21 +85,64 @@ void RendererEntry(renderer_t Renderer, resource_registry *Registry)
     vec4 ClearColor = { 0.0f, 0.2f, 0.4f, 1.0f };
     DeviceContext->ClearRenderTargetView(RenderTarget, ClearColor.data);
     
-    DeviceContext->IASetInputLayout(Layout);
-    
-    // set the shader objects to be active
-    DeviceContext->VSSetShader(VertexShader, 0, 0);
-    DeviceContext->PSSetShader(PixelShader, 0, 0);
-    
-    UINT Stride = sizeof(vertex);
-    UINT Offset = 0;
-    DeviceContext->IASetVertexBuffers(0, 1, &VBuffer, &Stride, &Offset);
-    
-    // select which primtive type we are using
-    DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    
-    // draw the vertex buffer to the back buffer
-    DeviceContext->Draw(3, 0);
+    for (u32 i = 0; i < FrameParams->RenderCommandsCount; ++i)
+    {
+        render_command Cmd = FrameParams->RenderCommands[i];
+        
+        if (Cmd.Type == RenderCmd_Draw)
+        {
+            asset_id AssetId = Cmd.DrawCmd.Asset;
+            
+            if (IsValidAsset(FrameParams->Assets, AssetId))
+            {
+                asset Asset = FrameParams->Assets[AssetId.Index];
+                
+                if (AssetId.Type == Asset_SimpleModel)
+                {
+                    resource_id PipelineId = Asset.SimpleModel.Pipeline;
+                    resource_id VertexId = Asset.SimpleModel.VertexBuffer;
+                    resource_id DiffuseId = Asset.SimpleModel.DiffuseTexture;
+                    
+                    resource_pipeline Pipeline = FrameParams->Resources[PipelineId.Index].Pipeline;
+                    resource_buffer VertexBuffer = FrameParams->Resources[VertexId.Index].Buffer;
+                    
+                    ID3D11InputLayout  *Layout = Pipeline.Layout;
+                    ID3D11VertexShader *VertexShader = Pipeline.VertexShader;
+                    ID3D11PixelShader  *PixelShader  = Pipeline.PixelShader;
+                    ID3D11Buffer *VBuffer = VertexBuffer.Handle;
+                    
+                    DeviceContext->IASetInputLayout(Layout);
+                    
+                    // set the shader objects to be active
+                    DeviceContext->VSSetShader(VertexShader, 0, 0);
+                    DeviceContext->PSSetShader(PixelShader, 0, 0);
+                    
+                    // Bind Pixel Shader resources
+                    if (IsValidResource(FrameParams->Resources, DiffuseId))
+                    {
+                        resource_texture DiffuseTexture = FrameParams->Resources[DiffuseId.Index].Texture;
+                        
+                        DeviceContext->PSSetShaderResources(0, 1, &DiffuseTexture.View);
+                    }
+                    
+                    UINT Stride = Asset.SimpleModel.VertexStride;
+                    UINT Offset = Asset.SimpleModel.VertexOffset;
+                    DeviceContext->IASetVertexBuffers(0, 1, &VBuffer, &Stride, &Offset);
+                    
+                    // select which primtive type we are using
+                    DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                    
+                    // draw the vertex buffer to the back buffer
+                    DeviceContext->Draw(Asset.SimpleModel.VertexCount, 0);
+                }
+            }
+        }
+        else if (Cmd.Type == RenderCmd_DrawUi)
+        {
+            MapleEngineUiDraw(&Renderer->MapleUi);
+        }
+        
+    }
     
     Swapchain->Present(0, 0);
 }

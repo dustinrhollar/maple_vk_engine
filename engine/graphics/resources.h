@@ -2,22 +2,33 @@
 #define ENGINE_GRAPHICS_RESOURCES_H
 
 typedef struct resource* resource_t;
-
+struct resource_registry;
 
 struct vertex
 {
     vec3 Position;
+    vec3 Normals;
     vec4 Color;
+    vec2 Tex0;
+};
+
+struct simple_vertex
+{
+    vec3 Position;
+    vec4 Color;
+    vec2 Tex0;
 };
 
 enum resource_type
 {
+    Resource_None,
     Resource_Device,
     Resource_Swapchain,
     Resource_RenderTarget,
     Resource_Buffer,
     Resource_PipelineLayout,
     Resource_Pipeline,
+    Resource_Texture2D,
 };
 
 struct resource_id
@@ -97,8 +108,15 @@ struct buffer_create_info
     u32                     SysMemSlicePitch;
 };
 
+struct texture2d_create_info
+{
+    resource_id Device;
+    const char *TextureFile;
+};
+
 enum pipeline_layout_format
 {
+    PipelineFormat_R32G32_FLOAT,
     PipelineFormat_R32G32B32_FLOAT,
     PipelineFormat_R32G32B32A32_FLOAT,
 };
@@ -129,38 +147,16 @@ struct pipeline_create_info
     u32                          PipelineLayoutCount;
 };
 
-struct resource_registry
-{
-    // NOTE(Dustin): It is not unresasonable to put a hard cap on resource count
-    // It would remove the need for this pointer.
-    //
-    // Global allocator - needed for resizing
-    //free_allocator *GlobalMemoryAllocator;
-    
-    // Allocator managing device resources
-    pool_allocator  ResourceAllocator;
-    
-    // Resource list -  non-resizable, from global memory
-    resource_t     *Resources;
-    u32             ResourcesMax;
-    u32             ResourcesCount;
-    
-    // TODO(Dustin): Unimplemented. Right now, resources are not
-    // created and destroyed dynamically. This functionality is
-    // here for future use, but is currently unimplemented.
-    //
-    // Free Indices list - resizable, from global memory
-    // Requires a minimum count in order to start pulling from
-    // in order to prevent re-using an index too many times
-    u32            *FreeResourceIndices;
-    u32             FreeResourceIndicesCap;
-    u32             FreeResourceIndicesCount;
-};
-
 void ResourceRegistryInit(resource_registry *Registry, free_allocator *GlobalMemoryAllocator,
                           u32 MaximumResources);
 void ResourceRegistryFree(resource_registry *Registry, free_allocator *GlobalMemoryAllocator);
 
 resource_id CreateResource(resource_registry *Registry, resource_type Type, void *CreateInfo);
+resource_id CreateDummyResource();
+void CopyResources(resource_t *Resources, u32 *ResourcesCount, resource_registry *ResourceRegistry, tag_block_t Heap);
+
+// A valid resource is a resource that is active and its generation matches the generation at
+// the designated index.
+inline bool IsValidResource(resource_t Resources, resource_id ResourceId);
 
 #endif //RESOURCES_H
