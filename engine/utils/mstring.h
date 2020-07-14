@@ -341,7 +341,10 @@ void TaggedStringAdd(tstring *Result, tagged_heap_block *TaggedHeap, const char 
 // String comparison that is valid for both mstring and tstring
 bool StringCmp(const char *Left, u32 LeftLen, const char *Right, u32 RightLen)
 {
-    return false;
+    u128 LeftHash  = HashCharArray(Left);
+    u128 RightHash = HashCharArray(Right);
+    
+    return (LeftHash.Upper == RightHash.Upper) && (LeftHash.Lower == RightHash.Lower);
 }
 
 #endif

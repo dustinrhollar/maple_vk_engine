@@ -16,7 +16,6 @@ file_internal i32 ConvertScene(mesh_converter *Converter, cgltf_scene *CgScene);
 file_internal void ConvertTexture(mesh_converter *Converter, cgltf_texture *CgTexture, texture_serial *Texture);
 file_internal void ConvertMaterials(mesh_converter *Converter);
 
-
 file_internal void SerializeTexture(file_t File, texture_serial *Texture, const char *TextureHeader)
 {
     PlatformWriteToFile(File, "{%s}\n", TextureHeader);
@@ -140,15 +139,21 @@ file_internal i32 ConvertPrimitive(mesh_converter *Converter, cgltf_primitive *C
     {
         Mstring(&Primitive.MaterialName, CgPrimitive->material->name, strlen(CgPrimitive->material->name));
         
-        // TODO(Dustin): Check the material list to make sure it was loaded...
-        mstring Filename = {};
-        
-        if (Filename.Len > 0)
+        bool MaterialFound = false;
+        for (i32 i = 0; i < Converter->MaterialNameListIdx; ++i)
         {
-            Primitive.MaterialFile = Filename;
+            if (StringCmp(GetStr(&Converter->MaterialNameList[i]), Converter->MaterialNameList[i].Len, 
+                          CgPrimitive->material->name, strlen(CgPrimitive->material->name)))
+            {
+                MaterialFound = true;
+                break;
+            }
         }
-        else
+        
+        if (!MaterialFound)
+        {
             mprinte("Could not find a material with the name \"%s\"!\n", GetStr(&Primitive.MaterialName));
+        }
     }
     else
     {

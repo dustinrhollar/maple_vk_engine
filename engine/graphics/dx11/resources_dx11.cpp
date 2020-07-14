@@ -15,8 +15,14 @@ struct resource_render_target
     ID3D11RenderTargetView *Handle;
 };
 
+#define VERTEX_SHADER_BIT BIT(0)
+#define PIXEL_SHADER_BIT  BIT(1)
+
 struct resource_pipeline_layout
 {
+    ID3D11InputLayout  *Layout;
+    
+    u32 ShaderBitMask;
 };
 
 struct resource_pipeline

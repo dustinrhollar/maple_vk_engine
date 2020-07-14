@@ -37,9 +37,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define CGLTF_IMPLEMENTATION
 
+#include "utils/hash_functions.h"
 #include "utils/mstring.h"
 #include "utils/vector_math.h"
-#include "utils/hash_functions.h"
 #include "graphics/stb_image.h"
 #include "assets/cgtlf.h"
 
@@ -58,12 +58,23 @@
 #include "assets/asset.h"
 #include "assets/asset.cpp"
 
+#include "assets/asset_loader.h"
+#include "assets/asset_loader.cpp"
+
+//~ Terrain Source
+
+#include "terrain/open_simplex_noise.h"
+#include "terrain/terrain_generator.h"
+#include "terrain/terrain.h"
+
+#include "terrain/terrain_generator.cpp"
+#include "terrain/terrain.cpp"
+
 //~ Renderer API
 
 #include "graphics/render_command.h"
 
 //~ UI
-
 #include "ui/imgui/imgui.h"
 
 //~ Frame Info
@@ -79,6 +90,8 @@
 #include "graphics/dx11/maple_dx11.cpp"
 #include "graphics/dx11/resources_dx11.cpp"
 #include "graphics/dx11/renderer_dx11.cpp"
+
+#include "ui/maple_ui.cpp"
 
 #include "platform/platform_entry.cpp"
 

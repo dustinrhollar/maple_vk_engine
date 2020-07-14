@@ -1,4 +1,3 @@
-//asset.cpp
 
 void AssetRegistryInit(asset_registry *Registry, renderer_t Renderer, free_allocator *GlobalMemoryAllocator,
                        u32 MaximumAssets)

@@ -13,4 +13,6 @@ IMGUI_IMPL_API void MapleDevGuiRenderDrawData(ImDrawData* draw_data);
 IMGUI_IMPL_API void MapleDevGuiInvalidateDeviceObjects();
 IMGUI_IMPL_API bool MapleDevGuiCreateDeviceObjects();
 
+void MapleEngineUiDraw(maple_ui *Ui);
+
 #endif //ENGINE_UI_UI_H

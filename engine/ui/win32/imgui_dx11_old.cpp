@@ -1,37 +1,9 @@
-// dear imgui: Renderer for DirectX11
-// This needs to be used along with a Platform Binding (e.g. Win32)
 
-// Implemented features:
-//  [X] Renderer: User texture binding. Use 'ID3D11ShaderResourceView*' as ImTextureID. Read the FAQ about ImTextureID!
-//  [X] Renderer: Support for large meshes (64k+ vertices) with 16-bit indices.
-
-// You can copy and use unmodified imgui_impl_* files in your project. See main.cpp for an example of using this.
-// If you are new to dear imgui, read examples/README.txt and read the documentation at the top of imgui.cpp
-// https://github.com/ocornut/imgui
-
-// CHANGELOG
-// (minor and older changes stripped away, please see git history for details)
-//  2019-08-01: DirectX11: Fixed code querying the Geometry Shader state (would generally error with Debug layer enabled).
-//  2019-07-21: DirectX11: Backup, clear and restore Geometry Shader is any is bound when calling ImGui_ImplDX10_RenderDrawData. Clearing Hull/Domain/Compute shaders without backup/restore.
-//  2019-05-29: DirectX11: Added support for large mesh (64K+ vertices), enable ImGuiBackendFlags_RendererHasVtxOffset flag.
-//  2019-04-30: DirectX11: Added support for special ImDrawCallback_ResetRenderState callback to reset render state.
-//  2018-12-03: Misc: Added #pragma comment statement to automatically link with d3dcompiler.lib when using D3DCompile().
-//  2018-11-30: Misc: Setting up io.BackendRendererName so it can be displayed in the About Window.
-//  2018-08-01: DirectX11: Querying for IDXGIFactory instead of IDXGIFactory1 to increase compatibility.
-//  2018-07-13: DirectX11: Fixed unreleased resources in Init and Shutdown functions.
-//  2018-06-08: Misc: Extracted imgui_impl_dx11.cpp/.h away from the old combined DX11+Win32 example.
-//  2018-06-08: DirectX11: Use draw_data->DisplayPos and draw_data->DisplaySize to setup projection matrix and clipping rectangle.
-//  2018-02-16: Misc: Obsoleted the io.RenderDrawListsFn callback and exposed ImGui_ImplDX11_RenderDrawData() in the .h file so you can call it yourself.
-//  2018-02-06: Misc: Removed call to ImGui::Shutdown() which is not available from 1.60 WIP, user needs to call CreateContext/DestroyContext themselves.
-//  2016-05-07: DirectX11: Disabling depth-write.
-
-// DirectX
-#include <stdio.h>
-#include <d3d11.h>
-#include <d3dcompiler.h>
 #ifdef _MSC_VER
 #pragma comment(lib, "d3dcompiler") // Automatically link with d3dcompiler.lib as we are using D3DCompile() below.
 #endif
+
+#include <d3dcompiler.h>
 
 // DirectX data
 static ID3D11Device*            g_pd3dDevice = NULL;
@@ -55,7 +27,17 @@ struct VERTEX_CONSTANT_BUFFER
     float   mvp[4][4];
 };
 
-static void ImGui_ImplDX11_SetupRenderState(ImDrawData* draw_data, ID3D11DeviceContext* ctx)
+// Forward Declarations
+file_internal void ImGui_ImplDX11_InitPlatformInterface();
+file_internal void ImGui_ImplDX11_ShutdownPlatformInterface();
+
+static void ImGui_ImplDX11_CreateWindow(ImGuiViewport* viewport);
+static void ImGui_ImplDX11_DestroyWindow(ImGuiViewport* viewport);
+static void ImGui_ImplDX11_SetWindowSize(ImGuiViewport* viewport, ImVec2 size);
+static void ImGui_ImplDX11_RenderWindow(ImGuiViewport* viewport, void*);
+static void ImGui_ImplDX11_SwapBuffers(ImGuiViewport* viewport, void*);
+
+file_internal void ImGui_ImplDX11_SetupRenderState(ImDrawData* draw_data, ID3D11DeviceContext* ctx)
 {
     // Setup viewport
     D3D11_VIEWPORT vp;
@@ -296,7 +278,7 @@ static void ImGui_ImplDX11_CreateFontsTexture()
         desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
         desc.CPUAccessFlags = 0;
         
-        ID3D11Texture2D* pTexture = NULL;
+        ID3D11Texture2D *pTexture = NULL;
         D3D11_SUBRESOURCE_DATA subResource;
         subResource.pSysMem = pixels;
         subResource.SysMemPitch = desc.Width * 4;
@@ -375,8 +357,8 @@ bool MapleDevGuiCreateDeviceObjects()
             output.uv  = input.uv;\
             return output;\
         }";
-            
-            ID3DBlob* vertexShaderBlob;
+        
+        ID3DBlob* vertexShaderBlob;
         if (FAILED(D3DCompile(vertexShader, strlen(vertexShader), NULL, NULL, NULL, "main", "vs_4_0", 0, 0, &vertexShaderBlob, NULL)))
             return false; // NB: Pass ID3DBlob* pErrorBlob to D3DCompile() to get error showing in (const char*)pErrorBlob->GetBufferPointer(). Make sure to Release() the blob!
         if (g_pd3dDevice->CreateVertexShader(vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize(), NULL, &g_pVertexShader) != S_OK)
@@ -428,8 +410,8 @@ bool MapleDevGuiCreateDeviceObjects()
             float4 out_col = input.col * texture0.Sample(sampler0, input.uv); \
             return out_col; \
         }";
-            
-            ID3DBlob* pixelShaderBlob;
+        
+        ID3DBlob* pixelShaderBlob;
         if (FAILED(D3DCompile(pixelShader, strlen(pixelShader), NULL, NULL, NULL, "main", "ps_4_0", 0, 0, &pixelShaderBlob, NULL)))
             return false; // NB: Pass ID3DBlob* pErrorBlob to D3DCompile() to get error showing in (const char*)pErrorBlob->GetBufferPointer(). Make sure to Release() the blob!
         if (g_pd3dDevice->CreatePixelShader(pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize(), NULL, &g_pPixelShader) != S_OK)
@@ -511,6 +493,7 @@ void MapleDevGuiInit(ID3D11Device* device, ID3D11DeviceContext* device_context)
     ImGuiIO& io = ImGui::GetIO();
     io.BackendRendererName = "imgui_impl_dx11";
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;  // We can honor the ImDrawCmd::VtxOffset field, allowing for large meshes.
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports;  // We can create multi-viewports on the Renderer side (optional)
     
     // Get factory from device
     IDXGIDevice* pDXGIDevice = NULL;
@@ -529,18 +512,150 @@ void MapleDevGuiInit(ID3D11Device* device, ID3D11DeviceContext* device_context)
     if (pDXGIAdapter) pDXGIAdapter->Release();
     g_pd3dDevice->AddRef();
     g_pd3dDeviceContext->AddRef();
+    
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+        platform_io.Renderer_CreateWindow  = ImGui_ImplDX11_CreateWindow;
+        platform_io.Renderer_DestroyWindow = ImGui_ImplDX11_DestroyWindow;
+        platform_io.Renderer_SetWindowSize = ImGui_ImplDX11_SetWindowSize;
+        platform_io.Renderer_RenderWindow  = ImGui_ImplDX11_RenderWindow;
+        platform_io.Renderer_SwapBuffers   = ImGui_ImplDX11_SwapBuffers;
+    }
 }
 
 void MapleDevGuiFree()
 {
+    ImGui_ImplDX11_ShutdownPlatformInterface();
     MapleDevGuiInvalidateDeviceObjects();
     if (g_pFactory) { g_pFactory->Release(); g_pFactory = NULL; }
     if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = NULL; }
     if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = NULL; }
 }
 
+
 void MapleDevGuiNewFrame()
 {
     if (!g_pFontSampler)
         MapleDevGuiCreateDeviceObjects();
+}
+
+//--------------------------------------------------------------------------------------------------------
+// MULTI-VIEWPORT / PLATFORM INTERFACE SUPPORT
+// This is an _advanced_ and _optional_ feature, allowing the back-end to create and handle multiple viewports simultaneously.
+// If you are new to dear imgui or creating a new binding for dear imgui, it is recommended that you completely ignore this section first..
+//--------------------------------------------------------------------------------------------------------
+
+// Helper structure we store in the void* RenderUserData field of each ImGuiViewport to easily retrieve our backend data.
+struct ImGuiViewportDataDx11
+{
+    IDXGISwapChain*             SwapChain;
+    ID3D11RenderTargetView*     RTView;
+    
+    ImGuiViewportDataDx11()     { SwapChain = NULL; RTView = NULL; }
+    ~ImGuiViewportDataDx11()    { IM_ASSERT(SwapChain == NULL && RTView == NULL); }
+};
+
+static void ImGui_ImplDX11_CreateWindow(ImGuiViewport* viewport)
+{
+    ImGuiViewportDataDx11* data = IM_NEW(ImGuiViewportDataDx11)();
+    viewport->RendererUserData = data;
+    
+    // PlatformHandleRaw should always be a HWND, whereas PlatformHandle might be a higher-level handle (e.g. GLFWWindow*, SDL_Window*).
+    // Some back-end will leave PlatformHandleRaw NULL, in which case we assume PlatformHandle will contain the HWND.
+    HWND hwnd = viewport->PlatformHandleRaw ? (HWND)viewport->PlatformHandleRaw : (HWND)viewport->PlatformHandle;
+    IM_ASSERT(hwnd != 0);
+    
+    // Create swap chain
+    DXGI_SWAP_CHAIN_DESC sd;
+    ZeroMemory(&sd, sizeof(sd));
+    sd.BufferDesc.Width = (UINT)viewport->Size.x;
+    sd.BufferDesc.Height = (UINT)viewport->Size.y;
+    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.SampleDesc.Count = 1;
+    sd.SampleDesc.Quality = 0;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.BufferCount = 1;
+    sd.OutputWindow = hwnd;
+    sd.Windowed = TRUE;
+    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    sd.Flags = 0;
+    
+    IM_ASSERT(data->SwapChain == NULL && data->RTView == NULL);
+    g_pFactory->CreateSwapChain(g_pd3dDevice, &sd, &data->SwapChain);
+    
+    // Create the render target
+    if (data->SwapChain)
+    {
+        ID3D11Texture2D* pBackBuffer;
+        data->SwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+        g_pd3dDevice->CreateRenderTargetView(pBackBuffer, NULL, &data->RTView);
+        pBackBuffer->Release();
+    }
+}
+
+static void ImGui_ImplDX11_DestroyWindow(ImGuiViewport* viewport)
+{
+    // The main viewport (owned by the application) will always have RendererUserData == NULL since we didn't create the data for it.
+    if (ImGuiViewportDataDx11* data = (ImGuiViewportDataDx11*)viewport->RendererUserData)
+    {
+        if (data->SwapChain)
+            data->SwapChain->Release();
+        data->SwapChain = NULL;
+        if (data->RTView)
+            data->RTView->Release();
+        data->RTView = NULL;
+        IM_DELETE(data);
+    }
+    viewport->RendererUserData = NULL;
+}
+
+static void ImGui_ImplDX11_SetWindowSize(ImGuiViewport* viewport, ImVec2 size)
+{
+    ImGuiViewportDataDx11* data = (ImGuiViewportDataDx11*)viewport->RendererUserData;
+    if (data->RTView)
+    {
+        data->RTView->Release();
+        data->RTView = NULL;
+    }
+    if (data->SwapChain)
+    {
+        ID3D11Texture2D* pBackBuffer = NULL;
+        data->SwapChain->ResizeBuffers(0, (UINT)size.x, (UINT)size.y, DXGI_FORMAT_UNKNOWN, 0);
+        data->SwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+        if (pBackBuffer == NULL) { fprintf(stderr, "ImGui_ImplDX11_SetWindowSize() failed creating buffers.\n"); return; }
+        g_pd3dDevice->CreateRenderTargetView(pBackBuffer, NULL, &data->RTView);
+        pBackBuffer->Release();
+    }
+}
+
+static void ImGui_ImplDX11_RenderWindow(ImGuiViewport* viewport, void*)
+{
+    ImGuiViewportDataDx11* data = (ImGuiViewportDataDx11*)viewport->RendererUserData;
+    ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+    g_pd3dDeviceContext->OMSetRenderTargets(1, &data->RTView, NULL);
+    if (!(viewport->Flags & ImGuiViewportFlags_NoRendererClear))
+        g_pd3dDeviceContext->ClearRenderTargetView(data->RTView, (float*)&clear_color);
+    MapleDevGuiRenderDrawData(viewport->DrawData);
+}
+
+static void ImGui_ImplDX11_SwapBuffers(ImGuiViewport* viewport, void*)
+{
+    ImGuiViewportDataDx11* data = (ImGuiViewportDataDx11*)viewport->RendererUserData;
+    data->SwapChain->Present(0, 0); // Present without vsync
+}
+
+static void ImGui_ImplDX11_InitPlatformInterface()
+{
+    ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+    platform_io.Renderer_CreateWindow = ImGui_ImplDX11_CreateWindow;
+    platform_io.Renderer_DestroyWindow = ImGui_ImplDX11_DestroyWindow;
+    platform_io.Renderer_SetWindowSize = ImGui_ImplDX11_SetWindowSize;
+    platform_io.Renderer_RenderWindow = ImGui_ImplDX11_RenderWindow;
+    platform_io.Renderer_SwapBuffers = ImGui_ImplDX11_SwapBuffers;
+}
+
+static void ImGui_ImplDX11_ShutdownPlatformInterface()
+{
+    ImGui::DestroyPlatformWindows();
 }

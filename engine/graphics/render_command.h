@@ -4,6 +4,7 @@
 enum render_command_type
 {
     RenderCmd_Draw,
+    RenderCmd_DrawUi,
 };
 
 struct render_command_draw

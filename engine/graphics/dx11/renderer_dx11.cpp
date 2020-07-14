@@ -68,11 +68,6 @@ void RendererEntry(renderer_t Renderer, frame_params *FrameParams)
     ID3D11RenderTargetView *RenderTarget =
         FrameParams->Resources[Renderer->RenderTarget.Index].RenderTarget.Handle;
     
-    //ID3D11InputLayout  *Layout       = Registry->Resources[Renderer->SimplePipeline.Index]->Pipeline.Layout;
-    //ID3D11VertexShader *VertexShader = Registry->Resources[Renderer->SimplePipeline.Index]->Pipeline.VertexShader;
-    //ID3D11PixelShader  *PixelShader  = Registry->Resources[Renderer->SimplePipeline.Index]->Pipeline.PixelShader;
-    //ID3D11Buffer *VBuffer = Registry->Resources[Renderer->VertexBuffer.Index]->Buffer.Handle;
-    
     DeviceContext->OMSetRenderTargets(1, &RenderTarget, NULL);
     
     // Set the viewport
@@ -142,21 +137,12 @@ void RendererEntry(renderer_t Renderer, frame_params *FrameParams)
                 }
             }
         }
+        else if (Cmd.Type == RenderCmd_DrawUi)
+        {
+            MapleEngineUiDraw(&Renderer->MapleUi);
+        }
+        
     }
-    
-    
-    // Draw dev gui
-    MapleDevGuiNewFrame();
-    ImGui_ImplWin32_NewFrame();
-    ImGui::NewFrame();
-    {
-        ImGui::ShowDemoWindow();
-    }
-    ImGui::Render();
-    ImDrawData* ImDrawData = ImGui::GetDrawData();
-    MapleDevGuiRenderDrawData(ImDrawData);
-    ImGui::EndFrame();
-    
     
     Swapchain->Present(0, 0);
 }

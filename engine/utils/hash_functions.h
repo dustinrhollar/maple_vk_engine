@@ -10,11 +10,13 @@ inline u128 HashCharArray(const char* str)
     return result;
 }
 
+#if 0
 inline u128 HashMstring(mstring Str)
 {
     u128 Result = {};
     Hash128(GetStr(&Str), Str.Len, &Result);
 }
+#endif
 
 inline bool CompareHash(u128 lhs, u128 rhs)
 {

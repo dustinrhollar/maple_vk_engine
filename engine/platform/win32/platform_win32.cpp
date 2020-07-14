@@ -16,6 +16,9 @@
 #define LOG_BUFFER_SIZE 512
 #endif
 
+//#include "../threading/thread_manager.h"
+//#include "../threading/thread_manager.cpp"
+
 struct platform_window
 {
     HWND Window;
@@ -38,6 +41,7 @@ file_global r32 GlobalMouseYPos;
 // Game or Dev Mode?
 file_global bool GlobalIsDevMode = true;
 file_global bool RenderDevGui    = true;
+file_global bool NeedsToResize   = false;
 
 // Frame Info
 file_global u64 FrameCount = 0;
@@ -50,9 +54,9 @@ file_global tag_id_t          PlatformTag = {0, TAG_ID_PLATFORM, 0};
 file_global tagged_heap_block PlatformHeap;
 
 // graphics state
-renderer_t Renderer;
-resource_registry ResourceRegistry;
-asset_registry AssetRegistry;
+file_global renderer_t        Renderer;
+file_global resource_registry ResourceRegistry;
+file_global asset_registry    AssetRegistry;
 
 // File I/O Handling
 struct file
@@ -83,11 +87,11 @@ struct file
 
 struct game_code
 {
-    HMODULE Handle;
-    FILETIME DllLastWriteTime;
-    
+    HMODULE           Handle;
+    FILETIME          DllLastWriteTime;
     game_stage_entry *GameStageEntry;
 };
+game_code GameCode;
 
 
 #define MAX_OPEN_FILES 10
@@ -590,6 +594,28 @@ inline void FlushBinaryWriteIfNeeded(file_t File, u32 ReqSize)
         }
     }
 }
+
+
+// "Save" the current offset into a file. This is particularly useful
+// if a user is scanning over and plan to rewind their position. Currently,
+// only 5 savepoints are allowed. The Savepoints structure acts as a stack. 
+bool PlatformFileSetSavepoint(file_t File)
+{// TODO(Dustin): 
+    bool Result = false;
+    return Result;
+}
+
+// Restore the save point at the top of the stack.
+bool PlatformFileRestoreSavepoint(file_t File)
+{// TODO(Dustin): 
+    bool Result = false;
+    return Result;
+}
+
+void PlatformReadFile(file_t File, void *Result, u32 Len, const char *Fmt)
+{// TODO(Dustin): 
+}
+
 
 void PlatformWriteBinaryStreamToFile(file_t File, void *DataPtr, u64 DataSize)
 {
@@ -1215,8 +1241,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     wc.lpszClassName = CLASS_NAME;
     RegisterClass(&wc);
     
-    u32 ClientWindowWidth  = 1080;
-    u32 ClientWindowHeight = 720;
+    u32 ClientWindowWidth  = 1920;
+    u32 ClientWindowHeight = 1080;
     
     ClientWindow = CreateWindowEx(0,
                                   CLASS_NAME,
@@ -1237,7 +1263,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     ClientWindowRectOld = ClientWindowRect;
     
     //~ Memory Setup
-    u64 MemorySize = _MB(50);
+    u64 MemorySize = _MB(200);
     GlobalMemoryPtr = PlatformRequestMemory(MemorySize);
     
     // Initialize memory manager
@@ -1245,7 +1271,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     // Tagged heap. 3 Stages + 1 Resource/Asset = 4 Tags / frame
     // Keep 3 Blocks for each Tag, allowing for 12 Blocks overall
-    TaggedHeapInit(&TaggedHeap, &PermanantMemory, _MB(24), _2MB, 10);
+    TaggedHeapInit(&TaggedHeap, &PermanantMemory, _MB(100), _2MB, 10);
     PlatformHeap = TaggedHeapRequestAllocation(&TaggedHeap, PlatformTag);
     
     u64 StringArenaSize  = _MB(1);
@@ -1257,49 +1283,18 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     platform_window pWindow = {ClientWindow};
     
+    u32 RealWidth, RealHeight;
+    PlatformGetClientWindowDimensions(&RealWidth, &RealHeight);
+    
     RendererInit(&Renderer,
                  &PermanantMemory,
                  &ResourceRegistry,
                  &pWindow,
-                 ClientWindowWidth,
-                 ClientWindowHeight,
+                 RealWidth,
+                 RealHeight,
                  60);
     
     AssetRegistryInit(&AssetRegistry, Renderer, &PermanantMemory, 100);
-    
-    //~ Load some assets
-    {
-        tag_id_t Tag = {0, TAG_ID_ASSET, 0};
-        tagged_heap_block HeapBlock = TaggedHeapRequestAllocation(&TaggedHeap, Tag);
-        ConvertGltfMesh(&HeapBlock, "data/glTF/Fox/glTF/Fox.gltf");
-        
-        TaggedHeapReleaseAllocation(&TaggedHeap, Tag);
-    }
-    
-    {
-        simple_vertex Vertices[] = {
-            // positions          // colors           // texture coords
-            { {  0.5f,  0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 0.0f }, { 0.5f, 1.0f } },   // top right
-            { {  0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },   // bottom right
-            { { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 0.0f }, { 0.0f, 1.0f } },   // bottom left
-        };
-        
-        u32 SimpleStride = sizeof(simple_vertex);
-        
-        simple_model_create_info CreateInfo = {};;
-        CreateInfo.ResourceRegistry = &ResourceRegistry;
-        CreateInfo.Vertices               = Vertices;
-        CreateInfo.VerticesCount          = 3;
-        CreateInfo.VertexStride           = sizeof(simple_vertex);
-        CreateInfo.Indices                = NULL;
-        CreateInfo.IndicesCount           = 0;
-        CreateInfo.IndicesStride          = 0;
-        CreateInfo.VertexShader           = "data/shaders/simple_vert.cso";
-        CreateInfo.PixelShader            = "data/shaders/simple_frag.cso";
-        CreateInfo.DiffuseTextureFilename = "W:/maple_engine/build/data/textures/wall.jpg";
-        
-        CreateAsset(&AssetRegistry, Asset_SimpleModel, &CreateInfo);
-    }
     
     //~ Initialize ImGui stuff
     ImGuiContext *ctx = ImGui::CreateContext();
@@ -1313,28 +1308,41 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     MapleDevGuiInit(Device, DeviceContext);
     
     //~ Load game code
-    game_code GameCode = {};
+    mstring GameDllName = Win32NormalizePath("example.dll");
+    Win32LoadGameCode(&GameCode, GetStr(&GameDllName));
     
-    mstring GameDllCopy = Win32NormalizePath("example.dll");
-    Win32LoadGameCode(&GameCode, GetStr(&GameDllCopy));
     
-    //~ App Loop
+    //~ Render Loop
     ShowWindow(ClientWindow, nCmdShow);
     
     u64 LastFrameTime = PlatformGetWallClock();
     r32 RefreshRate = 60.0f;
     r32 TargetSecondsPerFrame = 1 / RefreshRate;
     
+    u32 LoadDllCounter = 0;
+    
     ClientIsRunning = true;
     MSG msg = {0};
     while (ClientIsRunning)
     {
+        frame_params FrameParams = {};
+        FrameParamsInit(&FrameParams, FrameCount++, LastFrameTime, &TaggedHeap, Renderer,
+                        &ResourceRegistry, &AssetRegistry);
+        
+        // NOTE(Dustin): When check the file time, if there is not a small delay in the check
+        // then the DLL is loaded twice. In order to solve this, rather than checking every frame,
+        // check N times per second.
         // Reload Dll if necessary
-        FILETIME DllWriteTime = Win32GetLastWriteTime(GetStr(&GameDllCopy));
-        if (CompareFileTime(&DllWriteTime, &GameCode.DllLastWriteTime) != 0)
+        FILETIME DllWriteTime = Win32GetLastWriteTime(GetStr(&GameDllName));
+        if (LoadDllCounter++ >= RefreshRate / 3)
         {
-            Win32UnloadGameCode(&GameCode);
-            Win32LoadGameCode(&GameCode, GetStr(&GameDllCopy));
+            LoadDllCounter = 0;
+            
+            if (CompareFileTime(&DllWriteTime, &GameCode.DllLastWriteTime) != 0)
+            {
+                Win32UnloadGameCode(&GameCode);
+                Win32LoadGameCode(&GameCode, GetStr(&GameDllName));
+            }
         }
         
         // Message loop
@@ -1344,6 +1352,27 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
             DispatchMessage(&msg);
         }
         
+        GameCode.GameStageEntry(&FrameParams);
+        
+        if (RenderDevGui)
+        {
+            render_command UiCmd = {};
+            UiCmd.Type = RenderCmd_DrawUi;
+            
+            FrameParams.RenderCommands[FrameParams.RenderCommandsCount++] = UiCmd;
+        }
+        
+        FrameParams.GameStageEndTime     = PlatformGetWallClock();
+        FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
+        
+        RendererEntry(Renderer, &FrameParams);
+        
+        FrameParamsFree(&FrameParams);
+        
+        if (NeedsToResize)
+            RendererResize(Renderer, &ResourceRegistry);
+        
+        //~ Meet frame rate, if necessary
         u64 ClockNow = PlatformGetWallClock();
         r32 SecondsElapsedUpdate = PlatformGetSecondsElapsed(LastFrameTime, ClockNow);
         
@@ -1367,22 +1396,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         }
         
         LastFrameTime = PlatformGetWallClock();
-        
-        frame_params FrameParams = {};
-        FrameParamsInit(&FrameParams, FrameCount++, LastFrameTime, &TaggedHeap, Renderer,
-                        &ResourceRegistry, &AssetRegistry);
-        
-        GameCode.GameStageEntry(&FrameParams);
-        
-        FrameParams.GameStageEndTime     = PlatformGetWallClock();
-        FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
-        
-        RendererEntry(Renderer, &FrameParams);
-        
-        FrameParamsFree(&FrameParams);
     }
     
-    MstringFree(&GameDllCopy);
+    MstringFree(&GameDllName);
     
     //~ Close down ImGui
     MapleDevGuiFree();
@@ -1493,10 +1509,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
                 switch (wParam)
                 {
+                    case VK_SPACE:
+                    {
+                        RenderDevGui = !RenderDevGui;
+                    } break;
+                    
                     case VK_ESCAPE:
                     {
                         ClientIsRunning = false;
                     } break;
+                    
                     case VK_RETURN:
                     {
                         if (alt)
@@ -1510,8 +1532,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                                     GetClientRect(hwnd, &ClientWindowRectOld);
                                 
                                 SetFullscreen(!GlobalIsFullscreen);
+                                NeedsToResize = true;
                             } break;
+                            
                         } break;
+                        
                     } break;
                 }
             }
@@ -1525,7 +1550,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             int Width  = ClientWindowRect.right - ClientWindowRect.left;
             int Height = ClientWindowRect.bottom - ClientWindowRect.top;
             
-            RendererResize(Renderer, &ResourceRegistry);
+            NeedsToResize = true;
         } break;
         
         default: break;

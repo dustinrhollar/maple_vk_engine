@@ -52,9 +52,79 @@ struct asset_texture
     
 };
 
+//~ Model related objects
+struct primitive
+{
+    asset_id         Material;
+    
+    u32              IndexCount;
+    u32              VertexCount;
+    
+    u32              IndexStride;
+    u32              VertexStride;
+    
+    u64              IndicesOffset;
+    u64              VerticesOffset;
+    
+    vec3             Min;
+    vec3             Max;
+    
+    bool             IsIndexed;
+    bool             IsSkinned;
+    
+    resource_id      VertexBuffer;
+    resource_id      IndexBuffer;
+};
+
+struct mesh
+{
+    mstring     Name; // Keep this?
+    
+    primitive **Primitives;
+    u64         PrimitivesCount;
+    
+    // TODO(Dustin): Add instances here maybe?
+};
+
+/*
+Three known types of nodes:
+- Transformation Node : CHECK
+- Joint Node          : DONT CARE
+- Mesh Node           : CHECK
+*/
+
+struct model_node
+{
+    mstring      Name;
+    
+    model_node  *Parent;
+    
+    model_node **Children;
+    u64          ChildrenCount;
+    
+    vec3         Translation;
+    vec3         Scale;
+    vec4         Rotation; // this is a quaternion
+    
+    // Pointer to a mesh, if one exists
+    mesh        *Mesh;
+    
+    mstring      MeshName;
+};
+
 struct asset_model
 {
+    model_node **RootModelNodes;
+    i32          RootModelNodesCount;
     
+    model_node  *Nodes;
+    i32          NodesCount;
+    
+    mesh        *Meshes;
+    i32          MeshesCount;
+    
+    primitive   *Primitives;
+    i32          PrimitivesCount;
 };
 
 // NOTE(Dustin): Temporary asset used for early testing
@@ -79,6 +149,7 @@ struct asset
     union
     {
         asset_simple_model SimpleModel;
+        asset_model        Model;
     };
 };
 
