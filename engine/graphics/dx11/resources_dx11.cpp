@@ -43,6 +43,7 @@ struct resource_texture
 {
     ID3D11Texture2D          *Handle;
     ID3D11ShaderResourceView *View;
+    ID3D11SamplerState       *Sampler;
 };
 
 struct resource
@@ -130,6 +131,104 @@ resource_id CreateDummyResource()
 inline bool IsValidResource(resource_t Resources, resource_id ResourceId)
 {
     return (ResourceId.Active) && (Resources[ResourceId.Index].Id.Gen == ResourceId.Gen);
+}
+
+file_internal DXGI_FORMAT ConvertInputFormat(input_format Format)
+{
+    DXGI_FORMAT Result = DXGI_FORMAT_UNKNOWN;
+    
+    if (Format == InputFormat_R32_FLOAT)
+        Result = DXGI_FORMAT_R32_FLOAT;
+    
+    else if (Format == InputFormat_R32G32_FLOAT)
+        Result = DXGI_FORMAT_R32G32_FLOAT;
+    
+    else if (Format == InputFormat_R32G32B32_FLOAT)
+        Result = DXGI_FORMAT_R32G32B32_FLOAT;
+    
+    else if (Format == InputFormat_R32G32B32A32_FLOAT)
+        Result = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    
+    else if (Format == InputFormat_R32G32B32_UINT)
+        Result = DXGI_FORMAT_R32G32B32_UINT;
+    
+    else if (Format == InputFormat_R32G32B32A32_UINT)
+        Result = DXGI_FORMAT_R32G32B32A32_UINT;
+    
+    return Result;
+}
+
+file_internal D3D11_USAGE ConvertBufferUsage(buffer_usage Usage)
+{
+    D3D11_USAGE Result = D3D11_USAGE_DEFAULT;
+    
+    if (Usage == BufferUsage_Default)
+    {
+        Result = D3D11_USAGE_DEFAULT; // write access access by CPU and GPU
+    }
+    
+    else if (Usage == BufferUsage_Immutable)
+    {
+        Result = D3D11_USAGE_IMMUTABLE;
+    }
+    
+    else if (Usage == BufferUsage_Dynamic)
+    {
+        Result = D3D11_USAGE_DYNAMIC;
+    }
+    
+    else if (Usage == BufferUsage_Staging)
+    {
+        Result = D3D11_USAGE_STAGING;
+    }
+    
+    return Result;
+}
+
+file_internal UINT ConvertBindFlags(buffer_bind_flags BindFlags)
+{
+    UINT Result = 0;
+    
+    if (BindFlags & BufferBind_VertexBuffer)
+        Result |= D3D11_BIND_VERTEX_BUFFER;
+    if (BindFlags & BufferBind_IndexBuffer)
+        Result |= D3D11_BIND_INDEX_BUFFER;
+    if (BindFlags & BufferBind_ConstantBuffer)
+        Result |= D3D11_BIND_CONSTANT_BUFFER;
+    if (BindFlags & BufferBind_ShaderResource)
+        Result |= D3D11_BIND_SHADER_RESOURCE;
+    if (BindFlags & BufferBind_StreamOutput)
+        Result |= D3D11_BIND_STREAM_OUTPUT;
+    if (BindFlags & BufferBind_RenderTarget)
+        Result |= D3D11_BIND_RENDER_TARGET;
+    if (BindFlags & BufferBind_DepthStencil)
+        Result |= D3D11_BIND_DEPTH_STENCIL;
+    if (BindFlags & BufferBind_UnorderedAccess)
+        Result |= D3D11_BIND_UNORDERED_ACCESS;
+    
+    return Result;
+}
+
+file_internal UINT ConvertCpuAccessFlags(buffer_cpu_access_flags CpuAccessFlags)
+{
+    UINT Result = 0;
+    
+    if (CpuAccessFlags & BufferCpuAccess_Write)
+        Result |= D3D11_CPU_ACCESS_WRITE;
+    if (CpuAccessFlags & BufferCpuAccess_Read)
+        Result |= D3D11_CPU_ACCESS_READ;
+    
+    return Result;
+}
+
+file_internal UINT ConvertMiscFlags(buffer_misc_flags MiscFlags)
+{
+    UINT Result = 0;
+    
+    if (MiscFlags & BufferMisc_GenMips)
+        Result = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    
+    return Result;
 }
 
 resource_id CreateResource(resource_registry *Registry, resource_type Type, void *CreateInfo)
@@ -283,7 +382,7 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
         case Resource_Pipeline:
         {
             pipeline_create_info *Info = (pipeline_create_info*)CreateInfo;
-            ID3D11Device *Device = Registry->Resources[Info->Device.Index]->Device.Handle;
+            ID3D11Device *Device = GlobalRenderer->Device;
             
             resource_pipeline Pipeline = {};
             
@@ -307,14 +406,7 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
                 ied[i] = {};
                 ied[i].SemanticName = Info->PipelineLayout[i].Name;
                 ied[i].SemanticIndex = Info->PipelineLayout[i].SemanticIndex;
-                
-                switch (Info->PipelineLayout[i].InputFormat)
-                {
-                    case PipelineFormat_R32G32_FLOAT:       ied[i].Format = DXGI_FORMAT_R32G32_FLOAT;       break;
-                    case PipelineFormat_R32G32B32_FLOAT:    ied[i].Format = DXGI_FORMAT_R32G32B32_FLOAT;    break;
-                    case PipelineFormat_R32G32B32A32_FLOAT: ied[i].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; break;
-                    default: mprinte("Format not currently supported!\n");
-                }
+                ied[i].Format = ConvertInputFormat(Info->PipelineLayout[i].InputFormat);
                 
                 ied[i].InputSlot = Info->PipelineLayout[i].InputSlot;
                 ied[i].AlignedByteOffset = Info->PipelineLayout[i].Offset;
@@ -360,60 +452,11 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
             
             D3D11_BUFFER_DESC bd;
             ZeroMemory(&bd, sizeof(bd));
-            bd.ByteWidth = Info->Size;
-            
-            switch (Info->Usage)
-            {
-                case BufferUsage_Default:
-                {
-                    bd.Usage = D3D11_USAGE_DEFAULT; // write access access by CPU and GPU
-                } break;
-                
-                case BufferUsage_Immutable:
-                {
-                    bd.Usage = D3D11_USAGE_IMMUTABLE;
-                } break;
-                
-                case BufferUsage_Dynamic:
-                {
-                    bd.Usage = D3D11_USAGE_DYNAMIC;
-                } break;
-                
-                case BufferUsage_Staging:
-                {
-                    bd.Usage = D3D11_USAGE_STAGING;
-                } break;
-                
-                default: break;
-            }
-            
-            bd.BindFlags = 0;
-            if (Info->BindFlags & BufferBind_VertexBuffer)
-                bd.BindFlags |= D3D11_BIND_VERTEX_BUFFER;
-            if (Info->BindFlags & BufferBind_IndexBuffer)
-                bd.BindFlags |= D3D11_BIND_INDEX_BUFFER;
-            if (Info->BindFlags & BufferBind_ConstantBuffer)
-                bd.BindFlags |= D3D11_BIND_CONSTANT_BUFFER;
-            if (Info->BindFlags & BufferBind_ShaderResource)
-                bd.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
-            if (Info->BindFlags & BufferBind_StreamOutput)
-                bd.BindFlags |= D3D11_BIND_STREAM_OUTPUT;
-            if (Info->BindFlags & BufferBind_RenderTarget)
-                bd.BindFlags |= D3D11_BIND_RENDER_TARGET;
-            if (Info->BindFlags & BufferBind_DepthStencil)
-                bd.BindFlags |= D3D11_BIND_DEPTH_STENCIL;
-            if (Info->BindFlags & BufferBind_UnorderedAccess)
-                bd.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
-            
-            bd.CPUAccessFlags = 0;
-            if (Info->CpuAccessFlags & BufferCpuAccess_Write)
-                bd.CPUAccessFlags |= D3D11_CPU_ACCESS_WRITE;
-            if (Info->CpuAccessFlags & BufferCpuAccess_Read)
-                bd.CPUAccessFlags |= D3D11_CPU_ACCESS_READ;
-            
-            bd.MiscFlags = 0;
-            if (Info->MiscFlags & BufferMisc_GenMips)
-                bd.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+            bd.ByteWidth      = Info->Size;
+            bd.Usage          = ConvertBufferUsage(Info->Usage);
+            bd.BindFlags      = ConvertBindFlags(Info->BindFlags);
+            bd.CPUAccessFlags = ConvertCpuAccessFlags(Info->CpuAccessFlags);
+            bd.MiscFlags      = ConvertMiscFlags(Info->MiscFlags);
             
             // Fill in the subresource data.
             HRESULT hr;
@@ -455,45 +498,8 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
         case Resource_Texture2D:
         {
             texture2d_create_info *Info = (texture2d_create_info*)CreateInfo;
-            ID3D11Device *Device = Registry->Resources[Info->Device.Index]->Device.Handle;
             
-            i32 Width, Height, Channels;
-            unsigned char *Data = stbi_load(Info->TextureFile, &Width, &Height, &Channels, STBI_rgb_alpha);
-            u64 ImageSize = Width * Height * 4;
-            
-            if (!Data)
-            {
-                mprinte("Failed to load texture from file %s!\n", Info->TextureFile);
-                return Result;
-            }
-            
-            {
-                D3D11_TEXTURE2D_DESC desc;
-                memset( &desc, 0, sizeof(desc));
-                
-                desc.Width = 256;
-                desc.Height = 256;
-                desc.MipLevels = 1;
-                desc.ArraySize = 1;
-                desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-                desc.SampleDesc.Count = 1;
-                desc.Usage = D3D11_USAGE_DYNAMIC;
-                desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-                desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-                desc.MiscFlags = 0;
-                
-                ID3D11Device *pd3dDevice; // Don't forget to initialize this
-                ID3D11Texture2D *pTexture = NULL;
-                HRESULT hr = Device->CreateTexture2D( &desc, NULL, &pTexture );
-                
-                
-                if (FAILED(hr))
-                {
-                    mprinte("Failed to create exampel 2D image texture %d!\n", hr);
-                    return Result;
-                }
-                
-            }
+            ID3D11Device *Device = GlobalRenderer->Device;
             
             resource_texture Texture = {};
             
@@ -501,23 +507,31 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
             memset( &desc, 0, sizeof(desc));
             
             // TODO(Dustin): Handle mipping
-            desc.Width            = Width;
-            desc.Height           = Height;
+            desc.Width            = Info->Width;
+            desc.Height           = Info->Height;
             desc.MipLevels        = 1;
             desc.ArraySize        = 1;
-            desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
             desc.SampleDesc.Count = 1;
-            desc.Usage            = D3D11_USAGE_IMMUTABLE;
-            desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
-            desc.CPUAccessFlags   = 0;
-            desc.MiscFlags        = 0;
+            desc.Format           = ConvertInputFormat(Info->Format);
+            desc.Usage            = ConvertBufferUsage(Info->Usage);
+            desc.BindFlags        = ConvertBindFlags(Info->BindFlags);
+            desc.CPUAccessFlags   = ConvertCpuAccessFlags(Info->CpuAccessFlags);
+            desc.MiscFlags        = ConvertMiscFlags(Info->MiscFlags);
             
-            D3D11_SUBRESOURCE_DATA InitData = {0};
-            InitData.pSysMem          = Data;
-            InitData.SysMemPitch      = Width * 4;
-            InitData.SysMemSlicePitch = 0;
+            HRESULT hr;
+            if (Info->Data)
+            {
+                D3D11_SUBRESOURCE_DATA InitData = {0};
+                InitData.pSysMem          = Info->Data;
+                InitData.SysMemPitch      = Info->Width * Info->Stride;
+                InitData.SysMemSlicePitch = 0;
+                hr = Device->CreateTexture2D( &desc, &InitData, &Texture.Handle );
+            }
+            else
+            {
+                hr = Device->CreateTexture2D( &desc, NULL, &Texture.Handle );
+            }
             
-            HRESULT hr = Device->CreateTexture2D( &desc, &InitData, &Texture.Handle );
             
             if (FAILED(hr))
             {
@@ -528,7 +542,7 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
             D3D11_SHADER_RESOURCE_VIEW_DESC SRVDesc;
             memset( &SRVDesc, 0, sizeof( SRVDesc ) );
             
-            SRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            SRVDesc.Format = desc.Format;
             SRVDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
             SRVDesc.Texture2D.MipLevels = 1;
             
@@ -539,6 +553,28 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
                 
                 Texture.Handle->Release();
                 return Result;
+            }
+            
+            {
+                D3D11_SAMPLER_DESC desc;
+                ZeroMemory(&desc, sizeof(desc));
+                desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+                desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+                desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+                desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+                desc.MipLODBias = 0.f;
+                desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+                desc.MinLOD = 0.f;
+                desc.MaxLOD = 0.f;
+                hr = Device->CreateSamplerState(&desc, &Texture.Sampler);
+                if ( FAILED(hr) )
+                {
+                    mprinte("Failed to sampler for the image %d!\n", hr);
+                    
+                    Texture.Handle->Release();
+                    Texture.View->Release();
+                    return Result;
+                }
             }
             
             // Active the Id

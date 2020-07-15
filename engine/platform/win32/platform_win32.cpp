@@ -47,16 +47,8 @@ file_global bool NeedsToResize   = false;
 file_global u64 FrameCount = 0;
 
 // Global Memory Handles
-file_global void             *GlobalMemoryPtr;
-file_global free_allocator    PermanantMemory;
-file_global tagged_heap       TaggedHeap;
 file_global tag_id_t          PlatformTag = {0, TAG_ID_PLATFORM, 0};
 file_global tagged_heap_block PlatformHeap;
-
-// graphics state
-file_global renderer_t        Renderer;
-file_global resource_registry ResourceRegistry;
-file_global asset_registry    AssetRegistry;
 
 // File I/O Handling
 struct file
@@ -102,6 +94,12 @@ file_internal void SetFullscreen(bool fullscreen);
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 mstring Win32GetExeFilepath();
 mstring Win32NormalizePath(const char* path);
+
+i32  __Win32FormatString(char *buff, i32 len, char *fmt, va_list list);
+void __Win32PrintMessage(console_color text_color, console_color background_color, char *fmt, va_list args);
+void __Win32PrintError(console_color text_color, console_color background_color, char *fmt, va_list args);
+
+file_internal void MapleShutdown();
 
 // source: Windows API doc: https://docs.microsoft.com/en-us/windows/win32/fileio/opening-a-file-for-reading-or-writing
 file_internal void DisplayError(LPTSTR lpszFunction)
@@ -161,6 +159,21 @@ file_internal void* PlatformLocalAlloc(u32 Size)
     }
     
     return Result;
+}
+
+void PlatformFatalError(char *Fmt, ...)
+{
+    va_list Args;
+    va_start(Args, Fmt);
+    
+    char *Message = NULL;
+    int CharsRead = 1 + __Win32FormatString(Message, 1, Fmt, Args);
+    Message = (char*)PlatformLocalAlloc(CharsRead);
+    __Win32FormatString(Message, CharsRead, Fmt, Args);
+    
+    MessageBox(ClientWindow, Message, "FATAL ERROR", MB_OK);
+    MapleShutdown();
+    exit(1);
 }
 
 //~ Game Code Hot loading
@@ -338,14 +351,14 @@ void PlatformCloseFile(file_t File)
 {
     if (File->Handle == INVALID_HANDLE_VALUE) return;
     
-    if (File->FileSize > TaggedHeap.BlockSize)
+    if (File->FileSize > GlobalTaggedHeap.BlockSize)
     {
         PlatformReleaseMemory(File->Memory, File->FileSize);
         File->Memory = nullptr;
     }
     else
     {
-        TaggedHeapReleaseAllocation(&TaggedHeap, File->FileTag);
+        TaggedHeapReleaseAllocation(&GlobalTaggedHeap, File->FileTag);
         
         File->Block.Start      = NULL;
         File->Block.Brkp       = NULL;
@@ -360,7 +373,7 @@ void PlatformCloseFile(file_t File)
 
 void* GetFileBuffer(file_t File)
 {
-    if (File->FileSize > TaggedHeap.BlockSize)
+    if (File->FileSize > GlobalTaggedHeap.BlockSize)
     {
         return File->Memory;
     }
@@ -447,7 +460,7 @@ file_t PlatformLoadFile(const char *Filename, bool Append)
         DWORD bytes_read = 0;
         Result->FileSize = file_size;
         
-        if (file_size > TaggedHeap.BlockSize)
+        if (file_size > GlobalTaggedHeap.BlockSize)
         { // we need to allocate from platform memory
             Result->Memory = PlatformRequestMemory(file_size);
             
@@ -460,7 +473,7 @@ file_t PlatformLoadFile(const char *Filename, bool Append)
         else
         { // we can just allocate from the tag heap
             Result->FileTag = { NextFileId++, TAG_ID_FILE, 0 };
-            Result->Block   = TaggedHeapRequestAllocation(&TaggedHeap, Result->FileTag);
+            Result->Block   = TaggedHeapRequestAllocation(&GlobalTaggedHeap, Result->FileTag);
             
             err = ReadFile(Result->Handle,
                            Result->Block.Start,
@@ -542,7 +555,7 @@ file_t PlatformOpenFile(const char *Filename, bool Append)
         else
         {
             Result->FileTag = { NextFileId++, TAG_ID_FILE, 0 };
-            Result->Block   = TaggedHeapRequestAllocation(&TaggedHeap, Result->FileTag);
+            Result->Block   = TaggedHeapRequestAllocation(&GlobalTaggedHeap, Result->FileTag);
         }
         
         
@@ -582,7 +595,7 @@ void PlatformFlushFile(file_t File)
 
 inline void FlushBinaryWriteIfNeeded(file_t File, u32 ReqSize)
 {
-    if (ReqSize > TaggedHeap.BlockSize)
+    if (ReqSize > GlobalTaggedHeap.BlockSize)
     {
         mprinte("Yo, binary write is over 2MB. Please avoid doing that!\n");
     }
@@ -1216,6 +1229,18 @@ void PlatformGetClientWindowDimensions(u32 *Width, u32 *Height)
     *Height = rect.bottom - rect.top;
 }
 
+file_internal void MapleShutdown()
+{
+    
+    //~ Close down ImGui
+    MapleDevGuiFree();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    
+    //~ Shutdown Globals
+    FreeGlobals();
+}
+
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, INT nCmdShow)
 {
     //~ Set the defaults of open files
@@ -1262,55 +1287,43 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     GetClientRect(ClientWindow, &ClientWindowRect);
     ClientWindowRectOld = ClientWindowRect;
     
-    //~ Memory Setup
-    u64 MemorySize = _MB(200);
-    GlobalMemoryPtr = PlatformRequestMemory(MemorySize);
-    
-    // Initialize memory manager
-    FreeListAllocatorInit(&PermanantMemory, MemorySize, GlobalMemoryPtr);
-    
-    // Tagged heap. 3 Stages + 1 Resource/Asset = 4 Tags / frame
-    // Keep 3 Blocks for each Tag, allowing for 12 Blocks overall
-    TaggedHeapInit(&TaggedHeap, &PermanantMemory, _MB(100), _2MB, 10);
-    PlatformHeap = TaggedHeapRequestAllocation(&TaggedHeap, PlatformTag);
-    
-    u64 StringArenaSize  = _MB(1);
-    void *StringArenaPtr = FreeListAllocatorAlloc(&PermanantMemory, StringArenaSize);
-    StringArenaInit(StringArenaPtr, StringArenaSize);
-    
-    //~ Setup Graphics
-    ResourceRegistryInit(&ResourceRegistry, &PermanantMemory, 100);
-    
-    platform_window pWindow = {ClientWindow};
+    //~ Initialize the globals
     
     u32 RealWidth, RealHeight;
     PlatformGetClientWindowDimensions(&RealWidth, &RealHeight);
     
-    RendererInit(&Renderer,
-                 &PermanantMemory,
-                 &ResourceRegistry,
-                 &pWindow,
-                 RealWidth,
-                 RealHeight,
-                 60);
+    platform_window Window = { ClientWindow };
     
-    AssetRegistryInit(&AssetRegistry, Renderer, &PermanantMemory, 100);
+    globals_create_info GlobalInfo = {};
+    GlobalInfo.GlobalMemory.Size         = _MB(200);
+    GlobalInfo.TaggedHeap.Size           = _MB(100);
+    GlobalInfo.TaggedHeap.SizePerBlock   = _2MB;
+    GlobalInfo.TaggedHeap.ActiveTags     = 10;
+    GlobalInfo.StringArena.Size          = _MB(1);
+    GlobalInfo.ResourceRegistry.MaxCount = 100;
+    GlobalInfo.AssetRegistry.MaxCount    = 100;
+    GlobalInfo.Renderer.Width            = RealWidth;
+    GlobalInfo.Renderer.Height           = RealHeight;
+    GlobalInfo.Renderer.RefreshRate      = 60;
+    GlobalInfo.Renderer.Window           = &Window;
     
-    //~ Initialize ImGui stuff
+    InitializeGlobals(&GlobalInfo);
+    
+    PlatformHeap = TaggedHeapRequestAllocation(&GlobalTaggedHeap, PlatformTag);
+    
+    //~ Initialize ImGui
     ImGuiContext *ctx = ImGui::CreateContext();
     if (!ImGui_ImplWin32_Init(ClientWindow))
         mprinte("Failed to initialzie ImGui!\n");
     
-    resource_id DeviceId = Renderer->Device;
-    
-    ID3D11Device* Device = ResourceRegistry.Resources[DeviceId.Index]->Device.Handle;
-    ID3D11DeviceContext* DeviceContext = ResourceRegistry.Resources[DeviceId.Index]->Device.Context;
+    ID3D11Device* Device               = GlobalRenderer->Device;
+    ID3D11DeviceContext* DeviceContext = GlobalRenderer->DeviceContext;
     MapleDevGuiInit(Device, DeviceContext);
+    
     
     //~ Load game code
     mstring GameDllName = Win32NormalizePath("example.dll");
     Win32LoadGameCode(&GameCode, GetStr(&GameDllName));
-    
     
     //~ Render Loop
     ShowWindow(ClientWindow, nCmdShow);
@@ -1326,8 +1339,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     while (ClientIsRunning)
     {
         frame_params FrameParams = {};
-        FrameParamsInit(&FrameParams, FrameCount++, LastFrameTime, &TaggedHeap, Renderer,
-                        &ResourceRegistry, &AssetRegistry);
+        FrameParamsInit(&FrameParams, FrameCount++, LastFrameTime, &GlobalTaggedHeap, GlobalRenderer,
+                        GlobalResourceRegistry, &GlobalAssetRegistry);
         
         // NOTE(Dustin): When check the file time, if there is not a small delay in the check
         // then the DLL is loaded twice. In order to solve this, rather than checking every frame,
@@ -1365,12 +1378,12 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         FrameParams.GameStageEndTime     = PlatformGetWallClock();
         FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
         
-        RendererEntry(Renderer, &FrameParams);
+        RendererEntry(&FrameParams);
         
         FrameParamsFree(&FrameParams);
         
         if (NeedsToResize)
-            RendererResize(Renderer, &ResourceRegistry);
+            RendererResize(GlobalResourceRegistry);
         
         //~ Meet frame rate, if necessary
         u64 ClockNow = PlatformGetWallClock();
@@ -1400,26 +1413,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     MstringFree(&GameDllName);
     
-    //~ Close down ImGui
-    MapleDevGuiFree();
-    ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
-    
-    //~ Free Graphics layer
-    RendererShutdown(&Renderer, &PermanantMemory);
-    AssetRegistryFree(&AssetRegistry, &PermanantMemory);
-    ResourceRegistryFree(&ResourceRegistry, &PermanantMemory);
-    
-    //~ Close up the memory pools
-    StringArenaFree();
-    FreeListAllocatorAllocFree(&PermanantMemory, StringArenaPtr);
-    
-    // Free up the tagged heap for per-frame info
-    TaggedHeapFree(&TaggedHeap, &PermanantMemory);
-    
-    // free up the global memory
-    FreeListAllocatorFree(&PermanantMemory);
-    PlatformReleaseMemory(GlobalMemoryPtr, MemorySize);
+    MapleShutdown();
     
     return (0);
 }

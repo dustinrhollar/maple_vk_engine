@@ -27,9 +27,6 @@ typedef union
 // or scope local allocations.
 typedef mstring tstring;
 
-void StringArenaInit(void *Ptr, u64 Size);
-void StringArenaFree();
-
 // Pass NULL to Cstr if you want to reserve space, but not
 // load a string yet
 void Mstring(mstring *Str, const char *Cstr, u32 Len);
@@ -52,18 +49,6 @@ bool StringCmp(const char *Left, u32 LeftLen, const char *Right, u32 RightLen);
 
 #ifdef MAPLE_MSTRING_IMPLEMENTATION
 
-file_global free_allocator StringArena;
-
-void StringArenaInit(void *Ptr, u64 Size)
-{
-    FreeListAllocatorInit(&StringArena, Size, Ptr);
-}
-
-void StringArenaFree()
-{
-    FreeListAllocatorFree(&StringArena);
-}
-
 void Mstring(mstring *Str, const char *Cstr, u32 Len)
 {
     if (Cstr)
@@ -74,7 +59,7 @@ void Mstring(mstring *Str, const char *Cstr, u32 Len)
         {
             Str->Heap = 1;
             Str->ReservedHeapSize = Str->Len + 1;
-            Str->Hptr = palloc<char>(&StringArena, Str->ReservedHeapSize);
+            Str->Hptr = palloc<char>(&GlobalStringArena, Str->ReservedHeapSize);
             memcpy(Str->Hptr, Cstr, Len);
             Str->Hptr[Len] = 0;
         }
@@ -94,7 +79,7 @@ void Mstring(mstring *Str, const char *Cstr, u32 Len)
         {
             Str->Heap = 1;
             Str->ReservedHeapSize = Str->Len + 1;
-            Str->Hptr = palloc<char>(&StringArena, Str->ReservedHeapSize);
+            Str->Hptr = palloc<char>(&GlobalStringArena, Str->ReservedHeapSize);
         }
     }
 }
@@ -103,7 +88,7 @@ void MstringFree(mstring *Str)
 {
     if (Str->Heap)
     {
-        pfree<char>(&StringArena, Str->Hptr);
+        pfree<char>(&GlobalStringArena, Str->Hptr);
         Str->Heap             = 0;
         Str->ReservedHeapSize = 0;
         Str->Hptr             = NULL;
@@ -124,9 +109,9 @@ void MstringAdd(mstring *Result, const mstring *Left, const mstring *Right)
             {
                 Result->ReservedHeapSize = (Result->ReservedHeapSize * 2 > NewSize) ? Result->ReservedHeapSize*2 : NewSize + 1;
                 
-                char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+                char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
                 memcpy(NewPtr, Result->Hptr, Result->Len);
-                pfree<char>(&StringArena, Result->Hptr);
+                pfree<char>(&GlobalStringArena, Result->Hptr);
                 Result->Hptr = NewPtr;
             }
             
@@ -138,7 +123,7 @@ void MstringAdd(mstring *Result, const mstring *Left, const mstring *Right)
             Result->Heap = 1;
             Result->ReservedHeapSize = NewSize + 1;
             
-            char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+            char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
             memcpy(NewPtr, Result->Sptr, Result->Len);
             Result->Hptr = NewPtr;
             
@@ -163,9 +148,9 @@ void MstringAdd(mstring *Result, const mstring *Left, const mstring *Right)
             {
                 Result->ReservedHeapSize = (Result->ReservedHeapSize * 2 > NewSize) ? Result->ReservedHeapSize*2 : NewSize + 1;
                 
-                char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+                char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
                 memcpy(NewPtr, Result->Hptr, Result->Len);
-                pfree<char>(&StringArena, Result->Hptr);
+                pfree<char>(&GlobalStringArena, Result->Hptr);
                 Result->Hptr = NewPtr;
             }
             
@@ -178,7 +163,7 @@ void MstringAdd(mstring *Result, const mstring *Left, const mstring *Right)
             Result->Heap = 1;
             Result->ReservedHeapSize = NewSize + 1;
             
-            char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+            char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
             memcpy(NewPtr, Result->Sptr, Result->Len);
             Result->Hptr = NewPtr;
             
@@ -208,9 +193,9 @@ void MstringAdd(mstring *Result, const mstring *Left, const char *Right, u32 Rig
             {
                 Result->ReservedHeapSize = (Result->ReservedHeapSize * 2 > NewSize) ? Result->ReservedHeapSize*2 : NewSize + 1;
                 
-                char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+                char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
                 memcpy(NewPtr, Result->Hptr, Result->Len);
-                pfree<char>(&StringArena, Result->Hptr);
+                pfree<char>(&GlobalStringArena, Result->Hptr);
                 Result->Hptr = NewPtr;
             }
             
@@ -222,7 +207,7 @@ void MstringAdd(mstring *Result, const mstring *Left, const char *Right, u32 Rig
             Result->Heap = 1;
             Result->ReservedHeapSize = NewSize + 1;
             
-            char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+            char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
             memcpy(NewPtr, Result->Sptr, Result->Len);
             Result->Hptr = NewPtr;
             
@@ -247,9 +232,9 @@ void MstringAdd(mstring *Result, const mstring *Left, const char *Right, u32 Rig
             {
                 Result->ReservedHeapSize = (Result->ReservedHeapSize * 2 > NewSize) ? Result->ReservedHeapSize*2 : NewSize + 1;
                 
-                char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+                char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
                 memcpy(NewPtr, Result->Hptr, Result->Len);
-                pfree<char>(&StringArena, Result->Hptr);
+                pfree<char>(&GlobalStringArena, Result->Hptr);
                 Result->Hptr = NewPtr;
             }
             
@@ -262,7 +247,7 @@ void MstringAdd(mstring *Result, const mstring *Left, const char *Right, u32 Rig
             Result->Heap = 1;
             Result->ReservedHeapSize = NewSize + 1;
             
-            char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+            char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
             memcpy(NewPtr, Result->Sptr, Result->Len);
             Result->Hptr = NewPtr;
             
@@ -300,9 +285,9 @@ void StringAdd(mstring *Result, const char *Left, u32 LeftLen, const char *Right
         {
             Result->ReservedHeapSize = (Result->ReservedHeapSize * 2 > Size) ? Result->ReservedHeapSize*2 : Size + 1;
             
-            char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+            char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
             memcpy(NewPtr, Result->Hptr, Result->Len);
-            pfree<char>(&StringArena, Result->Hptr);
+            pfree<char>(&GlobalStringArena, Result->Hptr);
             Result->Hptr = NewPtr;
         }
         
@@ -315,7 +300,7 @@ void StringAdd(mstring *Result, const char *Left, u32 LeftLen, const char *Right
         Result->Heap = 1;
         Result->ReservedHeapSize = Size + 1;
         
-        char *NewPtr = palloc<char>(&StringArena, Result->ReservedHeapSize);
+        char *NewPtr = palloc<char>(&GlobalStringArena, Result->ReservedHeapSize);
         memcpy(NewPtr, Result->Sptr, Result->Len);
         Result->Hptr = NewPtr;
         

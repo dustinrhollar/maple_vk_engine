@@ -108,39 +108,52 @@ struct buffer_create_info
     u32                     SysMemSlicePitch;
 };
 
-struct texture2d_create_info
+enum input_format
 {
-    resource_id Device;
-    const char *TextureFile;
+    InputFormat_R32_FLOAT,
+    InputFormat_R32G32_FLOAT,
+    InputFormat_R32G32B32_FLOAT,
+    InputFormat_R32G32B32A32_FLOAT,
+    InputFormat_R32G32B32_UINT,
+    InputFormat_R32G32B32A32_UINT,
 };
 
-enum pipeline_layout_format
+struct texture2d_create_info
 {
-    PipelineFormat_R32G32_FLOAT,
-    PipelineFormat_R32G32B32_FLOAT,
-    PipelineFormat_R32G32B32A32_FLOAT,
+    u32 Width;
+    u32 Height;
+    u32 Stride;
+    buffer_usage            Usage;
+    buffer_cpu_access_flags CpuAccessFlags;
+    buffer_bind_flags       BindFlags;
+    buffer_misc_flags       MiscFlags;
+    u32                     StructureByteStride;
+    input_format            Format;
+    
+    // Optional data
+    const void             *Data;
+    u32                     SysMemPitch;
+    u32                     SysMemSlicePitch;
 };
 
 struct pipeline_layout_create_info
 {
-    const char            *Name;
-    u32                    SemanticIndex; // i.e. if name is COLOR1, then semantic index is 1
-    pipeline_layout_format InputFormat;
-    u32                    InputSlot;
-    u32                    Offset;
-    bool                   PerVertex; // true if stride is per vertex
-    u32                    InstanceRate;
+    const char  *Name;
+    u32          SemanticIndex; // i.e. if name is COLOR1, then semantic index is 1
+    input_format InputFormat;
+    u32          InputSlot;
+    u32          Offset;
+    bool         PerVertex; // true if stride is per vertex
+    u32          InstanceRate;
 };
 
 struct pipeline_create_info
 {
-    resource_id Device;
-    
     const void *VertexData;
     const void *PixelData;
     
-    u32 VertexDataSize;
-    u32 PixelDataSize;
+    u32         VertexDataSize;
+    u32         PixelDataSize;
     
     // TODO(Dustin): Other shader stages
     pipeline_layout_create_info *PipelineLayout;

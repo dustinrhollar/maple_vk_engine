@@ -46,8 +46,10 @@ struct terrain_settings
 struct maple_ui
 {
     terrain_settings TerrainSettings;
+    
 };
 
+#if 0
 struct renderer
 {
     resource_id Device;
@@ -59,18 +61,20 @@ struct renderer
     
     maple_ui    MapleUi;
 };
+#else
 
-void RendererInit(renderer_t        *Renderer,
-                  free_allocator    *Allocator,
+#endif
+
+
+void RendererInit(free_allocator    *Allocator,
                   resource_registry *Registry,
                   window_t           Window,
                   u32                Width,
                   u32                Height,
                   u32                RefreshRate);
-void RendererShutdown(renderer_t     *Renderer,
-                      free_allocator *Allocator);
+void RendererShutdown(free_allocator *Allocator);
 
-void RendererResize(renderer_t Renderer, resource_registry *Registry);
-void RendererEntry(renderer_t Renderer, frame_params *FrameParams);
+void RendererResize(resource_registry *Registry);
+void RendererEntry(frame_params *FrameParams);
 
 #endif //ENGINE_GRAPHICS_RENDERER_H

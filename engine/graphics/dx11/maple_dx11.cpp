@@ -40,47 +40,19 @@
 #include <d3d11.h>
 #include <d3dx11.h>
 
-#if 0
-void GraphicsResize(u32 Width, u32 Height)
+
+struct renderer
 {
-    DeviceContext->OMSetRenderTargets(0, 0, 0);
-    Backbuffer->Release();
+    IDXGISwapChain      *Swapchain;
+    ID3D11Device        *Device;
+    ID3D11DeviceContext *DeviceContext;
     
-    HRESULT hr = Swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0);
-    if (FAILED(hr))
-    {
-        mprinte("Failed to preserve swapchain format during resize!\n");
-        return;
-    }
+    ID3D11RenderTargetView *RenderTarget;
     
-    ID3D11Texture2D* pBuffer;
-    hr = Swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**) &pBuffer );
-    if (FAILED(hr))
-    {
-        mprinte("Failed to retrieve the texture for the RenderTarget View!\n");
-        return;
-    }
+    // Temporary Code
+    resource_id VertexBuffer;
+    resource_id SimplePipeline;
     
-    hr = Device->CreateRenderTargetView(pBuffer, NULL, &Backbuffer);
-    if (FAILED(hr))
-    {
-        mprinte("Failed to create the RenderTarget View!\n");
-        return;
-    }
-    pBuffer->Release();
-    
-    DeviceContext->OMSetRenderTargets(1, &Backbuffer, NULL );
-    
-    // Set up the viewport.
-    D3D11_VIEWPORT vp;
-    ZeroMemory(&vp, sizeof(D3D11_VIEWPORT));
-    
-    vp.Width    = Width;
-    vp.Height   = Height;
-    vp.MinDepth = 0.0f;
-    vp.MaxDepth = 1.0f;
-    vp.TopLeftX = 0;
-    vp.TopLeftY = 0;
-    DeviceContext->RSSetViewports( 1, &vp );
-}
-#endif
+    //maple_ui    MapleUi;
+    window_stack WindowStack;
+};

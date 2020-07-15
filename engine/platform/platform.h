@@ -63,6 +63,9 @@ i32  PlatformFormatString(char *buff, i32 len, char* fmt, ...);
 void PlatformPrintMessage(console_color text_color, console_color background_color, char* fmt, ...);
 void PlatformPrintError(console_color text_color, console_color background_color, char* fmt, ...);
 
+// opens an error window with the formatted message and then exits the application
+void PlatformFatalError(char *Fmt, ...);
+
 //~ File I/O
 
 // OPENING/CLOSING A FILE

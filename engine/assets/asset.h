@@ -16,6 +16,7 @@ struct asset_id
 
 enum asset_type
 {
+    Asset_Invalid,
     Asset_SimpleModel,
     Asset_Model,
     Asset_Texture,
@@ -142,6 +143,31 @@ struct asset_simple_model
     resource_id DiffuseTexture;
 };
 
+struct terrain_vertex
+{
+    vec2 Position;
+    vec3 Normal;
+    vec2 Uvs;
+};
+
+struct asset_terrain
+{
+    u32         Width;
+    u32         Height;
+    u32         HeightmapWidth;
+    u32         HeightmapHeight;
+    u32         VertexCount;
+    u32         IndexCount;
+    
+    resource_id Pipeline;
+    resource_id VertexBuffer;
+    resource_id IndexBuffer;
+    resource_id HeightmapTexture;
+    
+    terrain_vertex *Vertices;
+    u32            *Indices;
+    r32            *Heightmap;
+};
 
 struct asset
 {
@@ -168,6 +194,9 @@ struct asset_registry
     
     // TODO(Dustin): Free Indices
     // See note left in the resource_registry
+    
+    // Global mesh ids
+    asset_terrain Terrain;
 };
 
 
@@ -178,6 +207,7 @@ void AssetRegistryFree(asset_registry *Registry, free_allocator *GlobalMemoryAll
 asset_id CreateAsset(asset_registry *Registry, asset_type Type, void *CreateInfo);
 void CopyAssets(asset_t *Assets, u32 *AssetsCount, asset_registry *AssetRegistry, tag_block_t Heap);
 
-inline bool IsValidAsset(asset_t Assets, asset_id Id);
+inline bool IsValidAsset(asset_t Assets, asset_id Id); // per-frame check
+inline bool IsValidAsset(asset_id Id); // global check
 
 #endif //ENGINE_ASSETS_ASSET_H

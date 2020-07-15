@@ -1,24 +1,37 @@
 
-void InitTerrain(terrain_mesh *terrain)
+file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Settings);
+
+
+void CreateTerrain(asset_terrain *Terrain, terrain_settings *Settings)
+{
+#if 0
+    GenerateTerrainGrid(Terrain, Settings->TerrainWidth, Settings->TerrainHeight);
+    CreateTerrainVertexBuffers(Terrain);
+    CreateTerrainMaterial(Terrain);
+#endif
+    
+    CreateHeightmap(Terrain, Settings);
+}
+
+void ResetTerrain(asset_terrain *Terrain, terrain_settings *Settings)
 {
 }
 
-void DestroyTerrain(terrain_mesh *terrain)
+void DestroyTerrain(asset_terrain *Terrain)
 {
 }
 
 // SOURCE: https://stackoverflow.com/questions/5915753/generate-a-plane-with-triangle-strips
-void GenerateTerrainGrid(terrain_mesh *terrain, u32 width, u32 height)
+void GenerateTerrainGrid(asset_terrain *Terrain, u32 width, u32 height)
 {
-    terrain->Width       = width;
-    terrain->Height      = height;
+    Terrain->Width       = width;
+    Terrain->Height      = height;
     
-    terrain->VertexCount = (width) * (height);
-    terrain->IndexCount = (width * height) + (width - 1) * (width - 2);
+    Terrain->VertexCount = (width) * (height);
+    Terrain->IndexCount = (width * height) + (width - 1) * (width - 2);
     
-#if 0
-    terrain->Vertices = palloc<TerrainVertex>(terrain->VertexCount);
-    terrain->Indices = palloc<u32>(terrain->IndexCount);
+    Terrain->Vertices = palloc<terrain_vertex>(&GlobalMemory, Terrain->VertexCount);
+    Terrain->Indices = palloc<u32>(&GlobalMemory, Terrain->IndexCount);
     
     // Generate the grid information
     // Create the vertex list
@@ -28,9 +41,9 @@ void GenerateTerrainGrid(terrain_mesh *terrain, u32 width, u32 height)
         u32 base = r * width;
         for (u32 c = 0; c < width; ++c, idx += 6)
         {
-            terrain->Vertices[base + c].Position = {(r32)c, (r32)r};
-            terrain->Vertices[base + c].Uvs      = {c / (r32)width, r / (r32)height};
-            terrain->Vertices[base + c].Normal   = {0.0f, 0.0f, 0.0f}; // TODO(Dustin)
+            Terrain->Vertices[base + c].Position = {(r32)c, (r32)r};
+            Terrain->Vertices[base + c].Uvs      = {c / (r32)width, r / (r32)height};
+            Terrain->Vertices[base + c].Normal   = {0.0f, 0.0f, 0.0f}; // TODO(Dustin)
         }
     }
     
@@ -42,134 +55,187 @@ void GenerateTerrainGrid(terrain_mesh *terrain, u32 width, u32 height)
         { // even rows
             for (u32 c = 0; c < width; c++)
             {
-                terrain->Indices[i++] = (r + 0) * width + c;
-                terrain->Indices[i++] = (r + 1) * width + c;
+                Terrain->Indices[i++] = (r + 0) * width + c;
+                Terrain->Indices[i++] = (r + 1) * width + c;
             }
         }
         else
         {
             for (u32 c = width-1; c > 0; c--)
             {
-                terrain->Indices[i++] = c + (r + 1) * width;
-                terrain->Indices[i++] = c - 1 + (r + 0) * width;
+                Terrain->Indices[i++] = c + (r + 1) * width;
+                Terrain->Indices[i++] = c - 1 + (r + 0) * width;
             }
         }
         
         if ((height & 1) && height > 2)
         {
-            terrain->Indices[i++] = (height - 1) * width;
+            Terrain->Indices[i++] = (height - 1) * width;
         }
     }
-#endif
 }
 
-void CreateTerrainVertexBuffers(terrain_mesh *terrain)
+void CreateTerrainVertexBuffers(asset_terrain *Terrain)
 {
+    buffer_create_info VertexBufferInfo  = {};
+    VertexBufferInfo.Size                = Terrain->VertexCount * sizeof(terrain_vertex);
+    VertexBufferInfo.Usage               = BufferUsage_Default;
+    VertexBufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    VertexBufferInfo.BindFlags           = BufferBind_VertexBuffer;
+    VertexBufferInfo.MiscFlags           = BufferMisc_None;
+    VertexBufferInfo.StructureByteStride = sizeof(terrain_vertex);
+    
+    // Optional data
+    VertexBufferInfo.Data             = Terrain->Vertices;
+    VertexBufferInfo.SysMemPitch      = VertexBufferInfo.Size;
+    VertexBufferInfo.SysMemSlicePitch = 0;
+    
+    Terrain->VertexBuffer = CreateResource(GlobalResourceRegistry, Resource_Buffer, &VertexBufferInfo);
+    
+    buffer_create_info IndexBufferInfo  = {};
+    IndexBufferInfo.Size                = Terrain->VertexCount * sizeof(terrain_vertex);
+    IndexBufferInfo.Usage               = BufferUsage_Default;
+    IndexBufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    IndexBufferInfo.BindFlags           = BufferBind_IndexBuffer;
+    IndexBufferInfo.MiscFlags           = BufferMisc_None;
+    IndexBufferInfo.StructureByteStride = sizeof(terrain_vertex);
+    
+    // Optional data
+    IndexBufferInfo.Data             = Terrain->Vertices;
+    IndexBufferInfo.SysMemPitch      = IndexBufferInfo.Size;
+    IndexBufferInfo.SysMemSlicePitch = 0;
+    
+    Terrain->IndexBuffer = CreateResource(GlobalResourceRegistry, Resource_Buffer, &IndexBufferInfo);
+    
 }
 
-void CreateTerrainMaterial(terrain_mesh *terrain)
+void CreateTerrainMaterial(asset_terrain *Terrain)
 {
-}
-
-// Create the heightmap texture
-void AttachHeightmapToTerrain(terrain_mesh *terrain, r32 *heightmap, u32 width, u32 height)
-{
-    //terrain->Heightmap = heightmap;
-}
-
-void RegenerateTerrain(terrain_mesh *terrain, terrain_settings &settings)
-{
-    // Recreate the base mesh
-#if 0
-    if (settings.TerrainMeshUpdated)
-    {
-        // re-generate the terrain mesh
-        pfree(terrain->Vertices);
-        pfree(terrain->Indices);
+    file_t VertFile = PlatformLoadFile("data/shaders/terrain_vertex.cso");
+    file_t FragFile = PlatformLoadFile("data/shaders/terrain_pixel.cso");
+    
+    pipeline_create_info PipelineInfo = {};
+    PipelineInfo.VertexData          = GetFileBuffer(VertFile);
+    PipelineInfo.PixelData           = GetFileBuffer(FragFile);
+    PipelineInfo.VertexDataSize      = PlatformGetFileSize(VertFile);
+    PipelineInfo.PixelDataSize       = PlatformGetFileSize(FragFile);
+    
+    pipeline_layout_create_info LayoutInfo[3] = {
         
-        vk::DestroyVmaBuffer(terrain->VertexBuffer.Handle, terrain->VertexBuffer.Memory);
-        vk::DestroyVmaBuffer(terrain->IndexBuffer.Handle, terrain->IndexBuffer.Memory);
-        
-        GenerateTerrainGrid(terrain, settings.TerrainWidth, settings.TerrainHeight);
-        CreateTerrainVertexBuffers(terrain, command_pool);
-        
-        settings.TerrainMeshUpdated = false;
-    }
-#endif
+        { "POSITION", 0, InputFormat_R32G32_FLOAT,    0,  0, true, 0 }, // size = 8
+        { "NORMAL",   0, InputFormat_R32G32B32_FLOAT, 8,  0, true, 0 }, // size = 12
+        { "TEXCOORD", 0, InputFormat_R32G32_FLOAT,    20, 0, true, 0 }, // size = 20
+    };
+    
+    PipelineInfo.PipelineLayout      = LayoutInfo;
+    PipelineInfo.PipelineLayoutCount = 3;
+    
+    Terrain->Pipeline = CreateResource(GlobalResourceRegistry, Resource_Pipeline, &PipelineInfo);
+    
+    PlatformCloseFile(VertFile);
+    PlatformCloseFile(FragFile);
+}
+
+file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Settings)
+{
+    //~ Run the heightmap generation
     
     // TODO(Dustin): Have SimulateNoise take in the heightmap pointer,
     // rather than always returning an allocated array
     // run the simplex noise simulation
     SimplexNoise::NoiseOctaveSimulation noise_sim = {};
-    noise_sim.Width         = settings.HeightmapHeight;
-    noise_sim.Height        = settings.HeightmapWidth;
-    noise_sim.NumOctaves    = settings.NumberOfOctaves;
-    noise_sim.Persistence   = settings.Persistence;
-    noise_sim.Low           = settings.Low;
-    noise_sim.High          = settings.High;
-    noise_sim.Exp           = settings.Exp;
+    noise_sim.Allocator     = &GlobalMemory;
+    noise_sim.Width         = Settings->HeightmapHeight;
+    noise_sim.Height        = Settings->HeightmapWidth;
+    noise_sim.NumOctaves    = Settings->NumberOfOctaves;
+    noise_sim.Persistence   = Settings->Persistence;
+    noise_sim.Low           = Settings->Low;
+    noise_sim.High          = Settings->High;
+    noise_sim.Exp           = Settings->Exp;
     noise_sim.Dim           = noise_sim.TWODIMENSION;
     r32 *heightmap = SimplexNoise::SimulateNoise( noise_sim );
     
     // run thermal, if active
-    if (settings.ThermalEnabled)
+    if (Settings->ThermalEnabled)
     {
         Erosion::ThermalErosionSimlation simulation;
-        simulation.Width            = settings.HeightmapWidth;
-        simulation.Height           = settings.HeightmapHeight;
-        simulation.NumberIterations = settings.ThermalNumIterations;
+        simulation.Width            = Settings->HeightmapWidth;
+        simulation.Height           = Settings->HeightmapHeight;
+        simulation.NumberIterations = Settings->ThermalNumIterations;
         simulation.NoiseMap         = heightmap;
         
         Erosion::SimulateThermalErosion(simulation);
     }
     
     // run inverse thermal, if active
-    if (settings.InverseThermalEnabled)
+    if (Settings->InverseThermalEnabled)
     {
         Erosion::ThermalErosionSimlation simulation;
-        simulation.Width            = settings.HeightmapWidth;
-        simulation.Height           = settings.HeightmapHeight;
-        simulation.NumberIterations = settings.InverseThermalNumIterations;
+        simulation.Width            = Settings->HeightmapWidth;
+        simulation.Height           = Settings->HeightmapHeight;
+        simulation.NumberIterations = Settings->InverseThermalNumIterations;
         simulation.NoiseMap         = heightmap;
         
         Erosion::SimulateInverseThermalErosion(simulation);
     }
     
     // run hydraulic, if active
-    if (settings.HydraulicEnabled)
+    if (Settings->HydraulicEnabled)
     {
         Erosion::ErosionCoefficient coeffErosion;
-        coeffErosion.Kr = settings.RainConstant;
-        coeffErosion.Ks = settings.SolubilityConstant;
-        coeffErosion.Ke = settings.EvaporationCoefficient;
-        coeffErosion.Kc = settings.SedimentTransferMaxCoefficient;
+        coeffErosion.Kr = Settings->RainConstant;
+        coeffErosion.Ks = Settings->SolubilityConstant;
+        coeffErosion.Ke = Settings->EvaporationCoefficient;
+        coeffErosion.Kc = Settings->SedimentTransferMaxCoefficient;
         
         // Create Hydraulic Erosion Simulation Struct
         Erosion::HydraulicErosionSimulation simulation;
+        simulation.Allocator        = &GlobalMemory;
         simulation.ErosionCoeffStruct = coeffErosion;
-        simulation.Width              = settings.HeightmapWidth;
-        simulation.Height             = settings.HeightmapHeight;
+        simulation.Width              = Settings->HeightmapWidth;
+        simulation.Height             = Settings->HeightmapHeight;
         simulation.NoiseMap           = heightmap;
-        simulation.NumberIterations   = settings.HydraulicNumIterations;
+        simulation.NumberIterations   = Settings->HydraulicNumIterations;
         
         Erosion::SimulateHydraulicErosion(simulation);
     }
     
-    // re-create the heightmap attachment process
+    Terrain->HeightmapWidth  = Settings->HeightmapWidth;
+    Terrain->HeightmapHeight = Settings->HeightmapHeight;
+    Terrain->Heightmap       = heightmap;
+    
+    //~ Create the texture
+    texture2d_create_info TextureInfo = {};
+    //TextureInfo.Device              = pRenderer->Device;
+    TextureInfo.Width               = Settings->HeightmapWidth;
+    TextureInfo.Height              = Settings->HeightmapHeight;
+    TextureInfo.Stride              = 4; // 1 component, 32 bit
+    TextureInfo.Usage               = BufferUsage_Immutable;
+    TextureInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    TextureInfo.BindFlags           = BufferBind_ShaderResource;
+    TextureInfo.MiscFlags           = BufferMisc_None;
+    TextureInfo.StructureByteStride = 0;
+    TextureInfo.Format              = InputFormat_R32_FLOAT;
+    Terrain->HeightmapTexture = CreateResource(GlobalResourceRegistry, Resource_Texture2D, &TextureInfo);
+    
+    // upload the texture data
+    // TODO(Dustin): Interface for uploading data to the gpu
 #if 0
-    vk::DestroyImageSampler(terrain->HeightmapImage.Sampler);
-    vk::DestroyImageView(terrain->HeightmapImage.View);
-    vk::DestroyVmaImage(terrain->HeightmapImage.Handle, terrain->HeightmapImage.Memory);
-    pfree(terrain->Heightmap);
+    ID3D11DeviceContext *DeviceContext = GlobalRenderer->DeviceContext;
+    ID3D11Texture2D *Texture = GlobalRegistry->Resources[Terrain->HeightmapTexture.Id.Index]->Texture.Handle;
     
-    AttachHeightmapToTerrain(terrain, heightmap, settings.HeightmapWidth, settings.HeightmapWidth,
-                             command_pool);
+    D3D11_MAPPED_SUBRESOURCE TextureResource;
+    HRESULT hr = DeviceContext->Map(Texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &TextureResource);
     
-    settings.HeightmapUpdated   = false;
+    if (FAILED(hr))
+    {
+        mprinte("Failed to map the heightmap texture resource %d!\n", hr);
+    }
+    else
+    {
+        void* Backbuffer = TextureResource.pData;
+        memcpy(Backbuffer, heightmap, TextureResource.DepthPitch);
+        DeviceContext->Unmap(Texture, 0);
+    }
 #endif
-}
-
-
-void RenderTerrain(terrain_mesh *terrain, bool is_wireframe)
-{
 }

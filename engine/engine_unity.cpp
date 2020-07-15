@@ -15,6 +15,7 @@
 //~ Platform file
 
 #include "platform/platform.h"
+#include "globals/maple_globals.h"
 
 //~ Memory Management syste
 
@@ -43,6 +44,11 @@
 #include "graphics/stb_image.h"
 #include "assets/cgtlf.h"
 
+//~ UI headers
+
+#include "ui/imgui/imgui.h"
+#include "ui/ui.h"
+
 //~ Graphics API
 
 #include "graphics/graphics.h"
@@ -51,31 +57,31 @@
 
 //~ Assets
 
-// gltf converter
-#include "assets/gltf_converter.h"
-#include "assets/gltf_converter.cpp"
-
-#include "assets/asset.h"
-#include "assets/asset.cpp"
-
-#include "assets/asset_loader.h"
-#include "assets/asset_loader.cpp"
-
-//~ Terrain Source
-
+// Terrain
 #include "terrain/open_simplex_noise.h"
 #include "terrain/terrain_generator.h"
 #include "terrain/terrain.h"
 
+// gltf converter
+#include "assets/gltf_converter.h"
+#include "assets/gltf_converter.cpp"
+
+// asset manager
+#include "assets/asset.h"
+#include "assets/asset.cpp"
+
+// asset loaders
+#include "assets/asset_loader.h"
+#include "assets/asset_loader.cpp"
+
+// terrain source
 #include "terrain/terrain_generator.cpp"
 #include "terrain/terrain.cpp"
+
 
 //~ Renderer API
 
 #include "graphics/render_command.h"
-
-//~ UI
-#include "ui/imgui/imgui.h"
 
 //~ Frame Info
 
@@ -84,15 +90,16 @@
 
 //~ Platform Specific Code & Entry point
 
-#include "ui/ui.h"
 #include "ui/win32/imgui_impl_win32.h"
 
+// maple_dx11 defines the renderer struct
 #include "graphics/dx11/maple_dx11.cpp"
 #include "graphics/dx11/resources_dx11.cpp"
 #include "graphics/dx11/renderer_dx11.cpp"
 
 #include "ui/maple_ui.cpp"
 
+#include "globals/maple_globals.cpp"
 #include "platform/platform_entry.cpp"
 
 // NOTE(Dustin): Not sure why, but including imgui above the entry point

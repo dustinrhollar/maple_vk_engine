@@ -5,3 +5,7 @@
 fxc /nologo /Od /Zi /T vs_5_0 /Fosimple_vert.cso simple.hlsl
 fxc /nologo /Od /Zi /T ps_5_0 /Fosimple_frag.cso simple_frag.hlsl
 
+:: Terrain shaders
+fxc /nologo /Od /Zi /T vs_5_0 /Foterrain_vertex.cso terrain.hlsl
+fxc /nologo /Od /Zi /T ps_5_0 /Foterrain_pixel.cso terrain_pixel.hlsl
+

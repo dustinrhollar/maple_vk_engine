@@ -1,17 +1,17 @@
 #ifndef TERRAIN_H
 #define TERRAIN_H
 
-struct terrain_vertex
-{
-    vec2 Position;
-    vec3 Normal;
-    vec2 Uvs;
-};
-
 struct terrain_mesh
 {
-    u32 Width, Height;
-    u32 VertexCount, IndexCount;
+    u32         Width;
+    u32         Height;
+    u32         VertexCount;
+    u32         IndexCount;
+    
+    resource_id Pipeline;
+    resource_id VertexBuffer;
+    resource_id IndexBuffer;
+    resource_id HeightmapTexture;
     
 #if 0
     terrain_vertex         *Vertices;
@@ -36,16 +36,16 @@ struct terrain_mesh
 #endif
 };
 
-void InitTerrain(terrain_mesh *terrain);
-void DestroyTerrain(terrain_mesh *terrain);
-void GenerateTerrainGrid(terrain_mesh *terrain, u32 width, u32 height);
-void CreateTerrainVertexBuffers(terrain_mesh *terrain);
-void CreateTerrainMaterial(terrain_mesh *terrain);
-void AttachHeightmapToTerrain(terrain_mesh *terrain, r32 *heightmap, u32 width, u32 height);
 
-void RenderTerrain(terrain_mesh *terrain, bool is_wireframe = false);
-void RegenerateTerrain(terrain_mesh *terrain, terrain_settings &settings);
+void CreateTerrain(asset_terrain *Terrain, terrain_settings *Settings);
+void ResetTerrain(asset_terrain *Terrain, terrain_settings *Settings);
+void DestroyTerrain(asset_terrain *Terrain);
 
+
+void GenerateTerrainGrid(asset_terrain *terrain, u32 width, u32 height);
+void CreateTerrainVertexBuffers(asset_terrain *terrain);
+void CreateTerrainMaterial(asset_terrain *terrain);
+void AttachHeightmapToTerrain(asset_terrain *Terrain, u32 TextureWidth, u32 TextureHeight);
 
 
 #endif //TERRAIN_H

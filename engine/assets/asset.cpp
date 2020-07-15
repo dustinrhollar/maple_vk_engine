@@ -56,9 +56,9 @@ asset_id CreateAsset(asset_registry *Registry, asset_type Type, void *CreateInfo
             
             // NOTE(Dustin): For now, hardcode the layout info
             pipeline_layout_create_info LayoutInfo[3] = {
-                {"POSITION",  0, PipelineFormat_R32G32B32_FLOAT,    0, 0,  true, 0},
-                {"COLOR",     0, PipelineFormat_R32G32B32A32_FLOAT, 0, 12, true, 0},
-                {"TEXCOORD",  0, PipelineFormat_R32G32_FLOAT,       0, 28, true, 0},
+                {"POSITION",  0, InputFormat_R32G32B32_FLOAT,    0, 0,  true, 0},
+                {"COLOR",     0, InputFormat_R32G32B32A32_FLOAT, 0, 12, true, 0},
+                {"TEXCOORD",  0, InputFormat_R32G32_FLOAT,       0, 28, true, 0},
             };
             u32 LayoutCount = sizeof(LayoutInfo) / sizeof(LayoutInfo[0]);
             
@@ -66,7 +66,7 @@ asset_id CreateAsset(asset_registry *Registry, asset_type Type, void *CreateInfo
             file_t FragFile = PlatformLoadFile(Info->PixelShader);
             
             pipeline_create_info PipelineInfo = {};
-            PipelineInfo.Device              = Registry->Renderer->Device;
+            //PipelineInfo.Device              = Registry->Renderer->Device;
             PipelineInfo.VertexData          = GetFileBuffer(VertFile);
             PipelineInfo.PixelData           = GetFileBuffer(FragFile);
             PipelineInfo.VertexDataSize      = PlatformGetFileSize(VertFile);
@@ -76,7 +76,7 @@ asset_id CreateAsset(asset_registry *Registry, asset_type Type, void *CreateInfo
             SimpleModel.Pipeline = CreateResource(Info->ResourceRegistry, Resource_Pipeline, &PipelineInfo);
             
             buffer_create_info BufferInfo = {};
-            BufferInfo.Device              = Registry->Renderer->Device;
+            //BufferInfo.Device              = Registry->Renderer->Device;
             BufferInfo.Size                = Info->VertexStride * Info->VerticesCount;
             BufferInfo.Usage               = BufferUsage_Default;
             BufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
@@ -94,10 +94,10 @@ asset_id CreateAsset(asset_registry *Registry, asset_type Type, void *CreateInfo
             if (Info->DiffuseTextureFilename)
             {
                 texture2d_create_info CreateInfo = {};
-                CreateInfo.Device = Registry->Renderer->Device;
-                CreateInfo.TextureFile = Info->DiffuseTextureFilename;
+                //CreateInfo.Device = Registry->Renderer->Device;
+                //CreateInfo.TextureFile = Info->DiffuseTextureFilename;
                 
-                SimpleModel.DiffuseTexture = CreateResource(Info->ResourceRegistry, Resource_Texture2D, &CreateInfo);
+                //SimpleModel.DiffuseTexture = CreateResource(Info->ResourceRegistry, Resource_Texture2D, &CreateInfo);
             }
             else
             {
@@ -154,4 +154,11 @@ void CopyAssets(asset_t *Assets, u32 *AssetsCount, asset_registry *AssetRegistry
 inline bool IsValidAsset(asset_t Assets, asset_id Id)
 {
     return Id.Active && (Assets[Id.Index].Id.Gen == Id.Gen);
+}
+
+inline bool IsValidAsset(asset_id Id)
+{
+    return Id.Active 
+        && (GlobalAssetRegistry.Assets[Id.Index]->Id.Gen == Id.Gen)
+        && (GlobalAssetRegistry.Assets[Id.Index]->Id.Type != Asset_Invalid);
 }

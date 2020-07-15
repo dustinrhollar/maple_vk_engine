@@ -31,6 +31,10 @@ SET GBL_LIB=%LIB_PATH% libcpmtd.lib user32.lib Gdi32.lib winmm.lib d3d11.lib d3d
 
 SET INC=/I"C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include"
 
+IF NOT EXIST build\data\terrain\ (
+    1>NUL MKDIR build\data\terrain\
+)
+
 IF NOT EXIST build\data\models\models\ (
     1>NUL MKDIR build\data\models\models\
 )

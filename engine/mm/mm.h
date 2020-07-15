@@ -2,7 +2,7 @@
 #define MAPLE_MM_H
 
 template<typename T>
-T* palloc(free_allocator *Allocator, u32 NumElements)
+T* palloc(free_allocator *Allocator, u32 NumElements = 1)
 {
     return (T*)FreeListAllocatorAlloc(Allocator, sizeof(T) * NumElements);
 }
