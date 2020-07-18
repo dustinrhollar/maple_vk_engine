@@ -38,21 +38,21 @@
 #pragma endregion
 
 #include <d3d11.h>
-#include <d3dx11.h>
-
+#include <d3dx11.h> 
 
 struct renderer
 {
-    IDXGISwapChain      *Swapchain;
-    ID3D11Device        *Device;
-    ID3D11DeviceContext *DeviceContext;
+    IDXGISwapChain         *Swapchain;
+    ID3D11Device           *Device;
+    ID3D11DeviceContext    *DeviceContext;
     
+    // Depth/Stencil
+    ID3D11DepthStencilView *DepthStencilView;
+    ID3D11Texture2D        *DepthStencilBuffer;
+    
+    // Primary Render Target
     ID3D11RenderTargetView *RenderTarget;
     
-    // Temporary Code
-    resource_id VertexBuffer;
-    resource_id SimplePipeline;
-    
-    //maple_ui    MapleUi;
-    window_stack WindowStack;
+    // Maple Engine Ui
+    window_stack            WindowStack;
 };

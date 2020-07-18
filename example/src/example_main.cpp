@@ -9,5 +9,11 @@ extern "C" void GameStageEntry(frame_params* FrameParams)
             render_command Cmd = { RenderCmd_Draw, Asset.Id };
             FrameParams->RenderCommands[FrameParams->RenderCommandsCount++] = Cmd;
         }
+        
+        else if (Asset.Id.Type == Asset_Terrain)
+        {
+            render_command Cmd = { RenderCmd_DrawTerrain, Asset.Id };
+            FrameParams->RenderCommands[FrameParams->RenderCommandsCount++] = Cmd;
+        }
     }
 }

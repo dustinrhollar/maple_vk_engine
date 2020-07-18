@@ -9,18 +9,74 @@
 // --------------------------------------------------------------------------------------------- //
 // Find the Biome that exists at the passed height value.
 // --------------------------------------------------------------------------------------------- //
-int Biome::biome( float height ) {
-    
-    if      ( height < 0.1f ) return WATER;
-    else if ( height < 0.2f ) return BEACH;
-    else if ( height < 0.3f ) return FOREST;
-    else if ( height < 0.5f ) return JUNGLE;
-    else if ( height < 0.7f ) return SAVANNAH;
-    else if ( height < 0.9f ) return DESERT;
-    else return SNOW;
+Biome::biome Biome::GetBiome(r32 Height)
+{
+    if      ( Height < 0.1f ) return Biome_Water;
+    else if ( Height < 0.2f ) return Biome_Beach;
+    else if ( Height < 0.3f ) return Biome_Forest;
+    else if ( Height < 0.5f ) return Biome_Jungle;
+    else if ( Height < 0.7f ) return Biome_Savannah;
+    else if ( Height < 0.9f ) return Biome_Desert;
+    else return Biome::Biome_Snow;
     //return -1;
-    
 }
+
+void Biome::GetBiomeColor(r32 Height, u8 Result[3])
+{
+    local_persist biome_color BiomeColor = {};
+    
+    biome Biome = GetBiome(Height);
+    
+    if (Biome == Biome_Water)
+    {
+        Result[0] = BiomeColor.Water[0];
+        Result[1] = BiomeColor.Water[1];
+        Result[2] = BiomeColor.Water[2];
+    }
+    else if (Biome == Biome_Beach)
+    {
+        Result[0] = BiomeColor.Beach[0];
+        Result[1] = BiomeColor.Beach[1];
+        Result[2] = BiomeColor.Beach[2];
+    }
+    else if (Biome == Biome_Forest)
+    {
+        Result[0] = BiomeColor.Forest[0];
+        Result[1] = BiomeColor.Forest[1];
+        Result[2] = BiomeColor.Forest[2];
+    }
+    else if (Biome == Biome_Jungle)
+    {
+        Result[0] = BiomeColor.Jungle[0];
+        Result[1] = BiomeColor.Jungle[1];
+        Result[2] = BiomeColor.Jungle[2];
+    }
+    else if (Biome == Biome_Beach)
+    {
+        Result[0] = BiomeColor.Jungle[0];
+        Result[1] = BiomeColor.Jungle[1];
+        Result[2] = BiomeColor.Jungle[2];
+    }
+    else if (Biome == Biome_Savannah)
+    {
+        Result[0] = BiomeColor.Savannah[0];
+        Result[1] = BiomeColor.Savannah[1];
+        Result[2] = BiomeColor.Savannah[2];
+    }
+    else if (Biome == Biome_Desert)
+    {
+        Result[0] = BiomeColor.Desert[0];
+        Result[1] = BiomeColor.Desert[1];
+        Result[2] = BiomeColor.Desert[2];
+    }
+    else if (Biome == Biome_Snow)
+    {
+        Result[0] = BiomeColor.Snow[0];
+        Result[1] = BiomeColor.Snow[1];
+        Result[2] = BiomeColor.Snow[2];
+    }
+}
+
 
 // --------------------------------------------------------------------------------------------- //
 // Open Simplex Noise and Erosion Algorithms

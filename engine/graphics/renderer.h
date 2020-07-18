@@ -3,52 +3,6 @@
 
 typedef struct renderer* renderer_t;
 
-
-struct terrain_settings
-{
-    bool    RecreateTerrain;
-    bool    SaveHeightmap;
-    bool    TerrainMeshUpdated;
-    bool    HeightmapUpdated;
-    
-    // Terrain Settings
-    u32     TerrainWidth;
-    u32     TerrainHeight;
-    
-    // Simple Sim. Settings
-    u32     HeightmapWidth;
-    u32     HeightmapHeight;
-    u32     NumberOfOctaves;
-    r32     Persistence;
-    r32     Low;
-    r32     High;
-    r32     Exp;
-    
-    // Thermal Erosion Settings
-    bool    ThermalEnabled;
-    u32     ThermalNumIterations;
-    
-    // Inverse Thermal Settings
-    bool    InverseThermalEnabled;
-    u32     InverseThermalNumIterations;
-    
-    // Hydraulic Settings
-    bool    HydraulicEnabled;
-    u32     HydraulicNumIterations;
-    r32     RainConstant;
-    r32     SolubilityConstant;
-    r32     EvaporationCoefficient;
-    r32     SedimentTransferMaxCoefficient;
-    
-    mstring SaveFilename;
-};
-
-struct maple_ui
-{
-    terrain_settings TerrainSettings;
-    
-};
-
 #if 0
 struct renderer
 {

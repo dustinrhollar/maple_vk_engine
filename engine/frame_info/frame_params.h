@@ -31,6 +31,9 @@ struct frame_params
     //~ Render Commands
     render_command  RenderCommands[100];
     u32             RenderCommandsCount;
+    
+    //~ Player Camera (for now...)
+    struct camera *Camera;
 };
 
 void FrameParamsInit(frame_params      *FrameParams,

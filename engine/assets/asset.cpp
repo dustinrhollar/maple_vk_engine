@@ -18,6 +18,13 @@ void AssetRegistryInit(asset_registry *Registry, renderer_t Renderer, free_alloc
 
 void AssetRegistryFree(asset_registry *Registry, free_allocator *GlobalMemoryAllocator)
 {
+    // TODO(Dustin): Iterate over all assets and free their memory
+    for (u32 i = 0; i < Registry->AssetsCount; ++i)
+    {
+        if (IsValidAsset(Registry->Assets[i]->Id)) 
+            FreeAsset(Registry->Assets[i]->Id);
+    }
+    
     FreeListAllocatorAllocFree(GlobalMemoryAllocator, Registry->AssetAllocator.Start);
     PoolAllocatorFree(&Registry->AssetAllocator);
     
@@ -130,8 +137,98 @@ asset_id CreateAsset(asset_registry *Registry, asset_type Type, void *CreateInfo
         {
         } break;
         
+        case Asset_Terrain:
+        {
+            asset_terrain_create_info *Info = (asset_terrain_create_info*)CreateInfo;
+            
+            // Active the Id
+            Result.Index  = Registry->AssetsCount++;
+            Result.Active = 1;
+            
+            // Create the resource
+            asset *Asset       = (asset*)PoolAllocatorAlloc(&Registry->AssetAllocator);
+            Asset->Id          = Result;
+            Asset->Terrain     = {};
+            
+            // Insert it into the list
+            Registry->Assets[Asset->Id.Index] = Asset;
+            
+        } break;
+        
         default: mprinte("Unknown asset type!\n"); break;
     };
+    
+    return Result;
+}
+
+void FreeAsset(asset_id AssetId)
+{
+    asset *Asset = GetAsset(AssetId);
+    
+    // Invalidate the asset
+    Asset->Id.Gen++;
+    Asset->Id.Active = false;;
+    
+    switch (AssetId.Type)
+    {
+        case Asset_SimpleModel:
+        {
+        } break;
+        
+        case Asset_Model:
+        {
+        } break;
+        
+        case Asset_Texture:
+        {
+        } break;
+        
+        case Asset_Material:
+        {
+        } break;
+        
+        case Asset_Terrain:
+        {
+            // TODO(Dustin): Add it to some queue of open asset slots
+            
+            // Free the asset memory
+            DestroyTerrain(&Asset->Terrain);
+        } break;
+        
+        default: mprinte("Unknown asset type!\n"); break;
+    };
+}
+
+inline asset* GetAsset(asset_t Assets, asset_id Id)
+{
+    asset *Result = NULL;
+    
+    if (!IsValidAsset(Assets, Id))
+    {
+        mprinte("Attempting to retrieve an invalid asset!\n");
+    }
+    else
+    {
+        Result = &Assets[Id.Index];
+    }
+    
+    
+    return Result;
+}
+
+inline asset* GetAsset(asset_id Id)
+{
+    asset *Result = NULL;
+    
+    if (!IsValidAsset(Id))
+    {
+        mprinte("Attempting to retrieve an invalid asset!\n");
+    }
+    else
+    {
+        Result = GlobalAssetRegistry.Assets[Id.Index];
+    }
+    
     
     return Result;
 }

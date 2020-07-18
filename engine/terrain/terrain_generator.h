@@ -31,33 +31,34 @@
  */
 namespace Biome {
     
-    enum Biome {
-        WATER,
-        BEACH,
-        FOREST,
-        JUNGLE,
-        SAVANNAH,
-        DESERT,
-        SNOW
+    enum biome {
+        Biome_Water,
+        Biome_Beach,
+        Biome_Forest,
+        Biome_Jungle,
+        Biome_Savannah,
+        Biome_Desert,
+        Biome_Snow
     };
     
-    struct BiomeColor {
-        unsigned char water[3]    = { 0x00, 0x00, 0xFF };
+    struct biome_color {
+        u8 Water[3]    = { 0x00, 0x00, 0xFF };
         // Pale: (255, 253, 208), 0xFF, 0xFD, 0xD0
-        unsigned char beach[3]    = { 0xFF, 0xFD, 0xD0 };
+        u8 Beach[3]    = { 0xFF, 0xFD, 0xD0 };
         // (34,139,34), 0x22, 0x8B, 0x22
-        unsigned char forest[3]   = { 0x22, 0x8B, 0x22 };
+        u8 Forest[3]   = { 0x22, 0x8B, 0x22 };
         // 11, 47, 37
-        unsigned char jungle[3]   = { 0x0B, 0x2F, 0x25 };
+        u8 Jungle[3]   = { 0x0B, 0x2F, 0x25 };
         // (240,230,140), 0xF0, 0xE6, 0x8C
-        unsigned char savannah[3] = { 0xF0, 0xE6, 0x8C };
+        u8 Savannah[3] = { 0xF0, 0xE6, 0x8C };
         // (237, 201, 175)
-        unsigned char desert[3]   = { 0xED, 0xC9, 0xAF };
+        u8 Desert[3]   = { 0xED, 0xC9, 0xAF };
         // white
-        unsigned char snow[3]     = { 0xFF, 0xFF, 0xFF };
+        u8 Snow[3]     = { 0xFF, 0xFF, 0xFF };
     };
     
-    int biome( float height );
+    biome GetBiome(r32 Height);
+    void GetBiomeColor(r32 Height, u8 Result[3]);
 }
 
 /**

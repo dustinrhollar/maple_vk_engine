@@ -60,7 +60,7 @@ IF "%1" == "gm" (
 	:: /PDB:maple_game_%time%.pdb
     pushd build\
         echo Building game...
-		cl /MT -nologo /Zi /EHsc /I%HOST_DIR%\engine %HOST_DIR%\example\example_unity.cpp /LD /Feexample.dll /link /EXPORT:GameStageEntry
+		cl /MT -nologo /Zi /EHsc /D_DEBUG /I%HOST_DIR%\engine %HOST_DIR%\example\example_unity.cpp /LD /Feexample.dll /link /EXPORT:GameStageEntry
 	popd
     EXIT /B %ERRORLEVEL%
 )
@@ -68,7 +68,7 @@ IF "%1" == "gm" (
 IF "%1" == "mp" (
     pushd build\
         echo Building maple engine...
-        cl /MT -nologo /Zi /EHsc %INC% %HOST_DIR%\engine\engine_unity.cpp /Femaple.exe /link %GBL_LIB%
+        cl /MT -nologo /Zi /EHsc /D_DEBUG %INC% %HOST_DIR%\engine\engine_unity.cpp /Femaple.exe /link %GBL_LIB%
     popd
     EXIT /B %ERRORLEVEL%
 )

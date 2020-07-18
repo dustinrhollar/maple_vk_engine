@@ -1,74 +1,4 @@
 
-struct framebuffer
-{
-    ID3D11Device           *Device;
-    ID3D11DeviceContext    *Context;
-    
-    ID3D11Texture2D        *RenderTargetTexture;
-    ID3D11RenderTargetView *RenderTarget;
-    
-    u32                     Width;
-    u32                     Height;
-};
-
-void FramebufferInit(framebuffer            *Framebuffer, 
-                     ID3D11Device           *Device,
-                     ID3D11DeviceContext    *Context,
-                     u32 Width, u32 Height)
-{
-    Framebuffer->Device = Device;
-    Framebuffer->Context = Context;
-    
-    // Create Texture2D for the frame buffer
-    D3D11_TEXTURE2D_DESC desc;
-    memset( &desc, 0, sizeof(desc));
-    
-    desc.Width            = Width;
-    desc.Height           = Height;
-    desc.MipLevels        = 1;
-    desc.ArraySize        = 1;
-    desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
-    desc.SampleDesc.Count = 1;
-    desc.Usage            = D3D11_USAGE_DEFAULT;
-    desc.BindFlags        = D3D11_BIND_RENDER_TARGET;
-    desc.CPUAccessFlags   = 0;
-    desc.MiscFlags        = 0;
-    
-    HRESULT hr = Device->CreateTexture2D(&desc, NULL, &Framebuffer->RenderTargetTexture);
-    if (FAILED(hr))
-    {
-        mprinte("Failed the frame buffer render target texture %d!\n", hr);
-        
-        Framebuffer->Device = NULL;
-        Framebuffer->Context = NULL;
-        
-        return;
-    }
-    
-    // Create Render Target using the new Texture
-    hr = Device->CreateRenderTargetView(Framebuffer->RenderTargetTexture, NULL, &Framebuffer->RenderTarget);
-    if (FAILED(hr))
-    {
-        mprinte("Failed the frame buffer render target %d!\n", hr);
-        
-        Framebuffer->Device = NULL;
-        Framebuffer->Context = NULL;
-        
-        return;
-    }
-    
-    Framebuffer->Width = Width;
-    Framebuffer->Height = Height;
-}
-
-void FramebufferFree(framebuffer *Framebuffer)
-{
-}
-
-void FramebufferResize(framebuffer *Framebuffer, u32 Width, u32 Height)
-{
-}
-
 void RendererInit(free_allocator *Allocator, resource_registry *Registry,
                   window_t Window, u32 Width, u32 Height, u32 RefreshRate)
 {
@@ -127,7 +57,36 @@ void RendererInit(free_allocator *Allocator, resource_registry *Registry,
     
     if (FAILED(hr))
     {
-        mprinte("Failed to create Device and swapchain because of %d!\n", hr);
+        PlatformFatalError("Failed to create Device and swapchain because of %d!\n", hr);
+    }
+    
+    //~ Create the depth stencil view
+    
+    D3D11_TEXTURE2D_DESC DepthStencilDesc;
+    DepthStencilDesc.Width              = Width;
+    DepthStencilDesc.Height             = Height;
+    DepthStencilDesc.MipLevels          = 1;
+    DepthStencilDesc.ArraySize          = 1;
+    DepthStencilDesc.Format             = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    DepthStencilDesc.SampleDesc.Count   = 1;
+    DepthStencilDesc.SampleDesc.Quality = 0;
+    DepthStencilDesc.Usage              = D3D11_USAGE_DEFAULT;
+    DepthStencilDesc.BindFlags          = D3D11_BIND_DEPTH_STENCIL;
+    DepthStencilDesc.CPUAccessFlags     = 0; 
+    DepthStencilDesc.MiscFlags          = 0;
+    
+    hr = GlobalRenderer->Device->CreateTexture2D(&DepthStencilDesc, NULL, &GlobalRenderer->DepthStencilBuffer);
+    if (FAILED(hr))
+    {
+        PlatformFatalError("Failed to create depth stencil texture because of %d!\n", hr);
+    }
+    
+    hr = GlobalRenderer->Device->CreateDepthStencilView(GlobalRenderer->DepthStencilBuffer, 
+                                                        NULL, 
+                                                        &GlobalRenderer->DepthStencilView);
+    if (FAILED(hr))
+    {
+        PlatformFatalError("Failed to create depth stencil view because of %d!\n", hr);
     }
     
     //~ Create the swapchain render target
@@ -199,6 +158,9 @@ void RendererInit(free_allocator *Allocator, resource_registry *Registry,
 
 void RendererShutdown(free_allocator *Allocator)
 {
+    GlobalRenderer->DepthStencilView->Release();
+    GlobalRenderer->DepthStencilBuffer->Release();
+    
     // Need a seperation of of the MAIN UI because it is possible the 
     // main ui has been closed, but other windows are open
     if (GlobalRenderer->WindowStack.Stack[MAPLE_MAIN_UI_INDEX].Data)
@@ -219,19 +181,10 @@ void RendererShutdown(free_allocator *Allocator)
 
 void RendererResize(resource_registry *Registry)
 {
-#if 0
-    ID3D11Device *Device = Registry->Resources[Renderer->Device.Index]->Device.Handle;
-    ID3D11DeviceContext *DeviceContext = Registry->Resources[Renderer->Device.Index]->Device.Context;
-    IDXGISwapChain *Swapchain = Registry->Resources[Renderer->Device.Index]->Device.Swapchain;
-    ID3D11RenderTargetView **RenderTarget = &Registry->Resources[Renderer->RenderTarget.Index]->RenderTarget.Handle;
-#else
-    
     ID3D11Device *Device                  = GlobalRenderer->Device;
     ID3D11DeviceContext *DeviceContext    = GlobalRenderer->DeviceContext;
     IDXGISwapChain *Swapchain             = GlobalRenderer->Swapchain;
     ID3D11RenderTargetView **RenderTarget = &GlobalRenderer->RenderTarget;
-    
-#endif
     
     DeviceContext->OMSetRenderTargets(0, 0, 0);
     (*RenderTarget)->Release();
@@ -262,37 +215,35 @@ void RendererResize(resource_registry *Registry)
 
 void RendererEntry(frame_params *FrameParams)
 {
-#if 0
-    ID3D11DeviceContext *DeviceContext =
-        FrameParams->Resources[Renderer->Device.Index].Device.Context;
-    IDXGISwapChain *Swapchain =
-        FrameParams->Resources[Renderer->Device.Index].Device.Swapchain;
-    ID3D11RenderTargetView *RenderTarget =
-        FrameParams->Resources[Renderer->RenderTarget.Index].RenderTarget.Handle;
-#else
-    
     ID3D11DeviceContext *DeviceContext   = GlobalRenderer->DeviceContext;
     IDXGISwapChain *Swapchain            = GlobalRenderer->Swapchain;
     ID3D11RenderTargetView *RenderTarget = GlobalRenderer->RenderTarget;
     
-#endif
+    u32 Width, Height;
+    PlatformGetClientWindowDimensions(&Width, &Height);
     
-    DeviceContext->OMSetRenderTargets(1, &RenderTarget, NULL);
+    mat4 View  = GetViewMatrix(FrameParams->Camera);
+    mat4 Projection  = PerspectiveProjection(90.0f, (r32)Width/(r32)Height, 0.1f, 1000.0f);
+    mat4 Model = mat4(1.0f); // terrain will generally have a Identity Matrix
+    
+    DeviceContext->OMSetRenderTargets(1, &RenderTarget, GlobalRenderer->DepthStencilView);
     
     // Set the viewport
     D3D11_VIEWPORT Viewport;
     ZeroMemory(&Viewport, sizeof(D3D11_VIEWPORT));
     
-    u32 Width, Height;
-    PlatformGetClientWindowDimensions(&Width, &Height);
     Viewport.TopLeftX = 0;
     Viewport.TopLeftY = 0;
     Viewport.Width    = Width;
     Viewport.Height   = Height;
+    Viewport.MinDepth = 0.0f;
+    Viewport.MaxDepth = 1.0f;
     DeviceContext->RSSetViewports(1, &Viewport);
     
     vec4 ClearColor = { 0.0f, 0.2f, 0.4f, 1.0f };
     DeviceContext->ClearRenderTargetView(RenderTarget, ClearColor.data);
+    DeviceContext->ClearDepthStencilView(GlobalRenderer->DepthStencilView, 
+                                         D3D11_CLEAR_DEPTH|D3D11_CLEAR_STENCIL, 1.0f, 0);
     
     for (u32 i = 0; i < FrameParams->RenderCommandsCount; ++i)
     {
@@ -344,6 +295,72 @@ void RendererEntry(frame_params *FrameParams)
                     // draw the vertex buffer to the back buffer
                     DeviceContext->Draw(Asset.SimpleModel.VertexCount, 0);
                 }
+            }
+        }
+        else if (Cmd.Type == RenderCmd_DrawTerrain)
+        {
+            asset_id AssetId = Cmd.DrawCmd.Asset;
+            
+            if (IsValidAsset(FrameParams->Assets, AssetId))
+            {
+                asset_terrain Terrain = FrameParams->Assets[AssetId.Index].Terrain;
+                
+                struct mvp 
+                {
+                    mat4 Projection;
+                    mat4 View;
+                    mat4 Model;
+                } Mvp;
+                
+                Mvp.Projection = Projection;
+                Mvp.View = View;
+                Mvp.Model = Model;
+                
+                resource_id PipelineId = Terrain.Pipeline;
+                resource_id VertexId   = Terrain.VertexBuffer;
+                resource_id IndexId    = Terrain.IndexBuffer;
+                resource_id MvpId      = Terrain.MvpBuffer;
+                
+                resource_pipeline Pipeline   = FrameParams->Resources[PipelineId.Index].Pipeline;
+                resource_buffer VertexBuffer = FrameParams->Resources[VertexId.Index].Buffer;
+                resource_buffer IndexBuffer  = FrameParams->Resources[IndexId.Index].Buffer;
+                resource_buffer MvpBuffer     = FrameParams->Resources[MvpId.Index].Buffer;
+                
+                ID3D11InputLayout  *Layout       = Pipeline.Layout;
+                ID3D11VertexShader *VertexShader = Pipeline.VertexShader;
+                ID3D11PixelShader  *PixelShader  = Pipeline.PixelShader;
+                ID3D11Buffer *VBuffer            = VertexBuffer.Handle;
+                ID3D11Buffer *IBuffer            = IndexBuffer.Handle;
+                ID3D11Buffer *MBuffer            = MvpBuffer.Handle;
+                
+                DeviceContext->IASetInputLayout(Layout);
+                
+                // Set the Mvp uniform
+                DeviceContext->UpdateSubresource(MBuffer, 0, NULL, &Mvp, 0, 0);
+                DeviceContext->VSSetConstantBuffers( 0, 1, &MBuffer);
+                
+                // set the shader objects to be active
+                DeviceContext->VSSetShader(VertexShader, 0, 0);
+                DeviceContext->PSSetShader(PixelShader, 0, 0);
+                
+                // Bind Pixel Shader resources
+                //if (IsValidResource(FrameParams->Resources, DiffuseId))
+                //{
+                //resource_texture DiffuseTexture = FrameParams->Resources[DiffuseId.Index].Texture;
+                
+                //DeviceContext->PSSetShaderResources(0, 1, &DiffuseTexture.View);
+                //}
+                
+                UINT Stride = sizeof(terrain_vertex);
+                UINT Offset = 0;
+                DeviceContext->IASetVertexBuffers(0, 1, &VBuffer, &Stride, &Offset);
+                DeviceContext->IASetIndexBuffer(IBuffer, DXGI_FORMAT_R32_UINT, 0);
+                
+                // select which primtive type we are using
+                DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                
+                // draw the vertex buffer to the back buffer
+                DeviceContext->DrawIndexed(Terrain.IndexCount, 0, 0 );
             }
         }
         else if (Cmd.Type == RenderCmd_DrawUi)

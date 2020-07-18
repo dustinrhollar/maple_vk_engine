@@ -48,6 +48,7 @@
 
 #include "ui/imgui/imgui.h"
 #include "ui/ui.h"
+#include "ui/maple_ui_settings.h"
 
 //~ Graphics API
 
@@ -78,6 +79,10 @@
 #include "terrain/terrain_generator.cpp"
 #include "terrain/terrain.cpp"
 
+//~ Cameras
+
+#include "camera/simple_camera.h"
+#include "camera/simple_camera.cpp"
 
 //~ Renderer API
 

@@ -2,23 +2,73 @@
 file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Settings);
 
 
-void CreateTerrain(asset_terrain *Terrain, terrain_settings *Settings)
+void CreateTerrain(asset_registry *AssetRegistry, terrain_settings *Settings)
 {
-#if 0
+    asset_terrain_create_info CreateInfo = {};
+    asset_id TerrainId = CreateAsset(AssetRegistry, Asset_Terrain, &CreateInfo);
+    AssetRegistry->TerrainId = TerrainId;
+    
+    asset_terrain *Terrain = &(GetAsset(TerrainId)->Terrain);
+    
+    // Create the mvp buffer
+    buffer_create_info MvpBufferInfo  = {};
+    MvpBufferInfo.Size                = sizeof(mat4) * 3;
+    MvpBufferInfo.Usage               = BufferUsage_Default;
+    MvpBufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    MvpBufferInfo.BindFlags           = BufferBind_ConstantBuffer;
+    MvpBufferInfo.MiscFlags           = BufferMisc_None;
+    MvpBufferInfo.StructureByteStride = 0;
+    Terrain->MvpBuffer = CreateResource(GlobalResourceRegistry, Resource_Buffer, &MvpBufferInfo);
+    
+    CreateTerrainMaterial(Terrain);
     GenerateTerrainGrid(Terrain, Settings->TerrainWidth, Settings->TerrainHeight);
     CreateTerrainVertexBuffers(Terrain);
-    CreateTerrainMaterial(Terrain);
-#endif
-    
     CreateHeightmap(Terrain, Settings);
 }
 
 void ResetTerrain(asset_terrain *Terrain, terrain_settings *Settings)
 {
+    if (Settings->TerrainMeshUpdated)
+    {
+        if (Terrain->Vertices) pfree(&GlobalMemory, Terrain->Vertices);
+        if (Terrain->Indices)  pfree(&GlobalMemory, Terrain->Indices);
+        
+        // TODO(Dustin): Destroy buffer resources
+        if (!IsValidResource(Terrain->VertexBuffer)) FreeResource(Terrain->VertexBuffer);
+        if (!IsValidResource(Terrain->IndexBuffer))  FreeResource(Terrain->IndexBuffer);
+        
+        GenerateTerrainGrid(Terrain, Settings->TerrainWidth, Settings->TerrainHeight);
+        CreateTerrainVertexBuffers(Terrain);
+    }
+    
+    if (Settings->HeightmapUpdated)
+    {
+        if (Terrain->Heightmap) pfree(&GlobalMemory, Terrain->Heightmap);
+        if (Terrain->Colormap)  pfree(&GlobalMemory, Terrain->Colormap);
+        
+        // Destroy texture resources
+        if (!IsValidResource(Terrain->HeightmapTexture)) FreeResource(Terrain->HeightmapTexture);
+        if (!IsValidResource(Terrain->ColormapTexture))  FreeResource(Terrain->ColormapTexture);
+        
+        CreateHeightmap(Terrain, Settings);
+    }
 }
 
 void DestroyTerrain(asset_terrain *Terrain)
 {
+    if (Terrain->Vertices)  pfree(&GlobalMemory, Terrain->Vertices);
+    if (Terrain->Indices)   pfree(&GlobalMemory, Terrain->Indices);
+    if (Terrain->Heightmap) pfree(&GlobalMemory, Terrain->Heightmap);
+    if (Terrain->Colormap)  pfree(&GlobalMemory, Terrain->Colormap);
+    
+    Terrain->Width           = 0;
+    Terrain->Height          = 0;
+    Terrain->HeightmapWidth  = 0;
+    Terrain->HeightmapHeight = 0;
+    Terrain->VertexCount     = 0;
+    Terrain->IndexCount      = 0;
+    
+    // TODO(Dustin): Destroy resources
 }
 
 // SOURCE: https://stackoverflow.com/questions/5915753/generate-a-plane-with-triangle-strips
@@ -28,10 +78,10 @@ void GenerateTerrainGrid(asset_terrain *Terrain, u32 width, u32 height)
     Terrain->Height      = height;
     
     Terrain->VertexCount = (width) * (height);
-    Terrain->IndexCount = (width * height) + (width - 1) * (width - 2);
+    Terrain->IndexCount  = (width * height) + (width - 1) * (width - 2);
     
     Terrain->Vertices = palloc<terrain_vertex>(&GlobalMemory, Terrain->VertexCount);
-    Terrain->Indices = palloc<u32>(&GlobalMemory, Terrain->IndexCount);
+    Terrain->Indices  = palloc<u32>(&GlobalMemory, Terrain->IndexCount);
     
     // Generate the grid information
     // Create the vertex list
@@ -206,7 +256,6 @@ file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Set
     
     //~ Create the texture
     texture2d_create_info TextureInfo = {};
-    //TextureInfo.Device              = pRenderer->Device;
     TextureInfo.Width               = Settings->HeightmapWidth;
     TextureInfo.Height              = Settings->HeightmapHeight;
     TextureInfo.Stride              = 4; // 1 component, 32 bit
@@ -216,26 +265,46 @@ file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Set
     TextureInfo.MiscFlags           = BufferMisc_None;
     TextureInfo.StructureByteStride = 0;
     TextureInfo.Format              = InputFormat_R32_FLOAT;
+    
+    // Optional data
+    TextureInfo.Data             = Terrain->Heightmap;
+    TextureInfo.SysMemPitch      = Settings->HeightmapWidth * Settings->HeightmapHeight * TextureInfo.Stride;
+    TextureInfo.SysMemSlicePitch = 0;
+    
     Terrain->HeightmapTexture = CreateResource(GlobalResourceRegistry, Resource_Texture2D, &TextureInfo);
     
-    // upload the texture data
-    // TODO(Dustin): Interface for uploading data to the gpu
-#if 0
-    ID3D11DeviceContext *DeviceContext = GlobalRenderer->DeviceContext;
-    ID3D11Texture2D *Texture = GlobalRegistry->Resources[Terrain->HeightmapTexture.Id.Index]->Texture.Handle;
+    //~ Create the colormap and its texture
     
-    D3D11_MAPPED_SUBRESOURCE TextureResource;
-    HRESULT hr = DeviceContext->Map(Texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &TextureResource);
+    u32 Length = Settings->HeightmapWidth * Settings->HeightmapHeight;
+    vec3 *Colormap = palloc<vec3>(&GlobalMemory, Length);
     
-    if (FAILED(hr))
+    for (u32 i = 0; i < Length; ++i)
     {
-        mprinte("Failed to map the heightmap texture resource %d!\n", hr);
+        u8 BiomeColor[3];
+        Biome::GetBiomeColor(Terrain->Heightmap[i], BiomeColor);
+        
+        Colormap[i].x = (r32)BiomeColor[0] / 255.0f;
+        Colormap[i].y = (r32)BiomeColor[1] / 255.0f;
+        Colormap[i].z = (r32)BiomeColor[2] / 255.0f;
     }
-    else
-    {
-        void* Backbuffer = TextureResource.pData;
-        memcpy(Backbuffer, heightmap, TextureResource.DepthPitch);
-        DeviceContext->Unmap(Texture, 0);
-    }
-#endif
+    
+    Terrain->Colormap = Colormap;
+    
+    TextureInfo = {};
+    TextureInfo.Width               = Settings->HeightmapWidth;
+    TextureInfo.Height              = Settings->HeightmapHeight;
+    TextureInfo.Stride              = 12; // 3 component, 32 bit
+    TextureInfo.Usage               = BufferUsage_Immutable;
+    TextureInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    TextureInfo.BindFlags           = BufferBind_ShaderResource;
+    TextureInfo.MiscFlags           = BufferMisc_None;
+    TextureInfo.StructureByteStride = 0;
+    TextureInfo.Format              = InputFormat_R32G32B32_FLOAT;
+    
+    // Optional data
+    TextureInfo.Data             = Terrain->Colormap;
+    TextureInfo.SysMemPitch      = Settings->HeightmapWidth * Settings->HeightmapHeight * TextureInfo.Stride;
+    TextureInfo.SysMemSlicePitch = 0;
+    
+    Terrain->ColormapTexture = CreateResource(GlobalResourceRegistry, Resource_Texture2D, &TextureInfo);
 }

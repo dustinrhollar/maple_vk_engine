@@ -4,6 +4,7 @@
 enum render_command_type
 {
     RenderCmd_Draw,
+    RenderCmd_DrawTerrain,
     RenderCmd_DrawUi,
 };
 

@@ -50,6 +50,9 @@ file_global u64 FrameCount = 0;
 file_global tag_id_t          PlatformTag = {0, TAG_ID_PLATFORM, 0};
 file_global tagged_heap_block PlatformHeap;
 
+// Cameras
+camera SimpleCamera;
+
 // File I/O Handling
 struct file
 {
@@ -1311,6 +1314,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     PlatformHeap = TaggedHeapRequestAllocation(&GlobalTaggedHeap, PlatformTag);
     
+    // Initialize the open simplex perm arrays - needed for noise generation
+    SimplexNoise::InitOpenSimplexNoise();
+    
     //~ Initialize ImGui
     ImGuiContext *ctx = ImGui::CreateContext();
     if (!ImGui_ImplWin32_Init(ClientWindow))
@@ -1324,6 +1330,13 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     //~ Load game code
     mstring GameDllName = Win32NormalizePath("example.dll");
     Win32LoadGameCode(&GameCode, GetStr(&GameDllName));
+    
+    //~ Intialize the cameras
+    SimpleCamera = {};
+    InitCamera(&SimpleCamera,
+               &PlayerCameraCallback,
+               { 256, 10, 0 });
+    
     
     //~ Render Loop
     ShowWindow(ClientWindow, nCmdShow);
@@ -1341,6 +1354,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         frame_params FrameParams = {};
         FrameParamsInit(&FrameParams, FrameCount++, LastFrameTime, &GlobalTaggedHeap, GlobalRenderer,
                         GlobalResourceRegistry, &GlobalAssetRegistry);
+        FrameParams.Camera = &SimpleCamera;
         
         // NOTE(Dustin): When check the file time, if there is not a small delay in the check
         // then the DLL is loaded twice. In order to solve this, rather than checking every frame,
@@ -1503,6 +1517,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
                 switch (wParam)
                 {
+                    case 'W': SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_MoveForward);    break;
+                    case 'S': SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_MoveBackward);   break;
+                    case 'A': SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_MoveLeft);       break;
+                    case 'D': SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_MoveRight);      break;
+                    
+                    case VK_UP:    SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_LookUp);    break;
+                    case VK_DOWN:  SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_LookDown);  break;
+                    case VK_LEFT:  SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_LookLeft);  break;
+                    case VK_RIGHT: SimpleCamera.InputCallback(&SimpleCamera, 0.0f, Camera_LookRight); break;
+                    
                     case VK_SPACE:
                     {
                         RenderDevGui = !RenderDevGui;

@@ -37,7 +37,7 @@ struct terrain_mesh
 };
 
 
-void CreateTerrain(asset_terrain *Terrain, terrain_settings *Settings);
+void CreateTerrain(asset_registry *AssetRegistry, terrain_settings *Settings);
 void ResetTerrain(asset_terrain *Terrain, terrain_settings *Settings);
 void DestroyTerrain(asset_terrain *Terrain);
 

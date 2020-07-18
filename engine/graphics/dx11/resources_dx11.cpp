@@ -33,7 +33,6 @@ struct resource_pipeline
     // TODO(Dustin): The other shader types
 };
 
-
 struct resource_buffer
 {
     ID3D11Buffer *Handle;
@@ -44,6 +43,8 @@ struct resource_texture
     ID3D11Texture2D          *Handle;
     ID3D11ShaderResourceView *View;
     ID3D11SamplerState       *Sampler;
+    
+    u32 Width, Height;
 };
 
 struct resource
@@ -131,6 +132,12 @@ resource_id CreateDummyResource()
 inline bool IsValidResource(resource_t Resources, resource_id ResourceId)
 {
     return (ResourceId.Active) && (Resources[ResourceId.Index].Id.Gen == ResourceId.Gen);
+}
+
+inline bool IsValidResource(resource_id ResourceId)
+{
+    resource_t *Resources = GlobalResourceRegistry->Resources;
+    return (ResourceId.Active) && (Resources[ResourceId.Index]->Id.Gen == ResourceId.Gen);
 }
 
 file_internal DXGI_FORMAT ConvertInputFormat(input_format Format)
@@ -339,8 +346,8 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
             resource_render_target RenderTarget = {};
             
             // Get the Device resources
-            ID3D11Device *Device = Registry->Resources[Info->Device.Index]->Device.Handle;
-            IDXGISwapChain *Swapchain = Registry->Resources[Info->Device.Index]->Device.Swapchain;
+            ID3D11Device *Device      = GlobalRenderer->Device;
+            IDXGISwapChain *Swapchain = GlobalRenderer->Swapchain;
             
             // get the address of the back buffer
             ID3D11Texture2D *tBackBuffer;
@@ -446,7 +453,7 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
         case Resource_Buffer:
         {
             buffer_create_info *Info = (buffer_create_info*)CreateInfo;
-            ID3D11Device *Device = Registry->Resources[Info->Device.Index]->Device.Handle;
+            ID3D11Device *Device = GlobalRenderer->Device;
             
             resource_buffer Buffer = {};
             
@@ -577,6 +584,9 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
                 }
             }
             
+            Texture.Width  = Info->Width;
+            Texture.Height = Info->Height;
+            
             // Active the Id
             Result.Index  = Registry->ResourcesCount++;
             Result.Active = 1;
@@ -596,9 +606,78 @@ resource_id CreateResource(resource_registry *Registry, resource_type Type, void
     return Result;
 }
 
+inline resource_t GetResource(resource_id Id)
+{
+    resource_t Result = NULL;
+    
+    if (!IsValidResource(Id))
+    {
+        mprinte("Attempted to retrieve an invalid resource!\n");
+    }
+    else
+    {
+        Result = GlobalResourceRegistry->Resources[Id.Index];
+    }
+    
+    return Result;
+}
+
+void FreeResource(resource_id ResourceId)
+{
+    resource_t Resource = GetResource(ResourceId);
+    
+    // Invalidate the resource
+    Resource->Id.Gen++;
+    Resource->Id.Active = false;;
+    
+    switch (ResourceId.Type)
+    {
+        case Resource_Device:
+        {
+            Resource->Device.Swapchain->Release();
+            Resource->Device.Handle->Release();
+            Resource->Device.Context->Release();
+        } break;
+        
+        case Resource_Swapchain:
+        {
+        } break;
+        
+        case Resource_RenderTarget:
+        {
+        } break;
+        
+        case Resource_Buffer:
+        {
+            Resource->Buffer.Handle->Release();
+        } break;
+        
+        case Resource_PipelineLayout:
+        {
+        } break;
+        
+        case Resource_Pipeline:
+        {
+            Resource->Pipeline.Layout->Release();
+            Resource->Pipeline.VertexShader->Release();
+            Resource->Pipeline.PixelShader->Release();
+        } break;
+        
+        case Resource_Texture2D:
+        {
+            Resource->Texture.Handle->Release();
+            Resource->Texture.View->Release();
+            Resource->Texture.Sampler->Release();
+            
+            Resource->Texture.Width  = 0;
+            Resource->Texture.Height = 0;
+        } break;
+    }
+}
+
 void CopyResources(resource_t *Resources, u32 *ResourcesCount, resource_registry *ResourceRegistry, tag_block_t Heap)
 {
-    // TODO(Dustin): Account for hoels in the registry
+    // TODO(Dustin): Account for holes in the registry
     
     resource_t ResourcesCopy = halloc<resource>(Heap, ResourceRegistry->ResourcesCount);
     
@@ -610,3 +689,4 @@ void CopyResources(resource_t *Resources, u32 *ResourcesCount, resource_registry
     *ResourcesCount = ResourceRegistry->ResourcesCount;
     *Resources = ResourcesCopy;
 }
+

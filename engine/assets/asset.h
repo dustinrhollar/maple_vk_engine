@@ -21,6 +21,7 @@ enum asset_type
     Asset_Model,
     Asset_Texture,
     Asset_Material,
+    Asset_Terrain,
 };
 
 struct simple_model_create_info
@@ -41,6 +42,10 @@ struct simple_model_create_info
     const char        *DiffuseTextureFilename;
     
     // TODO(Dustin): Other material info?
+};
+
+struct asset_terrain_create_info 
+{ // Data is manually filled in...
 };
 
 struct asset_material
@@ -152,21 +157,29 @@ struct terrain_vertex
 
 struct asset_terrain
 {
-    u32         Width;
-    u32         Height;
-    u32         HeightmapWidth;
-    u32         HeightmapHeight;
-    u32         VertexCount;
-    u32         IndexCount;
+    u32             Width;
+    u32             Height;
+    u32             HeightmapWidth;
+    u32             HeightmapHeight;
+    u32             VertexCount;
+    u32             IndexCount;
     
-    resource_id Pipeline;
-    resource_id VertexBuffer;
-    resource_id IndexBuffer;
-    resource_id HeightmapTexture;
+    resource_id     Pipeline;
     
     terrain_vertex *Vertices;
+    resource_id     VertexBuffer;
+    
     u32            *Indices;
+    resource_id     IndexBuffer;
+    
     r32            *Heightmap;
+    resource_id     HeightmapTexture;
+    
+    vec3           *Colormap;
+    resource_id     ColormapTexture;
+    
+    // MVP buffer
+    resource_id MvpBuffer;
 };
 
 struct asset
@@ -176,6 +189,7 @@ struct asset
     {
         asset_simple_model SimpleModel;
         asset_model        Model;
+        asset_terrain      Terrain;
     };
 };
 
@@ -196,7 +210,7 @@ struct asset_registry
     // See note left in the resource_registry
     
     // Global mesh ids
-    asset_terrain Terrain;
+    asset_id TerrainId;
 };
 
 
@@ -205,6 +219,15 @@ void AssetRegistryInit(asset_registry *Registry, renderer_t Renderer, free_alloc
 void AssetRegistryFree(asset_registry *Registry, free_allocator *GlobalMemoryAllocator);
 
 asset_id CreateAsset(asset_registry *Registry, asset_type Type, void *CreateInfo);
+
+// Frame local free...TODO(Dustin) 
+//void FreeAsset(asset_registry *Registry, asset_id Asset);
+// Global Free
+void FreeAsset(asset_id Asset);
+
+inline asset* GetAsset(asset_t Assets, asset_id Id);
+inline asset* GetAsset(asset_id Id);
+
 void CopyAssets(asset_t *Assets, u32 *AssetsCount, asset_registry *AssetRegistry, tag_block_t Heap);
 
 inline bool IsValidAsset(asset_t Assets, asset_id Id); // per-frame check

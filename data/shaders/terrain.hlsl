@@ -23,9 +23,17 @@ struct VS_IN
 	float2 Tex0     : TEXCOORD;
 };
 
+cbuffer cbPerObject
+{
+    float4x4 Projection;
+    float4x4 View;
+    float4x4 Model;
+};
+
 struct VS_OUT
 {
     float4 Position : SV_POSITION;
+    float4 Color    : COLOR;
     float2 Tex0     : TEXCOORD;
 };
 
@@ -39,8 +47,12 @@ VS_OUT main(VS_IN Input)
 	//gl_Position = Mvp.Projection * Mvp.View * Mvp.Model * vec4(hpos, 1.0f);
 	
 	VS_OUT Output;
-	Output.Position = float4(Input.Position, 0.0f, 0.0f);
-	Output.Tex0 = Input.Tex0;
-
+	
+	Output.Position = float4(Input.Position.x, 0.0f, Input.Position.y, 0.0f);
+	Output.Position = mul(Projection, mul(View, mul(Model, Output.Position)));
+	
+	Output.Tex0  = Input.Tex0;
+	Output.Color = float4(0.0f, 1.0f, 0.0f, 1.0f);
+	
 	return Output;
 }

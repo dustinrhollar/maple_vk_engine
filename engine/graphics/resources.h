@@ -53,7 +53,6 @@ struct swapchain_create_info
 
 struct render_target_create_info
 {
-    resource_id Device;
 };
 
 enum buffer_usage
@@ -93,8 +92,6 @@ enum buffer_bind_flags
 
 struct buffer_create_info
 {
-    resource_id             Device;
-    
     u32                     Size;
     buffer_usage            Usage;
     buffer_cpu_access_flags CpuAccessFlags;
@@ -166,10 +163,18 @@ void ResourceRegistryFree(resource_registry *Registry, free_allocator *GlobalMem
 
 resource_id CreateResource(resource_registry *Registry, resource_type Type, void *CreateInfo);
 resource_id CreateDummyResource();
+
+void FreeResource(resource_id ResourceId);
+
 void CopyResources(resource_t *Resources, u32 *ResourcesCount, resource_registry *ResourceRegistry, tag_block_t Heap);
+
+//inline resource_t GetResource(resource_t Resources, resource_id Id);
+inline resource_t GetResource(resource_id Id);
 
 // A valid resource is a resource that is active and its generation matches the generation at
 // the designated index.
 inline bool IsValidResource(resource_t Resources, resource_id ResourceId);
+// Uses global resource registry rather than a frame-local one
+inline bool IsValidResource(resource_id ResourceId);
 
 #endif //RESOURCES_H
