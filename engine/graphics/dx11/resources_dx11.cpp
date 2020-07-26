@@ -150,6 +150,9 @@ file_internal DXGI_FORMAT ConvertInputFormat(input_format Format)
     else if (Format == InputFormat_R32G32_FLOAT)
         Result = DXGI_FORMAT_R32G32_FLOAT;
     
+    else if (Format == InputFormat_R32G32_UINT)
+        Result = DXGI_FORMAT_R32G32_UINT;
+    
     else if (Format == InputFormat_R32G32B32_FLOAT)
         Result = DXGI_FORMAT_R32G32B32_FLOAT;
     

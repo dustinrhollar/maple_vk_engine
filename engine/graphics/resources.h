@@ -108,11 +108,15 @@ struct buffer_create_info
 enum input_format
 {
     InputFormat_R32_FLOAT,
+    
+    InputFormat_R32G32_UINT,
     InputFormat_R32G32_FLOAT,
-    InputFormat_R32G32B32_FLOAT,
-    InputFormat_R32G32B32A32_FLOAT,
+    
     InputFormat_R32G32B32_UINT,
+    InputFormat_R32G32B32_FLOAT,
+    
     InputFormat_R32G32B32A32_UINT,
+    InputFormat_R32G32B32A32_FLOAT,
 };
 
 struct texture2d_create_info

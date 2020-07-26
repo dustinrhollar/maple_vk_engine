@@ -1232,6 +1232,28 @@ void PlatformGetClientWindowDimensions(u32 *Width, u32 *Height)
     *Height = rect.bottom - rect.top;
 }
 
+window_rect PlatformGetClientWindowRect()
+{
+    window_rect Result = {};
+    
+    RECT Rect;
+    GetClientRect(ClientWindow, &Rect);
+    
+    Result.Left   = Rect.left;
+    Result.Right  = Rect.right;
+    Result.Top    = Rect.top;
+    Result.Bottom = Rect.bottom;
+    
+    return Result;
+}
+
+void PlatformGetClientWindow(platform_window *Window)
+{
+    HWND *Win32Window = (HWND*)Window;
+    Win32Window = &ClientWindow;
+}
+
+
 file_internal void MapleShutdown()
 {
     
@@ -1333,10 +1355,15 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     //~ Intialize the cameras
     SimpleCamera = {};
+#if 1
     InitCamera(&SimpleCamera,
                &PlayerCameraCallback,
-               { 256, 10, 0 });
-    
+               { 0, 15, 100 });
+#else
+    InitCamera(&SimpleCamera,
+               &PlayerCameraCallback,
+               { 0, 0, 0 });
+#endif
     
     //~ Render Loop
     ShowWindow(ClientWindow, nCmdShow);
@@ -1393,6 +1420,29 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
         
         RendererEntry(&FrameParams);
+        
+        FrameParams.RenderStageEndTime = PlatformGetWallClock();
+        
+#if 0
+        // Log frame timings...
+        local_persist r32 FrameAccumulator = 0.0f;
+        
+        r32 GameElapsed   = PlatformGetSecondsElapsed(FrameParams.FrameStartTime, FrameParams.GameStageEndTime);
+        r32 RenderElapsed = PlatformGetSecondsElapsed(FrameParams.RenderStageStartTime, FrameParams.RenderStageEndTime);
+        //r32 GpuElapsed    = PlatformGetSecondsElapsed(FrameParams.GpuStageStartTime, FrameParams.GpuStageEndTime);;
+        
+        u32 Fps = static_cast<u32>(1.0f / (GameElapsed + RenderElapsed));
+        
+        // Prints the ms for each stage in the frame
+        PlatformPrintMessage(ConsoleColor_Red, ConsoleColor_DarkGrey, "Frame: %ld\n", FrameParams.Frame);
+        PlatformPrintMessage(ConsoleColor_Green, ConsoleColor_DarkGrey, "\tGame Stage Time:  \t%f ms\n",
+                             GameElapsed * 1000.0f);
+        PlatformPrintMessage(ConsoleColor_Green, ConsoleColor_DarkGrey, "\tRender Stage Time:\t%f ms\n",
+                             RenderElapsed * 1000.0f);
+        //PlatformPrintMessage(EConsoleColor::Green, EConsoleColor::DarkGrey, "\tGpu Stage Time:   \t%f ms\n",
+        //GpuElapsed * 1000.0f);
+        PlatformPrintMessage(ConsoleColor_Green, ConsoleColor_DarkGrey, "\tFPS:              \t%d\n", Fps);
+#endif
         
         FrameParamsFree(&FrameParams);
         

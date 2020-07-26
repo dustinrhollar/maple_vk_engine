@@ -178,6 +178,9 @@ struct asset_terrain
     vec3           *Colormap;
     resource_id     ColormapTexture;
     
+    vec3           *Normalmap;
+    resource_id     NormalmapTexture;
+    
     // MVP buffer
     resource_id MvpBuffer;
 };

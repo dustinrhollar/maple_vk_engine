@@ -37,14 +37,20 @@
 #endif
 #pragma endregion
 
-#include <d3d11.h>
+//#include <d3d11.h>
+#include <d3d11_1.h>
 #include <d3dx11.h> 
+#include <dxgi.h>
 
 struct renderer
 {
     IDXGISwapChain         *Swapchain;
     ID3D11Device           *Device;
     ID3D11DeviceContext    *DeviceContext;
+    
+    // Rasterizer - global
+    ID3D11RasterizerState *SolidRaster;
+    ID3D11RasterizerState *WireframeRaster;
     
     // Depth/Stencil
     ID3D11DepthStencilView *DepthStencilView;

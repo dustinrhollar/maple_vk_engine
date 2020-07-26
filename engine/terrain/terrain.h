@@ -13,6 +13,7 @@ struct terrain_mesh
     resource_id IndexBuffer;
     resource_id HeightmapTexture;
     
+    
 #if 0
     terrain_vertex         *Vertices;
     u32                   *Indices;

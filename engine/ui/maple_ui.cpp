@@ -304,6 +304,26 @@ file_internal void TerrainUiTab(terrain_settings *Settings)
                 }
             }
             
+            // show the terrain normal
+            {
+                resource_texture NormalmapTexture = 
+                    GlobalResourceRegistry->Resources[Terrain->NormalmapTexture.Index]->Texture;
+                
+                ImTextureID NormalId = (ImTextureID)NormalmapTexture.View;
+                float my_tex_w = (float)NormalmapTexture.Width;
+                float my_tex_h = (float)NormalmapTexture.Height;
+                
+                int frame_padding = 0;                            // -1 == uses default padding (style.FramePadding)
+                ImVec2 size = ImVec2(200.0f, 200.0f);             // Size of the image we want to make visible
+                ImVec2 uv0 = ImVec2(0.0f, 0.0f);                  // Top-left
+                ImVec2 uv1 = ImVec2(1.0f, 1.0f);                  // Lower-right
+                ImVec4 bg_col = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);   // Black background
+                ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); // No tint
+                if (ImGui::ImageButton(NormalId, size, uv0, uv1, frame_padding, bg_col, tint_col))
+                {
+                }
+            }
+            
             // show the terrain colormap
             {
                 resource_texture ColormapTexture = 

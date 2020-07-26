@@ -6,6 +6,15 @@
 // for example, platform_window on win32 is:
 //    struct { HWND Window; } platform_window;
 typedef struct platform_window* window_t;
+
+struct window_rect
+{
+    u64 Left;
+    u64 Top;
+    u64 Right;
+    u64 Bottom;
+};
+
 // opaque wrapper around a file handle. the file struct
 // also contains two types of internal buffers in order
 // to store memory.
@@ -126,6 +135,9 @@ u32 PlatformCtzl(u64 Value);
 
 //~ Retrieve the width and height of the the client window. 
 void PlatformGetClientWindowDimensions(u32 *Width, u32 *Height);
+// TODO(Dustin): Get working...
+void PlatformGetClientWindow(platform_window *Window);
+window_rect PlatformGetClientWindowRect();
 
 //~ Game API. Any client wanting to use the engine with the intended use case
 // must have these functions exported in their DLL.

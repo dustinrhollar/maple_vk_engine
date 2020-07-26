@@ -18,7 +18,7 @@ void RendererInit(free_allocator *Allocator, resource_registry *Registry,
     
     DXGI_SWAP_CHAIN_DESC sd;
     ZeroMemory( &sd, sizeof( sd ) );
-    sd.BufferCount                        = 1;
+    sd.BufferCount                        = 2;
     sd.BufferDesc.Width                   = Width;
     sd.BufferDesc.Height                  = Height;
     sd.BufferDesc.Format                  = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -29,9 +29,10 @@ void RendererInit(free_allocator *Allocator, resource_registry *Registry,
     sd.SampleDesc.Count                   = 1;
     sd.SampleDesc.Quality                 = 0;
     sd.Windowed                           = TRUE;
+    sd.SwapEffect                         = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
     sd.Flags                              = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH; // allow full-screen switching
     
-    D3D_FEATURE_LEVEL FeatureLevels[] = { D3D_FEATURE_LEVEL_11_0 };
+    D3D_FEATURE_LEVEL FeatureLevels[] = { D3D_FEATURE_LEVEL_11_1 };
     
     UINT CreationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #if defined(_DEBUG)
@@ -43,7 +44,7 @@ void RendererInit(free_allocator *Allocator, resource_registry *Registry,
     D3D_FEATURE_LEVEL FeatureLevel;
     
     hr = D3D11CreateDeviceAndSwapChain(NULL,
-                                       D3D_DRIVER_TYPE_REFERENCE,
+                                       D3D_DRIVER_TYPE_HARDWARE,
                                        NULL,
                                        CreationFlags,
                                        FeatureLevels,
@@ -154,7 +155,52 @@ void RendererInit(free_allocator *Allocator, resource_registry *Registry,
     GlobalRenderer->WindowStack.Stack[MAPLE_MAIN_UI_INDEX].Callback     = &EngineMainUi;
     GlobalRenderer->WindowStack.Stack[MAPLE_MAIN_UI_INDEX].FreeCallback = &EngineMainUiFree;
     GlobalRenderer->WindowStack.Stack[MAPLE_MAIN_UI_INDEX].Data         = MainUi;
+    
+    
+    //~ Create the rasterizers
+    
+    D3D11_RASTERIZER_DESC SolidRaster = {};
+    SolidRaster.FillMode              = D3D11_FILL_SOLID;
+    SolidRaster.CullMode              = D3D11_CULL_BACK;
+    SolidRaster.FrontCounterClockwise = TRUE; // NOTE(Dustin): Default is FALSE
+    SolidRaster.DepthBias             = 0;
+    SolidRaster.DepthBiasClamp        = 0.0f;
+    SolidRaster.SlopeScaledDepthBias  = 0.0f;
+    SolidRaster.DepthClipEnable       = TRUE;
+    SolidRaster.ScissorEnable         = FALSE;
+    SolidRaster.MultisampleEnable     = FALSE;
+    SolidRaster.AntialiasedLineEnable = FALSE;
+    
+    hr = GlobalRenderer->Device->CreateRasterizerState(&SolidRaster,
+                                                       &GlobalRenderer->SolidRaster);
+    
+    if (FAILED(hr))
+    {
+        PlatformFatalError("Failed to create solid rasterizer: %d\n", hr);
+    }
+    
+    D3D11_RASTERIZER_DESC WireframeRaster = {};
+    WireframeRaster.FillMode              = D3D11_FILL_WIREFRAME;
+    WireframeRaster.CullMode              = D3D11_CULL_BACK;
+    WireframeRaster.FrontCounterClockwise = TRUE; // NOTE(Dustin): Default is FALSE
+    WireframeRaster.DepthBias             = 0;
+    WireframeRaster.DepthBiasClamp        = 0.0f;
+    WireframeRaster.SlopeScaledDepthBias  = 0.0f;
+    WireframeRaster.DepthClipEnable       = TRUE;
+    WireframeRaster.ScissorEnable         = TRUE;
+    WireframeRaster.MultisampleEnable     = FALSE;
+    WireframeRaster.AntialiasedLineEnable = FALSE;
+    
+    hr = GlobalRenderer->Device->CreateRasterizerState(&WireframeRaster,
+                                                       &GlobalRenderer->WireframeRaster);
+    
+    if (FAILED(hr))
+    {
+        PlatformFatalError("Failed to create solid rasterizer: %d\n", hr);
+    }
+    
 }
+
 
 void RendererShutdown(free_allocator *Allocator)
 {
@@ -223,8 +269,13 @@ void RendererEntry(frame_params *FrameParams)
     PlatformGetClientWindowDimensions(&Width, &Height);
     
     mat4 View  = GetViewMatrix(FrameParams->Camera);
+    
     mat4 Projection  = PerspectiveProjection(90.0f, (r32)Width/(r32)Height, 0.1f, 1000.0f);
+    //Projection[1][1] *= -1;
+    
     mat4 Model = mat4(1.0f); // terrain will generally have a Identity Matrix
+    
+    mat4 _Mvp = Mul(Projection, Mul(View, Model));
     
     DeviceContext->OMSetRenderTargets(1, &RenderTarget, GlobalRenderer->DepthStencilView);
     
@@ -240,10 +291,23 @@ void RendererEntry(frame_params *FrameParams)
     Viewport.MaxDepth = 1.0f;
     DeviceContext->RSSetViewports(1, &Viewport);
     
+    
+    window_rect PlatformRect = PlatformGetClientWindowRect();
+    
+    D3D11_RECT Scissor = {};
+    Scissor.left   = PlatformRect.Left;
+    Scissor.right  = PlatformRect.Right;
+    Scissor.top    = PlatformRect.Top;
+    Scissor.bottom = PlatformRect.Bottom;
+    
+    DeviceContext->RSSetScissorRects(1, &Scissor);
+    
     vec4 ClearColor = { 0.0f, 0.2f, 0.4f, 1.0f };
     DeviceContext->ClearRenderTargetView(RenderTarget, ClearColor.data);
     DeviceContext->ClearDepthStencilView(GlobalRenderer->DepthStencilView, 
                                          D3D11_CLEAR_DEPTH|D3D11_CLEAR_STENCIL, 1.0f, 0);
+    
+    DeviceContext->RSSetState(GlobalRenderer->WireframeRaster);
     
     for (u32 i = 0; i < FrameParams->RenderCommandsCount; ++i)
     {
@@ -315,6 +379,7 @@ void RendererEntry(frame_params *FrameParams)
                 Mvp.Projection = Projection;
                 Mvp.View = View;
                 Mvp.Model = Model;
+                //Mvp.Model = _Mvp;
                 
                 resource_id PipelineId = Terrain.Pipeline;
                 resource_id VertexId   = Terrain.VertexBuffer;
@@ -343,24 +408,22 @@ void RendererEntry(frame_params *FrameParams)
                 DeviceContext->VSSetShader(VertexShader, 0, 0);
                 DeviceContext->PSSetShader(PixelShader, 0, 0);
                 
-                // Bind Pixel Shader resources
-                //if (IsValidResource(FrameParams->Resources, DiffuseId))
-                //{
-                //resource_texture DiffuseTexture = FrameParams->Resources[DiffuseId.Index].Texture;
-                
-                //DeviceContext->PSSetShaderResources(0, 1, &DiffuseTexture.View);
-                //}
-                
                 UINT Stride = sizeof(terrain_vertex);
                 UINT Offset = 0;
                 DeviceContext->IASetVertexBuffers(0, 1, &VBuffer, &Stride, &Offset);
                 DeviceContext->IASetIndexBuffer(IBuffer, DXGI_FORMAT_R32_UINT, 0);
                 
+#if 1
                 // select which primtive type we are using
-                DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                
+                DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
                 // draw the vertex buffer to the back buffer
                 DeviceContext->DrawIndexed(Terrain.IndexCount, 0, 0 );
+#else
+                // select which primtive type we are using
+                DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                // draw the vertex buffer to the back buffer
+                DeviceContext->Draw(Terrain.VertexCount, 0);
+#endif
             }
         }
         else if (Cmd.Type == RenderCmd_DrawUi)

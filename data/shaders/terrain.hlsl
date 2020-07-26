@@ -48,8 +48,16 @@ VS_OUT main(VS_IN Input)
 	
 	VS_OUT Output;
 	
-	Output.Position = float4(Input.Position.x, 0.0f, Input.Position.y, 0.0f);
-	Output.Position = mul(Projection, mul(View, mul(Model, Output.Position)));
+#if 1
+	float4 TmpPos = float4(Input.Position.x, 0.0f, Input.Position.y, 1.0f);
+#else
+	float4 TmpPos = float4(Input.Position.x, Input.Position.y, 0.5f, 1.0f);
+#endif
+
+	Output.Position = mul(Projection, mul(View, mul(Model, TmpPos)));
+	//Output.Position = mul(TmpPos, mul(Model, mul(View, Projection)));
+	//Output.Position = mul(Model, TmpPos);
+	//Output.Position = TmpPos;
 	
 	Output.Tex0  = Input.Tex0;
 	Output.Color = float4(0.0f, 1.0f, 0.0f, 1.0f);

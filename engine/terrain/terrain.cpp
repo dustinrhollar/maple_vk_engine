@@ -45,10 +45,12 @@ void ResetTerrain(asset_terrain *Terrain, terrain_settings *Settings)
     {
         if (Terrain->Heightmap) pfree(&GlobalMemory, Terrain->Heightmap);
         if (Terrain->Colormap)  pfree(&GlobalMemory, Terrain->Colormap);
+        if (Terrain->Normalmap) pfree(&GlobalMemory, Terrain->Normalmap);
         
         // Destroy texture resources
-        if (!IsValidResource(Terrain->HeightmapTexture)) FreeResource(Terrain->HeightmapTexture);
-        if (!IsValidResource(Terrain->ColormapTexture))  FreeResource(Terrain->ColormapTexture);
+        if (!IsValidResource(Terrain->HeightmapTexture))  FreeResource(Terrain->HeightmapTexture);
+        if (!IsValidResource(Terrain->ColormapTexture))   FreeResource(Terrain->ColormapTexture);
+        if (!IsValidResource(Terrain->NormalmapTexture))  FreeResource(Terrain->NormalmapTexture);
         
         CreateHeightmap(Terrain, Settings);
     }
@@ -60,6 +62,7 @@ void DestroyTerrain(asset_terrain *Terrain)
     if (Terrain->Indices)   pfree(&GlobalMemory, Terrain->Indices);
     if (Terrain->Heightmap) pfree(&GlobalMemory, Terrain->Heightmap);
     if (Terrain->Colormap)  pfree(&GlobalMemory, Terrain->Colormap);
+    if (Terrain->Normalmap) pfree(&GlobalMemory, Terrain->Normalmap);
     
     Terrain->Width           = 0;
     Terrain->Height          = 0;
@@ -68,7 +71,10 @@ void DestroyTerrain(asset_terrain *Terrain)
     Terrain->VertexCount     = 0;
     Terrain->IndexCount      = 0;
     
-    // TODO(Dustin): Destroy resources
+    // Destroy texture resources
+    if (!IsValidResource(Terrain->HeightmapTexture))  FreeResource(Terrain->HeightmapTexture);
+    if (!IsValidResource(Terrain->ColormapTexture))   FreeResource(Terrain->ColormapTexture);
+    if (!IsValidResource(Terrain->NormalmapTexture))  FreeResource(Terrain->NormalmapTexture);
 }
 
 // SOURCE: https://stackoverflow.com/questions/5915753/generate-a-plane-with-triangle-strips
@@ -92,8 +98,8 @@ void GenerateTerrainGrid(asset_terrain *Terrain, u32 width, u32 height)
         for (u32 c = 0; c < width; ++c, idx += 6)
         {
             Terrain->Vertices[base + c].Position = {(r32)c, (r32)r};
-            Terrain->Vertices[base + c].Uvs      = {c / (r32)width, r / (r32)height};
             Terrain->Vertices[base + c].Normal   = {0.0f, 0.0f, 0.0f}; // TODO(Dustin)
+            Terrain->Vertices[base + c].Uvs      = {c / (r32)width, r / (r32)height};
         }
     }
     
@@ -127,6 +133,8 @@ void GenerateTerrainGrid(asset_terrain *Terrain, u32 width, u32 height)
 
 void CreateTerrainVertexBuffers(asset_terrain *Terrain)
 {
+#if 1
+    
     buffer_create_info VertexBufferInfo  = {};
     VertexBufferInfo.Size                = Terrain->VertexCount * sizeof(terrain_vertex);
     VertexBufferInfo.Usage               = BufferUsage_Default;
@@ -143,20 +151,67 @@ void CreateTerrainVertexBuffers(asset_terrain *Terrain)
     Terrain->VertexBuffer = CreateResource(GlobalResourceRegistry, Resource_Buffer, &VertexBufferInfo);
     
     buffer_create_info IndexBufferInfo  = {};
-    IndexBufferInfo.Size                = Terrain->VertexCount * sizeof(terrain_vertex);
+    IndexBufferInfo.Size                = Terrain->IndexCount * sizeof(u32);
     IndexBufferInfo.Usage               = BufferUsage_Default;
     IndexBufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
     IndexBufferInfo.BindFlags           = BufferBind_IndexBuffer;
     IndexBufferInfo.MiscFlags           = BufferMisc_None;
-    IndexBufferInfo.StructureByteStride = sizeof(terrain_vertex);
+    IndexBufferInfo.StructureByteStride = sizeof(u32);
     
     // Optional data
-    IndexBufferInfo.Data             = Terrain->Vertices;
+    IndexBufferInfo.Data             = Terrain->Indices;
     IndexBufferInfo.SysMemPitch      = IndexBufferInfo.Size;
     IndexBufferInfo.SysMemSlicePitch = 0;
     
     Terrain->IndexBuffer = CreateResource(GlobalResourceRegistry, Resource_Buffer, &IndexBufferInfo);
     
+#else
+    
+    terrain_vertex Temp[3] = {
+        { {  0.0f,  0.5f }, {0, 0, 0}, {0, 0} },
+        { {  0.5f, -0.5f }, {0, 0, 0}, {0, 0} },
+        { { -0.5f, -0.5f }, {0, 0, 0}, {0, 0} },
+    };
+    
+    u32 Indices[3] = { 0, 1, 2 };
+    
+    Terrain->VertexCount = 3;
+    Terrain->IndexCount = 3;
+    
+    buffer_create_info VertexBufferInfo  = {};
+    VertexBufferInfo.Size                = Terrain->VertexCount * sizeof(terrain_vertex);
+    VertexBufferInfo.Usage               = BufferUsage_Default;
+    VertexBufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    VertexBufferInfo.BindFlags           = BufferBind_VertexBuffer;
+    VertexBufferInfo.MiscFlags           = BufferMisc_None;
+    VertexBufferInfo.StructureByteStride = sizeof(terrain_vertex);
+    
+    // Optional data
+    //VertexBufferInfo.Data             = Terrain->Vertices;
+    VertexBufferInfo.Data             = Temp;
+    VertexBufferInfo.SysMemPitch      = VertexBufferInfo.Size;
+    VertexBufferInfo.SysMemSlicePitch = 0;
+    
+    Terrain->VertexBuffer = CreateResource(GlobalResourceRegistry, Resource_Buffer, &VertexBufferInfo);
+    
+    buffer_create_info IndexBufferInfo  = {};
+    IndexBufferInfo.Size                = Terrain->IndexCount * sizeof(u32);
+    IndexBufferInfo.Usage               = BufferUsage_Default;
+    IndexBufferInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    IndexBufferInfo.BindFlags           = BufferBind_IndexBuffer;
+    IndexBufferInfo.MiscFlags           = BufferMisc_None;
+    IndexBufferInfo.StructureByteStride = sizeof(u32);
+    
+    // Optional data
+    //IndexBufferInfo.Data             = Terrain->Indices;
+    IndexBufferInfo.Data             = Indices;
+    IndexBufferInfo.SysMemPitch      = IndexBufferInfo.Size;
+    IndexBufferInfo.SysMemSlicePitch = 0;
+    
+    Terrain->IndexBuffer = CreateResource(GlobalResourceRegistry, Resource_Buffer, &IndexBufferInfo);
+    
+    
+#endif
 }
 
 void CreateTerrainMaterial(asset_terrain *Terrain)
@@ -172,9 +227,9 @@ void CreateTerrainMaterial(asset_terrain *Terrain)
     
     pipeline_layout_create_info LayoutInfo[3] = {
         
-        { "POSITION", 0, InputFormat_R32G32_FLOAT,    0,  0, true, 0 }, // size = 8
-        { "NORMAL",   0, InputFormat_R32G32B32_FLOAT, 8,  0, true, 0 }, // size = 12
-        { "TEXCOORD", 0, InputFormat_R32G32_FLOAT,    20, 0, true, 0 }, // size = 20
+        { "POSITION", 0, InputFormat_R32G32_FLOAT,    0, 0,  true, 0 }, // size = 8
+        { "NORMAL",   0, InputFormat_R32G32B32_FLOAT, 0, 8,  true, 0 }, // size = 12
+        { "TEXCOORD", 0, InputFormat_R32G32_FLOAT,    0, 20, true, 0 }, // size = 8
     };
     
     PipelineInfo.PipelineLayout      = LayoutInfo;
@@ -307,4 +362,73 @@ file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Set
     TextureInfo.SysMemSlicePitch = 0;
     
     Terrain->ColormapTexture = CreateResource(GlobalResourceRegistry, Resource_Texture2D, &TextureInfo);
+    
+    //~ Create the normal map
+    
+    Terrain->Normalmap = palloc<vec3>(&GlobalMemory, Length);
+    u32 Idx = 0;
+    
+    for (u32 Row = 0; Row < Settings->HeightmapHeight; ++Row)
+    {
+        for (u32 Col = 0; Col < Settings->HeightmapWidth; ++Col)
+        {
+            vec3 Normal = { 0.0f, 1.0f, 0.0f };
+            
+            if (Row > 0 && Row < Settings->HeightmapHeight - 1 && Col > 0 && Col < Settings->HeightmapWidth - 1)
+            {
+                u32 i0 = (Row + 0) * Settings->HeightmapWidth + (Col + 0);
+                u32 i1 = (Row + 0) * Settings->HeightmapWidth + (Col - 1);
+                u32 i2 = (Row + 1) * Settings->HeightmapWidth + (Col + 0);
+                u32 i3 = (Row + 0) * Settings->HeightmapWidth + (Col + 1);
+                u32 i4 = (Row - 1) * Settings->HeightmapWidth + (Col + 0);
+                
+#if 0
+                vec3 p0 = { (r32)Col + 0, Terrain->Heightmap[i0], (r32)Row + 0 };
+                vec3 p1 = { (r32)Col - 1, Terrain->Heightmap[i1], (r32)Row + 0 };
+                vec3 p2 = { (r32)Col + 0, Terrain->Heightmap[i2], (r32)Row + 1 };
+                vec3 p3 = { (r32)Col + 1, Terrain->Heightmap[i3], (r32)Row + 0 };
+                vec3 p4 = { (r32)Col + 0, Terrain->Heightmap[i4], (r32)Row - 1 };
+#else
+                vec3 p0 = { (r32)Row + 0, Terrain->Heightmap[i0], (r32)Col + 0 };
+                vec3 p1 = { (r32)Row - 1, Terrain->Heightmap[i1], (r32)Col + 0 };
+                vec3 p2 = { (r32)Row + 0, Terrain->Heightmap[i2], (r32)Col + 1 };
+                vec3 p3 = { (r32)Row + 1, Terrain->Heightmap[i3], (r32)Col + 0 };
+                vec3 p4 = { (r32)Row + 0, Terrain->Heightmap[i4], (r32)Col - 1 };
+#endif
+                
+                vec3 v1 = norm(p1 - p0);
+                vec3 v2 = norm(p2 - p0);
+                vec3 v3 = norm(p3 - p0);
+                vec3 v4 = norm(p4 - p0);
+                
+                vec3 v12 = norm(cross(v1, v2));
+                vec3 v23 = norm(cross(v2, v3));
+                vec3 v34 = norm(cross(v3, v4));
+                vec3 v41 = norm(cross(v4, v1));
+                
+                Normal = norm(v12 + v23 + v34 + v41);
+            }
+            
+            Terrain->Normalmap[Idx++] = Normal;
+        }
+    }
+    
+    TextureInfo = {};
+    TextureInfo.Width               = Settings->HeightmapWidth;
+    TextureInfo.Height              = Settings->HeightmapHeight;
+    TextureInfo.Stride              = 12; // 3 component, 32 bit
+    TextureInfo.Usage               = BufferUsage_Immutable;
+    TextureInfo.CpuAccessFlags      = BufferCpuAccess_None;
+    TextureInfo.BindFlags           = BufferBind_ShaderResource;
+    TextureInfo.MiscFlags           = BufferMisc_None;
+    TextureInfo.StructureByteStride = 0;
+    TextureInfo.Format              = InputFormat_R32G32B32_FLOAT;
+    
+    // Optional data
+    TextureInfo.Data             = Terrain->Normalmap;
+    TextureInfo.SysMemPitch      = Settings->HeightmapWidth * Settings->HeightmapHeight * TextureInfo.Stride;
+    TextureInfo.SysMemSlicePitch = 0;
+    
+    Terrain->NormalmapTexture = CreateResource(GlobalResourceRegistry, Resource_Texture2D, &TextureInfo);
+    
 }

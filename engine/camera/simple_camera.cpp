@@ -79,22 +79,22 @@ void UpdateCameraVectors(camera *Camera)
 CAMERA_INPUT_CALLBACK(PlayerCameraCallback)
 {
     camera *PlayerCamera = static_cast<camera*>(instance);
-    if (!PlayerCamera->IsActive) return;
+    //if (!PlayerCamera->IsActive) return;
     
     // HACK(Dustin): hardcoded time-step. need a better solution
-    r32 time = 0.016667;
+    r32 time = 0.016667 / 4;
     
     r32 delta_x = 0.0f;
     r32 delta_y = 0.0f;
     
     if (Movement == Camera_LookUp)
     {
-        delta_y -= time;
+        delta_y += time;
     }
     
     if (Movement == Camera_LookDown)
     {
-        delta_y += time;
+        delta_y -= time;
     }
     
     if (Movement == Camera_LookLeft)
