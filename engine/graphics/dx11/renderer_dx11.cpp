@@ -129,6 +129,9 @@ void RendererInit(free_allocator *Allocator, resource_registry *Registry,
         TerrainSettings.HeightmapHeight = 512;
         TerrainSettings.NumberOfOctaves = 8;
         TerrainSettings.Persistence     = 0.5f;
+        TerrainSettings.Scale           = 0.5f;
+        TerrainSettings.Lacunarity      = 1.0f;
+        
         TerrainSettings.Low             = 0.00f;
         TerrainSettings.High            = 1.0f;
         TerrainSettings.Exp             = 2.00f;

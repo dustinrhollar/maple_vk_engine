@@ -92,11 +92,22 @@ file_internal void TerrainUiTab(terrain_settings *Settings)
                 Settings->HeightmapUpdated     = true;
             }
             
-            if (ImGui::DragFloat("Persistence", &Settings->Persistence, 0.01f, 0.0f))
+            if (ImGui::DragFloat("Persistence", &Settings->Persistence, 0.01f, 0.0f, 1.0f))
             {
                 Settings->HeightmapUpdated     = true;
             }
             
+            if (ImGui::DragFloat("Lacunarity", &Settings->Lacunarity, 0.01f, 1.0f, 1000.f))
+            {
+                Settings->HeightmapUpdated     = true;
+            }
+            
+            if (ImGui::DragFloat("Scale", &Settings->Scale, 0.01f, 0.00001f, 10000000.f))
+            {
+                Settings->HeightmapUpdated     = true;
+            }
+            
+#if 0
             if (ImGui::DragFloat("Low", &Settings->Low, 0.01f, 0.0f))
             {
                 Settings->HeightmapUpdated     = true;
@@ -111,6 +122,7 @@ file_internal void TerrainUiTab(terrain_settings *Settings)
             {
                 Settings->HeightmapUpdated     = true;
             }
+#endif
         }
         
         if (ImGui::CollapsingHeader("Thermal Erosion Settings"))
@@ -305,7 +317,7 @@ file_internal void TerrainUiTab(terrain_settings *Settings)
             }
             
             // show the terrain normal
-            {
+            if (0) {
                 resource_texture NormalmapTexture = 
                     GlobalResourceRegistry->Resources[Terrain->NormalmapTexture.Index]->Texture;
                 

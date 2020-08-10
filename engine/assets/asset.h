@@ -173,6 +173,7 @@ struct asset_terrain
     resource_id     IndexBuffer;
     
     r32            *Heightmap;
+    vec3           *GreyscaleMap;
     resource_id     HeightmapTexture;
     
     vec3           *Colormap;

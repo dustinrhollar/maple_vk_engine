@@ -60,6 +60,7 @@
 
 // Terrain
 #include "terrain/open_simplex_noise.h"
+#include "terrain/perlin.h"
 #include "terrain/terrain_generator.h"
 #include "terrain/terrain.h"
 
@@ -76,6 +77,7 @@
 #include "assets/asset_loader.cpp"
 
 // terrain source
+#include "terrain/perlin.cpp"
 #include "terrain/terrain_generator.cpp"
 #include "terrain/terrain.cpp"
 

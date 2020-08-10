@@ -15,7 +15,12 @@ struct terrain_settings
     u32     HeightmapWidth;
     u32     HeightmapHeight;
     u32     NumberOfOctaves;
+    
     r32     Persistence;
+    r32     Lacunarity;
+    r32     Scale;
+    
+    // Removing?
     r32     Low;
     r32     High;
     r32     Exp;

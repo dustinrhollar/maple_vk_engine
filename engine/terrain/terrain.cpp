@@ -43,9 +43,10 @@ void ResetTerrain(asset_terrain *Terrain, terrain_settings *Settings)
     
     if (Settings->HeightmapUpdated)
     {
-        if (Terrain->Heightmap) pfree(&GlobalMemory, Terrain->Heightmap);
-        if (Terrain->Colormap)  pfree(&GlobalMemory, Terrain->Colormap);
-        if (Terrain->Normalmap) pfree(&GlobalMemory, Terrain->Normalmap);
+        if (Terrain->Heightmap)    pfree(&GlobalMemory, Terrain->Heightmap);
+        if (Terrain->GreyscaleMap) pfree(&GlobalMemory, Terrain->GreyscaleMap);
+        if (Terrain->Colormap)     pfree(&GlobalMemory, Terrain->Colormap);
+        if (Terrain->Normalmap)    pfree(&GlobalMemory, Terrain->Normalmap);
         
         // Destroy texture resources
         if (!IsValidResource(Terrain->HeightmapTexture))  FreeResource(Terrain->HeightmapTexture);
@@ -58,11 +59,12 @@ void ResetTerrain(asset_terrain *Terrain, terrain_settings *Settings)
 
 void DestroyTerrain(asset_terrain *Terrain)
 {
-    if (Terrain->Vertices)  pfree(&GlobalMemory, Terrain->Vertices);
-    if (Terrain->Indices)   pfree(&GlobalMemory, Terrain->Indices);
-    if (Terrain->Heightmap) pfree(&GlobalMemory, Terrain->Heightmap);
-    if (Terrain->Colormap)  pfree(&GlobalMemory, Terrain->Colormap);
-    if (Terrain->Normalmap) pfree(&GlobalMemory, Terrain->Normalmap);
+    if (Terrain->Vertices)     pfree(&GlobalMemory, Terrain->Vertices);
+    if (Terrain->Indices)      pfree(&GlobalMemory, Terrain->Indices);
+    if (Terrain->Heightmap)    pfree(&GlobalMemory, Terrain->Heightmap);
+    if (Terrain->GreyscaleMap) pfree(&GlobalMemory, Terrain->GreyscaleMap);
+    if (Terrain->Colormap)     pfree(&GlobalMemory, Terrain->Colormap);
+    if (Terrain->Normalmap)    pfree(&GlobalMemory, Terrain->Normalmap);
     
     Terrain->Width           = 0;
     Terrain->Height          = 0;
@@ -254,10 +256,14 @@ file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Set
     noise_sim.Height        = Settings->HeightmapWidth;
     noise_sim.NumOctaves    = Settings->NumberOfOctaves;
     noise_sim.Persistence   = Settings->Persistence;
+    noise_sim.Lacunarity    = Settings->Lacunarity;
+    noise_sim.Scale         = Settings->Scale;
+    
     noise_sim.Low           = Settings->Low;
     noise_sim.High          = Settings->High;
     noise_sim.Exp           = Settings->Exp;
     noise_sim.Dim           = noise_sim.TWODIMENSION;
+    
     r32 *heightmap = SimplexNoise::SimulateNoise( noise_sim );
     
     // run thermal, if active
@@ -310,23 +316,37 @@ file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Set
     Terrain->Heightmap       = heightmap;
     
     //~ Create the texture
-    texture2d_create_info TextureInfo = {};
-    TextureInfo.Width               = Settings->HeightmapWidth;
-    TextureInfo.Height              = Settings->HeightmapHeight;
-    TextureInfo.Stride              = 4; // 1 component, 32 bit
-    TextureInfo.Usage               = BufferUsage_Immutable;
-    TextureInfo.CpuAccessFlags      = BufferCpuAccess_None;
-    TextureInfo.BindFlags           = BufferBind_ShaderResource;
-    TextureInfo.MiscFlags           = BufferMisc_None;
-    TextureInfo.StructureByteStride = 0;
-    TextureInfo.Format              = InputFormat_R32_FLOAT;
     
-    // Optional data
-    TextureInfo.Data             = Terrain->Heightmap;
-    TextureInfo.SysMemPitch      = Settings->HeightmapWidth * Settings->HeightmapHeight * TextureInfo.Stride;
-    TextureInfo.SysMemSlicePitch = 0;
-    
-    Terrain->HeightmapTexture = CreateResource(GlobalResourceRegistry, Resource_Texture2D, &TextureInfo);
+    {
+        u32 Length = Settings->HeightmapWidth * Settings->HeightmapHeight;
+        vec3 *Greymap = palloc<vec3>(&GlobalMemory, Length);
+        
+        for (u32 i = 0; i < Length; ++i)
+        {
+            Greymap[i].x = Terrain->Heightmap[i];
+            Greymap[i].y = Terrain->Heightmap[i];
+            Greymap[i].z = Terrain->Heightmap[i];
+        }
+        
+        texture2d_create_info TextureInfo = {};
+        TextureInfo.Width               = Settings->HeightmapWidth;
+        TextureInfo.Height              = Settings->HeightmapHeight;
+        TextureInfo.Stride              = 12; // 3 component, 32 bit
+        TextureInfo.Usage               = BufferUsage_Immutable;
+        TextureInfo.CpuAccessFlags      = BufferCpuAccess_None;
+        TextureInfo.BindFlags           = BufferBind_ShaderResource;
+        TextureInfo.MiscFlags           = BufferMisc_None;
+        TextureInfo.StructureByteStride = 0;
+        TextureInfo.Format              = InputFormat_R32G32B32_FLOAT;
+        
+        // Optional data
+        TextureInfo.Data             = Greymap;
+        TextureInfo.SysMemPitch      = Settings->HeightmapWidth * Settings->HeightmapHeight * TextureInfo.Stride;
+        TextureInfo.SysMemSlicePitch = 0;
+        
+        Terrain->GreyscaleMap = Greymap;
+        Terrain->HeightmapTexture = CreateResource(GlobalResourceRegistry, Resource_Texture2D, &TextureInfo);
+    }
     
     //~ Create the colormap and its texture
     
@@ -345,7 +365,7 @@ file_internal void CreateHeightmap(asset_terrain *Terrain, terrain_settings *Set
     
     Terrain->Colormap = Colormap;
     
-    TextureInfo = {};
+    texture2d_create_info TextureInfo = {};
     TextureInfo.Width               = Settings->HeightmapWidth;
     TextureInfo.Height              = Settings->HeightmapHeight;
     TextureInfo.Stride              = 12; // 3 component, 32 bit

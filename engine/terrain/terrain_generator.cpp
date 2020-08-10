@@ -109,6 +109,21 @@ max( float x, float y )
     return ( x > y ) ? x : y;
 }
 
+inline r32 Lerp(r32 Min, r32 Max, r32 t)
+{
+    return (1.0f - t) * Min + Max * t;
+}
+
+inline r32 InvLerp(r32 Min, r32 Max, r32 v)
+{
+    r32 Result = 0.0f;
+    
+    Result = (v - Min) / (Max - Min);
+    Result = (Result < 0.f) ? Result = 0.f : (Result > 1.f) ? Result = 1.f : Result;
+    
+    return Result;
+}
+
 // Given an x, y, and z coordinated noise octaves are computed and added together to adapt a noise
 // map. If the passed struct has a dimension of TWODIMENSION, then the 2D noise function is called.
 // Othersise, call the 3D noise function.
@@ -138,58 +153,67 @@ static float Octave( SimplexNoise::NoiseOctaveSimulation& octaveInfo, float x, f
         
         maxAmp += amp;
         amp *= octaveInfo.Persistence;
-        freq *= 2.0f;
+        freq *= octaveInfo.Lacunarity;;
     }
-    //
+    
     // take the average value of the iterations
-    noiseCell /= maxAmp;
+    //noiseCell /= maxAmp;
     
     // normalize the result
-    noiseCell = noiseCell * ( octaveInfo.High - octaveInfo.Low) * 0.5f
-        + (octaveInfo.High + octaveInfo.Low) * 0.5f;
+    //noiseCell = noiseCell * ( octaveInfo.High - octaveInfo.Low) * 0.5f
+    //+ (octaveInfo.High + octaveInfo.Low) * 0.5f;
+    
+    //noiseCell = InvLerp(octaveInfo.Low, octaveInfo.High, noiseCell);
+    
     return noiseCell;
 }
 
 // Runs a noise simulation using the passed struct. The size of the returned float array
 // are the dimensions passed in the struct: width : height.
-float* SimplexNoise::SimulateNoise( NoiseOctaveSimulation& octaveInfo) {
+float* SimplexNoise::SimulateNoise( NoiseOctaveSimulation& OctaveInfo)
+{
+    r32 nx, ny, nz, noise;
+    r32 *noisemap = palloc<r32>(OctaveInfo.Allocator, OctaveInfo.Width * OctaveInfo.Height);
     
-    float nx, ny, nz, noise = 0.f;
+    r32 GlobalNoiseMin = pow(2, 31);
+    r32 GlobalNoiseMax = -pow(2, 31);
     
-    //auto *noisemap = new float[ octaveInfo.width * octaveInfo.height ]{ 0 };
-    r32 *noisemap = palloc<r32>(octaveInfo.Allocator, octaveInfo.Width * octaveInfo.Height);
-    for (int i = 0; i < octaveInfo.Width * octaveInfo.Height; ++i)
-        noisemap[i] = 0.0f;
+    r32 HalfWidth = OctaveInfo.Width / 2.0f;
+    r32 HalfHeight = OctaveInfo.Height / 2.0f;
     
-    for ( int i = 0; i < octaveInfo.Height; i++ ) {
-        for (int j = 0; j < octaveInfo.Width; j++) {
-            //
-            // Get the pixel coordinated from 0..1. Offset the value by -0.5
-            // (you get problems if you don't do this)
-            switch (octaveInfo.Dim) {
-                // TODO Implement nz (?)
-                case SimplexNoise::NoiseOctaveSimulation::TWODIMENSION:
-                {
-                    nx = (static_cast<float>(i) / (static_cast<float>(octaveInfo.Width) / 2)) - 0.5f;
-                    ny = (static_cast<float>(j) / (static_cast<float>(octaveInfo.Height) / 2)) - 0.5f;
-                    // Run octaves over the noise
-                    //noisemap[(i * octaveInfo.width) + j] = openSimplex.eval(nx, ny);
-                    noise = Octave( octaveInfo, nx, ny, 0 );
-                } break;
+    for (int row = 0; row < OctaveInfo.Height; row++)
+    {
+        for (int col = 0; col < OctaveInfo.Width; col++)
+        {
+            r32 SampleHeight = 0.0f;
+            r32 Frequency = 1.0f;
+            r32 Amplitude = 1.0f;
+            
+            for (u32 i = 0; i < OctaveInfo.NumOctaves; ++i)
+            {
+                r32 SampleX = ((r32)(col)) / (OctaveInfo.Scale) * Frequency;
+                r32 SampleZ = ((r32)(row)) / (OctaveInfo.Scale) * Frequency;
                 
-                case SimplexNoise::NoiseOctaveSimulation::THREEDIMENSION:
-                {
-                    nx = (static_cast<float>(i) / (static_cast<float>(octaveInfo.Width) / 2)) - 0.5f;
-                    nz = (static_cast<float>(j) / (static_cast<float>(octaveInfo.Height) / 2)) - 0.5f;
-                    // Run octaves over the noise
-                    noise = Octave(octaveInfo, nx, 0, nz);
-                } break;
+                r32 PerlinHeight = SimplexNoise::EvalSimplexNoise(SampleX, SampleZ);
                 
-                default: break;
+                SampleHeight += PerlinHeight * Amplitude;
+                Amplitude *= OctaveInfo.Persistence;
+                Frequency *= OctaveInfo.Lacunarity;
             }
             
-            noisemap[(i * octaveInfo.Width) + j] = pow( noise, octaveInfo.Exp );
-            //
+            if (SampleHeight < GlobalNoiseMin) GlobalNoiseMin = SampleHeight;
+            if (SampleHeight > GlobalNoiseMax) GlobalNoiseMax = SampleHeight;
+            
+            noisemap[(row * OctaveInfo.Width) + col] = SampleHeight;
+        }
+    }
+    
+    for ( int row = 0; row < OctaveInfo.Height; row++ ) 
+    {
+        for (int col = 0; col < OctaveInfo.Width; col++) 
+        {
+            float Height = noisemap[(row * OctaveInfo.Width) + col];
+            noisemap[(row * OctaveInfo.Width) + col] = InvLerp(GlobalNoiseMin, GlobalNoiseMax, Height);
         }
     }
     

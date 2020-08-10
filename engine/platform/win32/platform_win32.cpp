@@ -1338,6 +1338,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     // Initialize the open simplex perm arrays - needed for noise generation
     SimplexNoise::InitOpenSimplexNoise();
+    PerlinNoiseInit();
     
     //~ Initialize ImGui
     ImGuiContext *ctx = ImGui::CreateContext();

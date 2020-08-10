@@ -117,7 +117,11 @@ namespace SimplexNoise {
         
         // Octave Information
         i32 NumOctaves;     // Control the number of octaves used
-        r32 Persistence;  // Control the roughness of the output
+        r32 Persistence;    // Control the roughness of the output
+        r32 Lacunarity;     // Control the width of "gaps" on the map 
+        r32 Scale;          // Control the "zoom" for the noise
+        
+        // IGNORE?!
         r32 Low;          // Low output value
         r32 High;         // Height output value
         r32 Exp;          // Controls the intensity of black to white
