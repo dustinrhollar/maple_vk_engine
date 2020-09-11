@@ -3,33 +3,36 @@ setlocal EnableDelayedExpansion
 
 :: External library directories
 SET VK_COMPILER="C:\VulkanSDK\1.2.135.0\Bin"
-SET D3D_COMPILER="C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Lib\x64"
 
-:: Project directories
+:: Project directory
 SET HOST_DIR=%~dp0
 set HOST_DIR=%HOST_DIR:~0,-1%
-SET INC_DIR=
-SET EXT_DIR=%HOST_DIR%\ext
-SET ENGINE_DIR=%HOST_DIR%\platform
-SET SRC_DIR=%HOST_DIR%\example
-SET BUILD_DIR=%HOST_DIR%\build
 
-:: unity Build files
-SET UNITY_SRC=%HOST_DIR%\unity.cpp
+:: Flags for Platform
+SET MP_CFLAGS=-std=c99 -g -D_DEBUG -Wno-microsoft-include
+SET MP_INC=
+SET MP_LIB=-llibcpmtd.lib -luser32.lib -lGdi32.lib -lwinmm.lib
+SET MP_INPUT=%HOST_DIR%\platform\engine_unity.c
+SET MP_OUTPUT=maple.exe
+SET MP_DEFS=-DVK_NO_PROTOTYPES
 
-:: output
-SET ENGINE_EXE=%BUILD_DIR%\maple.exe
+:: Flags for Graphics
+SET VK_CFLAGS=/Zi /MTd /std:c++17 -nologo /EHsc /D_DEBUG
+SET VK_INC=
+SET VK_LIB=%LIB_PATH% libcpmtd.lib user32.lib Gdi32.lib winmm.lib
+SET VK_INPUT=%HOST_DIR%\graphics\graphics_unity.cpp
+SET VK_OUTPUT=/Femaple_vk.dll
+SET VK_EXPORTS=
+SET VK_DEFS=/DVK_USE_PLATFORM_WIN32_KHR /DVK_NO_PROTOTYPES /DGRAPHICS_DLL_EXPORT
 
-:: TODO(Dustin): Debug vs Release mode
-:: Linking and Compiling info
-SET CFLAGS=/Zi /std:c++17 /EHsc
-
-:: Format: /LIBPATH:library
-SET LIB_PATH=/LIBPATH:%D3D_COMPILER%
-SET EXT_LIB=
-SET GBL_LIB=%LIB_PATH% libcpmtd.lib user32.lib Gdi32.lib winmm.lib d3d11.lib d3dx11.lib
-
-SET INC=/I"C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include"
+:: Flags for the Game
+SET GM_CFLAGS=-std=c99 -g -D_DEBUG -Wno-microsoft-include
+SET GM_INC=
+SET GM_LIB=
+SET GM_INPUT=%HOST_DIR%\game\voxel_unity.c
+SET GM_OUTPUT=maple_voxel.dll
+SET GM_EXPORTS=
+SET GM_DEFS=-DVOXEL_DLL_EXPORT
 
 IF NOT EXIST build\data\terrain\ (
     1>NUL MKDIR build\data\terrain\
@@ -59,16 +62,26 @@ IF NOT EXIST build\data\textures\ (
 IF "%1" == "gm" (
 	:: /PDB:maple_game_%time%.pdb
     pushd build\
-        echo Building game...
-		cl /MT -nologo /Zi /EHsc /D_DEBUG /I%HOST_DIR%\engine %HOST_DIR%\example\example_unity.cpp /LD /Feexample.dll /link /EXPORT:GameStageEntry
-	popd
+		echo clang %GM_CFLAGS% %GM_DEFS% %GM_INC% %GM_INPUT% -shared -o%GM_OUTPUT% %GM_LIB%
+		clang %GM_CFLAGS% %GM_DEFS% %GM_INC% %GM_INPUT% -shared -o%GM_OUTPUT% %GM_LIB%
+		popd
+    EXIT /B %ERRORLEVEL%
+)
+
+IF "%1" == "vk" (
+    pushd build\
+		echo Building maple graphics...
+		echo cl /DVK_USE_PLATFORM_WIN32_KHR %VK_CFLAGS% %VK_INC% %VK_INPUT% /LD %VK_OUTPUT% /link %VK_LIB% %VK_EXPORTS%
+        cl %VK_DEFS% %VK_CFLAGS% %VK_INC% %VK_INPUT% /LD %VK_OUTPUT% /link %VK_LIB% %VK_EXPORTS%
+  	popd
     EXIT /B %ERRORLEVEL%
 )
 
 IF "%1" == "mp" (
     pushd build\
         echo Building maple engine...
-        cl /MT -nologo /Zi /EHsc /D_DEBUG %INC% %HOST_DIR%\engine\engine_unity.cpp /Femaple.exe /link %GBL_LIB%
-    popd
+        echo clang %MP_CFLAGS% %MP_INC% %MP_INPUT% -o%MP_OUTPUT% %MP_LIB%
+	    clang %MP_CFLAGS% %MP_DEFS% %MP_INC% %MP_INPUT% -o%MP_OUTPUT% %MP_LIB%
+	popd
     EXIT /B %ERRORLEVEL%
 )
