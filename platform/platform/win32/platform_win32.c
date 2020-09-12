@@ -7,12 +7,6 @@
 // Audio
 // And about a million other things...
 
-#define WINDOWS_LEAN_AND_MEAN
-#include <windows.h>
-
-#include <Tchar.h>
-#include <strsafe.h>
-
 #ifndef LOG_BUFFER_SIZE
 #define LOG_BUFFER_SIZE 512
 #endif
@@ -1455,14 +1449,25 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     GetClientRect(ClientWindow, &ClientWindowRect);
     ClientWindowRectOld = ClientWindowRect;
     
-    //~ Initialize the globals
+    //~ Initialize the globals3
     
     u32 RealWidth, RealHeight;
     PlatformGetClientWindowDimensions(&RealWidth, &RealHeight);
     
+    assetsys_mount_point_create_info MountInfos[] = {
+        { .Path = "data/shaders", .MountName = "shaders", true },
+    };
+    
     globals_create_info GlobalInfo = {0};
-    GlobalInfo.Memory.Size = _MB(400);
+    GlobalInfo.Memory.Size                  = _MB(400);
+    GlobalInfo.AssetSystem.ExecutablePath   = NULL;
+    GlobalInfo.AssetSystem.MountPoints      = MountInfos;
+    GlobalInfo.AssetSystem.MountPointsCount = sizeof(MountInfos)/sizeof(MountInfos[0]);
     globals_init(&GlobalInfo);
+    
+    file_print_directory_tree("root");
+    mprint("\n\n");
+    file_print_directory_tree("shaders");
     
     PlatformApi = (platform*)memory_alloc(Core->Memory, sizeof(platform));
     PlatformApi->Memory          = Core->Memory;
@@ -1474,12 +1479,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     PlatformApi->get_file_buffer = &PlatformGetFileBuffer;
     PlatformApi->get_file_size   = &PlatformGetFileSize;
     PlatformApi->mprint          = &mprint;
-    
-    //~ Initialize Asset System
-    
-    assetsys ExeAssetSystem = {0};
-    assetsys_init(&ExeAssetSystem, NULL);
-    assetsys_free(&ExeAssetSystem);
     
     //~ Load game code
     
@@ -1494,8 +1493,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         Graphics.initialize_graphics(&Info);
     }
     
-    world PolygonalWorld;
-    world_init(&PolygonalWorld);
+    //world PolygonalWorld;
+    //world_init(&PolygonalWorld);
     
     vec3 DefaultPosition = {0, 40, -10};
     
@@ -1550,9 +1549,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         }
         
         FrameParams.Input = GlobalPerFrameInput;
-        FrameParams.World = &PolygonalWorld;
-        
-        //GameCode.GameStageEntry(&FrameParams);
+        //FrameParams.World = &PolygonalWorld;
         
         FrameParams.GameStageEndTime     = PlatformGetWallClock();
         FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
@@ -1561,11 +1558,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         
         {
             // Issue some interesting frame commands :)
-            Game.voxel_entry(&FrameParams);
-            //world_draw(&PolygonalWorld);
+            //Game.voxel_entry(&FrameParams);
         }
         
-        Graphics.execute_command_list(PolygonalWorld.CommandList);
+        //Graphics.execute_command_list(PolygonalWorld.CommandList);
         
         end_frame_cmd EndFrame = {};
         Graphics.end_frame(&EndFrame);
@@ -1631,7 +1627,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     //MstringFree(&GameDllName);
     
     Graphics.wait_for_last_frame();
-    world_free(&PolygonalWorld);
+    //world_free(&PolygonalWorld);
     
     MapleShutdown();
     

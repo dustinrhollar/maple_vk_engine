@@ -13,10 +13,22 @@ void globals_init(globals_create_info *CreateInfo)
     
     Core = (globals*)memory_alloc(pMemory, sizeof(globals));
     Core->Memory = pMemory;
+    
+    Core->AssetSys = (assetsys*)memory_alloc(Core->Memory, sizeof(assetsys));
+    assetsys_init(Core->AssetSys, (char*)CreateInfo->AssetSystem.ExecutablePath);
+    
+    for (u32 i = 0; i < CreateInfo->AssetSystem.MountPointsCount; ++i)
+    {
+        assetsys_mount_point_create_info *MountInfo = CreateInfo->AssetSystem.MountPoints + i;
+        assetsys_mount(Core->AssetSys, MountInfo->Path, MountInfo->MountName, MountInfo->IsRelative);
+    }
 }
 
 void globals_free()
 {
+    assetsys_free(Core->AssetSys);
+    memory_release(Core->Memory, Core->AssetSys);
+    
     memory Memory = *Core->Memory;
     void *MemoryPtr = Memory.Start;;
     

@@ -23,7 +23,7 @@ typedef double r64;
 typedef uintptr_t uptr;
 typedef intptr_t iptr;
 
-typedef union
+typedef union u128
 {
     struct { i64 Upper, Lower; };
     i64 Bits[2];

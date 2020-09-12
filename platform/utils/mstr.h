@@ -48,7 +48,7 @@ mstr mstr_init(char *Cstr, u32 CstrLen)
         else
         {
             memcpy(Result.Stack, Cstr, Result.Len);
-            Result.Heap[Result.Len] = 0;
+            Result.Stack[Result.Len] = 0;
         }
     }
     

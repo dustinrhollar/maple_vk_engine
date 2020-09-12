@@ -43,8 +43,6 @@
 
 //~ Kinda anything else
 
-#include "platform/win32/asset_sys.h"
-
 #include "frame_params/frame_params.h"
 
 //~ Function pointers for Dlls and their globals
@@ -64,5 +62,4 @@
 
 #include "mm/memory.c"
 #include "world/polygonal_world.c"
-#include "platform/globals.c"
 #include "platform/platform_entry.c"
