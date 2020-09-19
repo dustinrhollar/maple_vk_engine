@@ -1455,7 +1455,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     PlatformGetClientWindowDimensions(&RealWidth, &RealHeight);
     
     assetsys_mount_point_create_info MountInfos[] = {
-        { .Path = "data/shaders", .MountName = "shaders", true },
+        { .Path = "data/shaders"             , .MountName = "shaders", .ParentMountName = "root" },
     };
     
     globals_create_info GlobalInfo = {0};
@@ -1468,6 +1468,12 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     file_print_directory_tree("root");
     mprint("\n\n");
     file_print_directory_tree("shaders");
+    
+    file_id Fid = file_open("simple_tri.vert", true, "shaders", FileMode_Read);
+    file_id NewFid = file_open("new_file_test.txt", true, "root", FileMode_Write);
+    
+    file_close(Fid);
+    file_close(NewFid);
     
     PlatformApi = (platform*)memory_alloc(Core->Memory, sizeof(platform));
     PlatformApi->Memory          = Core->Memory;
@@ -1493,8 +1499,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         Graphics.initialize_graphics(&Info);
     }
     
-    //world PolygonalWorld;
-    //world_init(&PolygonalWorld);
+    world PolygonalWorld;
+    world_init(&PolygonalWorld);
     
     vec3 DefaultPosition = {0, 40, -10};
     
@@ -1549,7 +1555,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         }
         
         FrameParams.Input = GlobalPerFrameInput;
-        //FrameParams.World = &PolygonalWorld;
+        FrameParams.World = &PolygonalWorld;
         
         FrameParams.GameStageEndTime     = PlatformGetWallClock();
         FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
@@ -1558,7 +1564,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         
         {
             // Issue some interesting frame commands :)
-            //Game.voxel_entry(&FrameParams);
+            Game.voxel_entry(&FrameParams);
         }
         
         //Graphics.execute_command_list(PolygonalWorld.CommandList);
@@ -1627,7 +1633,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     //MstringFree(&GameDllName);
     
     Graphics.wait_for_last_frame();
-    //world_free(&PolygonalWorld);
+    world_free(&PolygonalWorld);
     
     MapleShutdown();
     

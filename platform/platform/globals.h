@@ -8,9 +8,9 @@ typedef struct
 
 typedef struct
 {
-    const char *Path;       // path to the mount
-    const char *MountName;  // Desired name of the mount 
-    bool        IsRelative; // if the mount is relative to the .exe
+    const char *Path;            // path to the mount
+    const char *MountName;       // Desired name of the mount 
+    const char *ParentMountName; // If this mount is relative to another mount 
 } assetsys_mount_point_create_info;
 
 typedef struct 

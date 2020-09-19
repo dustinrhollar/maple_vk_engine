@@ -17,10 +17,17 @@ void globals_init(globals_create_info *CreateInfo)
     Core->AssetSys = (assetsys*)memory_alloc(Core->Memory, sizeof(assetsys));
     assetsys_init(Core->AssetSys, (char*)CreateInfo->AssetSystem.ExecutablePath);
     
+    mstr ExeDirectory = Win32GetExeFilepath();
+    assetsys_mount(Core->AssetSys, mstr_to_cstr(&ExeDirectory), "root");
+    mstr_free(&ExeDirectory);
+    
     for (u32 i = 0; i < CreateInfo->AssetSystem.MountPointsCount; ++i)
     {
         assetsys_mount_point_create_info *MountInfo = CreateInfo->AssetSystem.MountPoints + i;
-        assetsys_mount(Core->AssetSys, MountInfo->Path, MountInfo->MountName, MountInfo->IsRelative);
+        if (MountInfo->ParentMountName)
+            assetsys_mountr(Core->AssetSys, MountInfo->Path, MountInfo->MountName, MountInfo->ParentMountName);
+        else
+            assetsys_mount(Core->AssetSys, MountInfo->Path, MountInfo->MountName);
     }
 }
 

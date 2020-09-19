@@ -28,8 +28,17 @@ EXIT /B %ERRORLEVEL%
 
 :Debug
     pushd build\
-		devenv .\%EXE_NAME%
-    popd
+		dir
+		echo %HOST_DIR%\build\maple.rdgb
+		REM devenv .\%EXE_NAME%
+
+		IF EXIST %HOST_DIR%\build\maple.rdbg (
+			REM echo rdgb file exists!
+			1>NUL remedybg maple.rdbg
+		)
+
+    	IF NOT EXIST %HOST_DIR%\build\maple.rdbg 1>NUL remedybg .\%EXE_NAME%
+	popd
     EXIT /B 0
 
 :BuildExt

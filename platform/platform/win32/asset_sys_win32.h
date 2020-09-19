@@ -1,14 +1,5 @@
-/* date = September 9th 2020 9:03 pm */
-
 #ifndef PLATFORM_ASSET_SYS_H
 #define PLATFORM_ASSET_SYS_H
-
-#if 0
-typedef enum assetsys_type
-{
-    // define things like: scene, material, model, etc?
-} assetsys_type;
-#endif
 
 typedef enum assetsys_file_type
 {
@@ -65,57 +56,96 @@ typedef enum assetsys_error
 // assetsys_file_pool *Pool = AsseySys->FilePool + Fid.Major;
 // asset_file_t File = Pool->Handles + Fid.Minor;
 //
-typedef union file_id
+typedef union assetsys_file_id
 {
     struct { u8 Major, Minor; };
     u16 Mask;
-} file_id;
+} assetsys_file_id;
 
-#define file_id_invalid { .Major = 0, .Minor = 0 }
+#define assetsys_file_id_invalid (assetsys_file_id) { .Mask = 0 }
+#define file_id_invalid 4294967295
 
-typedef struct assetsys_file
+#define file_id_is_valid(id) id != file_id_invalid
+#define assetsys_valid_file_id(id) (id.Minor != 0) 
+
+/*
+
+Read Info
+- HANDLE
+- 4kb buffer
+- Current Offset into buffer
+
+Write
+- HANDLE                              
+- 4kb buffer                          void* -> Allocated App Memory or VirtualAlloc'd ?
+- Current Offset into buffer          u32
+- Current Offset into the file buffer u64
+
+
+Create an array of 4kb alllocations - set initalize 10 block 4kb
+// These are all Virtual Alloc'd
+
+VirtualAlloc()
+
+....
+
+VirtualFree()
+
+*/
+
+// 8kb -> needs to writes
+
+typedef enum file_mode
 {
-    file_id            Id; // backpointer to the file array
-    assetsys_file_type Type;
-    HANDLE             Handle;
-    
-    // A directory can have 0 or more files.
-    // ".", "..", and hidden files/directories are ignored
-    file_id           *ChildFiles;
-    u32                ChildFileCount;
-    
-    // File info
-    mstr Name;
-    u128 HashedName;
-    
-} assetsys_file;
+    FileMode_Read,
+    FileMode_Write,
+    FileMode_ReadWrite,
+    FileMode_Append,
+} file_mode;
 
-typedef struct assetsys_file* asset_file_t;
+typedef struct file_info
+{
+    file_mode        Mode;
+    HANDLE           Handle;
+    u64              Size;
+    
+    void            *Memory;
+    u32              MemoryOffset;
+    
+    u64              FileOffset;
+    
+    assetsys_file_id Fid;
+} file_info;
+typedef u32 file_id;
+
+typedef struct assetsys_file* assetsys_file_t;
 
 typedef struct assetsys_mount_point
 {
     assetsys_mount_type Type;
     u128                Name;
-    file_id             File; // backpointer to the zip/directory
+    
+    mstr                AbsolutePath;
+    assetsys_file_id    File; // backpointer to the zip/directory
 } assetsys_mount_point;
 
 #define MAX_ASSETSYS_POOL_COUNT      256
 #define MAX_ASSETSYS_POOL_FILE_COUNT 256
 typedef struct assetsys_file_pool
 {
-    assetsys_file *Handles;
-    u8             AllocatedFiles;
+    assetsys_file_t Handles;
+    u8              AllocatedFiles;
 } assetsys_file_pool;
 
 void assetsys_file_pool_init(assetsys_file_pool *FilePool);
 void assetsys_file_pool_free(assetsys_file_pool *FilePool);
 // If the pool is full (Pool == NULL), then File will remain NULL.
-void assetsys_file_pool_alloc(assetsys_file_pool *FilePool, asset_file_t *File);
+void assetsys_file_pool_alloc(assetsys_file_pool *FilePool, assetsys_file_t *File);
 // the reason why the release function takes a Fid and not the alloc function, is
 // because only the function that calls alloc should have the pointer. When the function
 // exits, that pointer should become stale. For example:
 //
-// file_id foo(assetsys_file_pool *FilePool) {
+// assetsys_file_id foo(assetsys_file_pool *FilePool) {
 //     asset_file_t File = NULL;
 //     assetsys_file_pool_alloc(FilePool, &File);
 //
@@ -125,10 +155,11 @@ void assetsys_file_pool_alloc(assetsys_file_pool *FilePool, asset_file_t *File);
 //     return File->Id;
 // }
 //
-// Since it is expected that the caller only has access to the file_id,
-// the release function should take the file_id rather than the file pointer.
-void assetsys_file_pool_release(assetsys_file_pool *FilePool, file_id Fid);
+// Since it is expected that the caller only has access to the assetsys_file_id,
+// the release function should take the assetsys_file_id rather than the file pointer.
+void assetsys_file_pool_release(assetsys_file_pool *FilePool, assetsys_file_id Fid);
 
+static const u32 MAX_OPEN_FILES = 128;
 typedef struct assetsys
 {
     mstr   RootStr;
@@ -140,9 +171,14 @@ typedef struct assetsys
     assetsys_mount_point *MountedFiles;
     
     // File pool for file allocations
-    u32                 FilePoolCount;
-    u32                 FilePoolCap;
-    assetsys_file_pool *FilePool;
+    u32                   FilePoolCount;
+    u32                   FilePoolCap;
+    assetsys_file_pool   *FilePool;
+    
+    // Track open files...
+    void*                 FileMemory[MAX_OPEN_FILES];
+    file_info             OpenFiles[MAX_OPEN_FILES];
+    u64                   OpenFilesMask[2];
     
 } assetsys;
 
@@ -153,14 +189,13 @@ void assetsys_init(assetsys *AssetSys, char *Root);
 void assetsys_free(assetsys *AssetSys);
 
 // Mount a file (file/directory/zip) from a name
-void assetsys_mount(assetsys *AssetSys, const char *FileName, const char *MountName, bool IsRelative);
-// Mount a file (file/directory/zip) from a file pointer
-// TODO(Dustin): Change to be from a file_id
-void assetsys_mountf(assetsys *AssetSys, file_t File);
+void assetsys_mount(assetsys *AssetSys, const char *FileName, const char *MountName);
+// Mount a file (file/directory/zip) relative to another mount 
+void assetsys_mountr(assetsys *AssetSys, const char *FileName, const char *MountName, const char *RelativeMountName);
 
-file_t assetsys_open(assetsys *AssetSys, const char *FileName, bool IsRelative);
-file_t assetsys_load(assetsys *AssetSys, const char *FileName, bool IsRelative);
-file_t assetsys_close(assetsys *AssetSys, file_t File);
+file_id assetsys_open(assetsys *AssetSys, const char *Filepath, bool IsRelative, const char *MountName, file_mode Mode);
+file_id assetsys_load(assetsys *AssetSys, const char *Filepath, bool IsRelative, const char *MountName);
+void assetsys_close(assetsys *AssetSys, file_id File);
 
 //~ File Api
 
@@ -177,5 +212,27 @@ void file_print_directory_tree(const char *MountName);
 // close
 // binary write
 // formatted write
+
+file_id file_open(const char *Filepath, bool IsRelative, const char *MountName, file_mode Mode);
+file_id file_load(const char *Filepath, bool IsRelative, const char *MountName);
+void file_close(file_id Fid);
+
+//~ Asset API
+
+// An asset is anything that can be loaded from a file
+// the asset type dictates where the asset is located on disc.
+// For example, a shader asset will be located in the data\shaders
+// directory.
+typedef enum asset_type
+{
+    Asset_Model,
+    Asset_Image,
+    Asset_Shader,
+    Asset_PipelineCache,
+    
+    Asset_Count,
+} asset_type;
+
+void load_asset(const char *Filename, asset_type Type);
 
 #endif //PLATFORM_ASSET_SYS_H
