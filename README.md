@@ -47,10 +47,6 @@ By default, the Application unity file will be the example project. To include o
 
 One of the primary goals of the engine is to keep the number of dependencies to a minimum. However, there are some aspects of development that can be sped up considerably when using a third party library. Here is a list of dependencies for the engine
 
-### ImGUI
-
-[ImGUI](https://github.com/ocornut/imgui) is a UI library that is used for engine UI. Currently, ImGUI is compiled with the engine and is not compiled as an external library.
-
 ### stb Headers
 
 Sean Barret's [collection](https://github.com/nothings/stb) of header only libraries are incredibly useful and compact. Maple uses `stb_image.h` to load images from disk.
