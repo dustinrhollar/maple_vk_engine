@@ -70,7 +70,7 @@ void renderer_init(renderer *Renderer)
     {
         if (depth_format == VK_FORMAT_UNDEFINED)
         {
-            mprinte("Failed to find supported format!\n");
+            Platform->mprinte("Failed to find supported format!\n");
             return;
         }
         
@@ -242,7 +242,7 @@ u32 renderer_begin_frame()
         VkExtent2D Extent = Core->VkCore.GetSwapChainExtent();
         
         u32 Width, Height;
-        PlatformGetClientWindowDimensions(&Width, &Height);
+        Platform->get_client_window_dimensions(&Width, &Height);
         
         VkRect2D Scissor = {};
         Scissor.offset   = {0, 0};
@@ -279,7 +279,7 @@ void renderer_end_frame()
         
     }
     else if (khr_result != VK_SUCCESS) {
-        mprinte("Something went wrong acquiring the swapchain image!\n");
+        Platform->mprinte("Something went wrong acquiring the swapchain image!\n");
     }
 #endif
     

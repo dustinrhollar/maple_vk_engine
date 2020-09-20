@@ -51,6 +51,6 @@ void mp_uniform_buffer_update(mp_uniform_buffer *Buffer, void *Data, u64 DataSiz
     }
     else
     {
-        mprinte("Attempting to allocate space in a uniform buffer, but there is not enough space! Requested size: %d, Remaining Size with offset: %d\n", DataSize, Buffer->Size - Offset);
+        Platform->mprinte("Attempting to allocate space in a uniform buffer, but there is not enough space! Requested size: %d, Remaining Size with offset: %d\n", DataSize, Buffer->Size - Offset);
     }
 }

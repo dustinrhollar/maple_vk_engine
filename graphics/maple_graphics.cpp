@@ -381,7 +381,7 @@ void mp_command_list_execute(command_list CommandList)
     }
     else
     {
-        mprinte("Attempting to execute a Command List without an active Command Buffer. Have you called \"begin_frame\"?\n");
+        Platform->mprinte("Attempting to execute a Command List without an active Command Buffer. Have you called \"begin_frame\"?\n");
     }
     
     CommandList->CommandCount = 0;
@@ -390,10 +390,12 @@ void mp_command_list_execute(command_list CommandList)
 
 INITIALIZE_GRAPHICS(initialize_graphics)
 {
+    Platform = CreateInfo->Platform;
+    
     u32 MemorySize = _1MB;
     
     // Initialize memory
-    void *PlatformMemory = PlatformRequestMemory(MemorySize);
+    void *PlatformMemory = Platform->request_memory(MemorySize);
     
     memory Memory = {0};
     memory_init(&Memory, MemorySize, PlatformMemory);
@@ -404,15 +406,13 @@ INITIALIZE_GRAPHICS(initialize_graphics)
     Core = (globals*)memory_alloc(pMemory, sizeof(globals));
     Core->Memory = pMemory;
     
-    PlatformSetClientWindow((platform_window*)CreateInfo->Window);
-    
     // Initialize Vulkan
-    mprint("Initializing Vulkan...\n");
+    Platform->mprint("Initializing Vulkan...\n");
     Core->VkCore = {};
     Core->VkCore.Init();
     
     // Initialize the Renderer
-    mprint("Initializing the Renderer...\n");
+    Platform->mprint("Initializing the Renderer...\n");
     Core->Renderer = palloc<renderer>();
     *Core->Renderer = {};
     renderer_init(Core->Renderer);
@@ -434,7 +434,7 @@ SHUTDOWN_GRAPHICS(shutdown_graphics)
     memory_release(&Memory, Core);
     Core = NULL;
     
-    PlatformReleaseMemory(MemoryPtr, 0);
+    Platform->release_memory(MemoryPtr, 0);
 }
 
 BEGIN_FRAME(begin_frame)
@@ -526,10 +526,15 @@ file_internal void LoadShader(char *ShaderFileName,
                               VkShaderModule &ShaderModule,
                               VkPipelineShaderStageCreateInfo &ShaderStageInfo)
 {
-    file_t ShaderFile = PlatformLoadFile(ShaderFileName);
+    void *ShaderBuffer = NULL;
+    u64 BufferSize;
     
-    ShaderModule = Core->VkCore.CreateShaderModule((u32*)(GetFileBuffer(ShaderFile)), 
-                                                   PlatformGetFileSize(ShaderFile));
+    BufferSize = Platform->file_get_fsize(ShaderFileName, "shaders");
+    ShaderBuffer = memory_alloc(Core->Memory, BufferSize);
+    
+    Platform->load_file(ShaderFileName, true, "shaders", ShaderBuffer, BufferSize);
+    
+    ShaderModule = Core->VkCore.CreateShaderModule((u32*)ShaderBuffer, BufferSize);
     
     ShaderStageInfo = {};
     ShaderStageInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -537,7 +542,7 @@ file_internal void LoadShader(char *ShaderFileName,
     ShaderStageInfo.module = ShaderModule;
     ShaderStageInfo.pName  = "main";
     
-    PlatformCloseFile(ShaderFile);
+    memory_release(Core->Memory, ShaderBuffer);
 }
 
 CREATE_PIPELINE(create_pipeline) 
@@ -859,7 +864,7 @@ CREATE_RENDER_COMPONENT(create_render_component)
         }
         else
         {
-            mprinte("Attempting to create index buffer with stride %ld, but this is invalid. Defaulting to 32bit index type.\n", RenderInfo->IndexStride);
+            Platform->mprinte("Attempting to create index buffer with stride %ld, but this is invalid. Defaulting to 32bit index type.\n", RenderInfo->IndexStride);
             Result->IndexType = VK_INDEX_TYPE_UINT32;
         }
         

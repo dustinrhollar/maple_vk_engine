@@ -66,7 +66,7 @@ file_internal i32 mp_dynamic_uniform_buffer_alloc(mp_dynamic_uniform_buffer *Buf
     }
     else
     {
-        mprinte("Attempting to allocate space in a dynamic uniform buffer, but there is not enough space! Requested size: %d, Aligned Size: %d, Remaining Size: %d\n", DataSize, AlignedSize, Buffer->Size - Buffer->Offset);
+        Platform->mprinte("Attempting to allocate space in a dynamic uniform buffer, but there is not enough space! Requested size: %d, Aligned Size: %d, Remaining Size: %d\n", DataSize, AlignedSize, Buffer->Size - Buffer->Offset);
     }
     
     return Result;

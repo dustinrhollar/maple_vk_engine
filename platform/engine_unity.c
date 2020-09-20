@@ -18,8 +18,6 @@
 #include "../graphics/vulkan/vulkan_core.h"
 #include "platform/globals.h"
 
-#include "platform/platform.h"
-
 //~ Memory Management
 
 #include "mm/memory.h"
@@ -40,6 +38,13 @@
 
 #define MAPLE_HASH_FUNCTION_IMPLEMENTATION
 #include "utils/hash_functions.h"
+
+//~ Platform Agnostic Apis
+// - Asset System (platform implementation: win32/assetsys_win32.c)
+// - Platform (platform implementation: win32/platform_win32.c)
+
+#include "platform/win32/assetsys.h"
+#include "platform/platform.h"
 
 //~ Kinda anything else
 

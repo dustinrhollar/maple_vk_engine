@@ -185,31 +185,47 @@ window_rect PlatformGetClientWindowRect();
 
 //~ Function pointers for the platform api
 
-typedef file_t (*platform_open_file)(char *Filename, bool Append);
-typedef file_t (*platform_load_file)(char *Filename, bool Append);
-typedef void (*platform_close_file)(file_t File);
-typedef void (*platform_flush_file)(file_t File);
-typedef void (*platform_write_file)(file_t File, char *Fmt, ...);
-typedef void* (*platform_get_file_buffer)(file_t File);
-typedef u64 (*platform_get_file_size)(file_t File);
+// System Memory allocations
+typedef void* (*pfn_platform_request_memory)(u64 Size);
+typedef void (*pfn_platform_release_memory)(void *Ptr, u64 Size);
 
-typedef void (*platform_mprint)(char *Fmt, ...);
+// get window information
+typedef void (*pfn_get_client_window_dimensions)(u32 *Width, u32 *Height);
+typedef void (*pfn_get_client_window)(struct platform_window **Window);
+
+// File Api
+typedef file_id (*pfn_platform_open_file)(const char *Filepath, bool IsRelative, const char *MountName, file_mode Mode);
+typedef file_error (*pfn_platform_load_file)(const char *Filepath, bool IsRelative, const char *MountName,
+                                             void *Buffer, u64 Size);
+typedef void (*pfn_platform_close_file)(file_id Fid);
+typedef u64 (*pfn_platform_get_file_size)(file_id Fid);
+typedef u64 (*pfn_platform_get_file_fsize)(const char *Filename, const char *MounName);
+
+// Logging
+typedef void (*pfn_platform_mprint)(char *Fmt, ...);
 
 typedef struct platform
 {
-    struct memory *Memory;
+    struct memory                   *Memory;
+    
+    // System Memory Allocation
+    pfn_platform_request_memory      request_memory;
+    pfn_platform_release_memory      release_memory;
+    
+    // Acquire window information
+    pfn_get_client_window_dimensions get_client_window_dimensions;
+    pfn_get_client_window            get_client_window;
     
     // Logging
-    platform_mprint          mprint;
+    pfn_platform_mprint              mprint;
+    pfn_platform_mprint              mprinte;
     
     // File Api
-    platform_open_file       open_file;
-    platform_load_file       load_file;
-    platform_close_file      close_file;
-    platform_flush_file      flush_file;
-    platform_write_file      write_file;
-    platform_get_file_buffer get_file_buffer;
-    platform_get_file_size   get_file_size;
+    pfn_platform_open_file           open_file;
+    pfn_platform_load_file           load_file;
+    pfn_platform_close_file          close_file;
+    pfn_platform_get_file_size       file_get_size;
+    pfn_platform_get_file_fsize      file_get_fsize;
     
 } platform;
 

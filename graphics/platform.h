@@ -1,6 +1,14 @@
 #ifndef GRAPHICS_PLATFORM_H
 #define GRAPHICS_PLATFORM_H
 
+//~ Vulkan Setup functions
+
+const char* PlatformGetRequiredInstanceExtensions(bool validation_layers);
+void PlatformVulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance);
+
+#if 0
+
+//~ Old
 // opaque wrapper around the Window handle. 
 // can be coerced to the handle if the platform is known.
 // for example, platform_window on win32 is:
@@ -56,16 +64,6 @@ void PlatformPrintError(console_color text_color, console_color background_color
 // opens an error window with the formatted message and then exits the application
 void PlatformFatalError(char *Fmt, ...);
 
-//~ Vulkan Setup functions
-
-void PlatformGetClientWindowDimensions(u32 *Width, u32 *Height);
-window_rect PlatformGetClientWindowRect();
-
-const char* PlatformGetRequiredInstanceExtensions(bool validation_layers);
-void PlatformVulkanCreateSurface(VkSurfaceKHR *surface, VkInstance vulkan_instance);
-
-void PlatformSetClientWindow(platform_window *Window);
-
 //~ File I/O
 
 file_t PlatformLoadFile(char *Filename, bool Append = false);
@@ -85,5 +83,7 @@ u32 PlatformCtz(u32 Value);
 // For 64 bit values
 u32 PlatformClzl(u64 Value);
 u32 PlatformCtzl(u64 Value);
+
+#endif
 
 #endif //GRAPHICS_PLATFORM_H

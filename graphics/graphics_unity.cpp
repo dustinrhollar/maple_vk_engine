@@ -23,7 +23,12 @@
 
 #include "../platform/utils/maple_types.h"
 #include "vulkan/vulkan.h"
+
+#include "../platform/platform/win32/assetsys.h"
+#include "../platform/platform/platform.h"
 #include "platform.h"
+
+platform *Platform;
 
 //~ Vulkan Library
 
@@ -67,7 +72,6 @@ extern globals *Core;
 #include "../platform/utils/stb_ds.h"
 #include "../platform/utils/mstr.h"
 #include "../platform/utils/vector_math.h" 
-
 
 #include "dynamic_uniform_buffer.h"
 #include "uniform_buffer.h"

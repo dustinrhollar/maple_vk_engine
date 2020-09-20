@@ -77,11 +77,10 @@ extern "C"
     
     typedef struct graphics_create_info 
     {
-        window_t Window;
-        
-        u32 WindowWidth;
-        u32 WindowHeight;
-        
+        window_t  Window;
+        u32       WindowWidth;
+        u32       WindowHeight;
+        platform *Platform;
     } graphics_create_info;
     
     typedef enum render_mode
@@ -275,9 +274,9 @@ extern "C"
     typedef void (GRAPHICS_CALL *PFN_free_pipeline)(pipeline *Pipeline);
     
 #define CREATE_RENDER_COMPONENT(fn) EXTERN_GRAPHICS_API void fn(render_component_create_info *RenderInfo, \
-render_component *RenderComponent)
-    typedef void (GRAPHICS_CALL *PFN_create_render_component)(render_component_create_info *RenderInfo,
-                                                              render_component *RenderComponent);
+    render_component *RenderComponent)
+        typedef void (GRAPHICS_CALL *PFN_create_render_component)(render_component_create_info *RenderInfo,
+                                                                  render_component *RenderComponent);
     
 #define FREE_RENDER_COMPONENT(fn) EXTERN_GRAPHICS_API void fn(render_component *RenderComponent)
     typedef void (GRAPHICS_CALL *PFN_free_render_component)(render_component *RenderComponent);

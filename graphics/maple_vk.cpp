@@ -37,7 +37,7 @@ namespace vk
         
         if (VulkanLibrary == nullptr)
         {
-            mprinte("Unable to load Vulkan library!\n");
+            Platform->mprinte("Unable to load Vulkan library!\n");
             return false;
         }
         
@@ -55,8 +55,8 @@ namespace vk
         
 #define VK_EXPORTED_FUNCTION(fun)                                    \
         if (!(fun = (PFN_##fun)LoadFunction(VulkanLibrary, #fun))) {     \
-                     mprinte("Could not load exported function: %s\n", #fun);      \
-                             return false;                                                \
+                     Platform->mprinte("Could not load exported function: %s\n", #fun);      \
+                                       return false;                                                \
     }
     
 #include "list_of_functions.inl"
@@ -74,8 +74,8 @@ file_internal bool LoadExportedEntryPoints()
     
 #define VK_EXPORTED_FUNCTION(fun)                                       \
     if (!(fun = (PFN_##fun)LoadFunction(VulkanLibrary, #fun))) {     \
-                 mprinte("Could not load exported function: %s\n", #fun);         \
-                         return false;                                                   \
+                 Platform->mprinte("Could not load exported function: %s\n", #fun);         \
+                                   return false;                                                   \
 }
 
 #include "list_of_functions.inl"
@@ -88,8 +88,8 @@ file_internal bool LoadGlobalLevelEntryPoints()
 {
 #define VK_GLOBAL_LEVEL_FUNCTION(fun) \
     if (!(fun = (PFN_##fun)vkGetInstanceProcAddr(nullptr, #fun))) {     \
-                 mprinte("Could not load global level function: %s!\n", #fun);    \
-                         return false;                                                   \
+                 Platform->mprinte("Could not load global level function: %s!\n", #fun);    \
+                                   return false;                                                   \
 }
 
 #include "list_of_functions.inl"
@@ -103,16 +103,16 @@ file_internal bool LoadInstanceLevelEntryPoints(VkInstance instance,
 {
 #define VK_INSTANCE_LEVEL_FUNCTION(fun)                                \
     if (!(fun = (PFN_##fun)vkGetInstanceProcAddr(instance, #fun))) {   \
-                 mprinte("Could not load instance level function: %s!\n", #fun); \
-                         return false;                                                  \
+                 Platform->mprinte("Could not load instance level function: %s!\n", #fun); \
+                                   return false;                                                  \
 }
 
 #define VK_INSTANCE_LEVEL_FUNCTION_FROM_EXTENSION(fun, extension)                \
 for (u32 i = 0; i < ExtensionCount; ++i) {                               \
     if (std::string(enabled_extensions[i]) == std::string(extension)) {  \
         if (!(fun = (PFN_##fun)vkGetInstanceProcAddr(instance, #fun))) { \
-                     mprinte("Could not load instance level function from extension: %s!\n", #fun); \
-                             return false;                                           \
+                     Platform->mprinte("Could not load instance level function from extension: %s!\n", #fun); \
+                                       return false;                                           \
     }                                                           \
 }                                                               \
 }
@@ -128,16 +128,16 @@ file_internal bool LoadDeviceLevelEntryPoints(VkDevice logical_device,
 {
 #define VK_DEVICE_LEVEL_FUNCTION(fun)                                    \
     if (!(fun = (PFN_##fun)vkGetDeviceProcAddr(logical_device, #fun))) { \
-                 mprinte("Could not load device level function: %s!\n", #fun);    \
-                         return false;                                                   \
+                 Platform->mprinte("Could not load device level function: %s!\n", #fun);    \
+                                   return false;                                                   \
 }
 
 #define VK_DEVICE_LEVEL_FUNCTION_FROM_EXTENSION(fun, extension)         \
 for (u32 i = 0; i < ExtensionCount; ++i) {               \
     if (std::string(enabled_extensions[i]) == std::string(extension)) { \
         if (!(fun = (PFN_##fun)vkGetDeviceProcAddr(logical_device, #fun))) { \
-                     mprinte("Could not load device level function from extension: %s!\n", #fun); \
-                             return false;                                           \
+                     Platform->mprinte("Could not load device level function from extension: %s!\n", #fun); \
+                                       return false;                                           \
     }                                                           \
 }                                                               \
 }
@@ -187,7 +187,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
 {
     
     //PlatformPrintMessage(ConsoleColor_Yellow, ConsoleColor_DarkGrey, "%s\n", pCallbackData->pMessage);
-    mprinte("%s\n", pCallbackData->pMessage);
+    Platform->mprinte("%s\n", pCallbackData->pMessage);
     
     return VK_FALSE;
 }
@@ -431,7 +431,7 @@ bool vulkan_core::CreateInstance()
 {
     if (GlobalEnabledValidationLayers && !vk::CheckValidationLayerSupport())
     {
-        mprinte("Validation layers requested, but not available!");
+        Platform->mprinte("Validation layers requested, but not available!");
         return false;
     }
     
@@ -636,7 +636,7 @@ void vulkan_core::PickPhysicalDevice(VkInstance instance)
     
     if (deviceCount == 0)
     {
-        mprinte("Failed to find a GPU with Vulkan support!\n");
+        Platform->mprinte("Failed to find a GPU with Vulkan support!\n");
         return;
     }
     
@@ -660,7 +660,7 @@ void vulkan_core::PickPhysicalDevice(VkInstance instance)
     
     if (PhysicalDevice == VK_NULL_HANDLE)
     {
-        mprinte("Failed to find a suitable GPU!\n");
+        Platform->mprinte("Failed to find a suitable GPU!\n");
         return;
     }
 }
@@ -805,7 +805,7 @@ void vulkan_core::CreateSwapchain(swapchain_parameters &swapchain_params)
         else
         {
             u32 width, height;
-            PlatformGetClientWindowDimensions(&width, &height);
+            Platform->get_client_window_dimensions(&width, &height);
             VkExtent2D actualExtent = {(u32)width, (u32)height};
             
 #define MAX(a, b) ((a) > (b)) ? a : b
@@ -1010,7 +1010,7 @@ void vulkan_core::EndFrame(u32             current_image_index,
                                         SyncObjects.InFlightFences[SyncObjects.CurrentFrame]);
     if (result != VK_SUCCESS)
     {
-        mprinte("Failed to submit draw command buffer!");
+        Platform->mprinte("Failed to submit draw command buffer!");
         PlatformFatalError("Error while submitting the queue at end frame!\n");
     }
     
@@ -1324,7 +1324,7 @@ void vulkan_core::TransitionImageLayout(VkCommandPool command_pool,
     else
     {
         // NOTE(Dustin): Silent failure
-        mprinte("Unsupported layout transition!");
+        Platform->mprinte("Unsupported layout transition!");
     }
     
     vk::vkCmdPipelineBarrier(commandBuffer,

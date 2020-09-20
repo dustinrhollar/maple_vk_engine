@@ -1,10 +1,29 @@
 
+#define MAX_ASSETSYS_POOL_COUNT      256
+#define MAX_ASSETSYS_POOL_FILE_COUNT 256
+#define MAX_OPEN_FILES               128
+
+typedef struct file_info
+{
+    file_mode        Mode;
+    HANDLE           Handle;
+    u64              Size;
+    
+    void           **Memory;
+    u32              MemoryOffset;
+    
+    u64              FileOffset;
+    
+    assetsys_file_id Fid;
+} file_info;
+
 typedef struct assetsys_file
 {
     assetsys_file_id   Id; // backpointer to the file array
     assetsys_file_type Type;
     
-    file_id            FileInfo;
+    BY_HANDLE_FILE_INFORMATION Win32FileInfo;
+    file_id                    FileInfo;
     
     // A directory can have 0 or more files.
     // ".", "..", and hidden files/directories are ignored
@@ -16,6 +35,82 @@ typedef struct assetsys_file
     u128 HashedName;
     
 } assetsys_file;
+
+typedef struct assetsys_mount_point
+{
+    assetsys_mount_type Type;
+    u128                Name;
+    
+    mstr                AbsolutePath;
+    assetsys_file_id    File; // backpointer to the zip/directory
+} assetsys_mount_point;
+
+typedef struct assetsys_file_pool
+{
+    assetsys_file_t Handles;
+    u8              AllocatedFiles;
+} assetsys_file_pool;
+
+typedef struct assetsys
+{
+    mstr   RootStr;
+    u128   Root;
+    
+    // By default, the root is a mounted file at idx = 0
+    u32                   MountedFilesCount;
+    u32                   MountedFilesCap;
+    assetsys_mount_point *MountedFiles;
+    
+    // File pool for file allocations
+    u32                   FilePoolCount;
+    u32                   FilePoolCap;
+    assetsys_file_pool   *FilePool;
+    
+    // Track open files...
+    u64                   PageSize;
+    void*                 FileMemory[MAX_OPEN_FILES];
+    file_info             OpenFiles[MAX_OPEN_FILES];
+    u64                   OpenFilesMask[2];
+    
+} assetsys;
+
+//~ Asset File Pool Api
+
+void assetsys_file_pool_init(assetsys_file_pool *FilePool);
+void assetsys_file_pool_free(assetsys_file_pool *FilePool);
+// If the pool is full (Pool == NULL), then File will remain NULL.
+void assetsys_file_pool_alloc(assetsys_file_pool *FilePool, assetsys_file_t *File);
+// the reason why the release function takes a Fid and not the alloc function, is
+// because only the function that calls alloc should have the pointer. When the function
+// exits, that pointer should become stale. For example:
+//
+// assetsys_file_id foo(assetsys_file_pool *FilePool) {
+//     asset_file_t File = NULL;
+//     assetsys_file_pool_alloc(FilePool, &File);
+//
+//     // do some stuff with File
+//
+//     // if someone needs the file, return the file id, not the file pointer!
+//     return File->Id;
+// }
+//
+// Since it is expected that the caller only has access to the assetsys_file_id,
+// the release function should take the assetsys_file_id rather than the file pointer.
+void assetsys_file_pool_release(assetsys_file_pool *FilePool, assetsys_file_id Fid);
+
+//~ AssetSys Api
+
+// Mount a file (file/directory/zip) from a name
+void assetsys_mount(assetsys *AssetSys, const char *FileName, const char *MountName);
+// Mount a file (file/directory/zip) relative to another mount 
+void assetsys_mountr(assetsys *AssetSys, const char *FileName, const char *MountName, const char *RelativeMountName);
+
+file_id assetsys_open(assetsys *AssetSys, const char *Filepath, bool IsRelative, const char *MountName, file_mode Mode);
+file_error assetsys_load(assetsys *AssetSys, const char *Filepath, bool IsRelative, const char *MountName,
+                         void *Buffer, u64 Size);
+file_error assetsys_read(assetsys *AssetSys, file_id Fid, u64 ReadSize, void *Buffer, u64 BufferSize);
+void assetsys_close(assetsys *AssetSys, file_id File);
+
 
 #define MOUNT_ROOT_IDX 0
 // Minor Idx = 0 is the invalid case, so always subtract by one when indexing
@@ -189,8 +284,11 @@ void assetsys_init(assetsys *AssetSys, char *Root)
         AssetSys->OpenFiles[i].Fid          = assetsys_file_id_invalid;
     }
     
-    // Mount the root directory, will initialize the file tree for the root directory
-    //assetsys_mount(AssetSys, mstr_to_cstr(&AssetSys->RootStr), "root", false);
+    SYSTEM_INFO sSysInfo;
+    DWORD       dwPageSize;
+    
+    GetSystemInfo(&sSysInfo);
+    AssetSys->PageSize = sSysInfo.dwPageSize;
 }
 
 void assetsys_free(assetsys *AssetSys)
@@ -581,6 +679,7 @@ file_internal assetsys_file_id assetsys_file_init(assetsys *AssetSys, const char
                 assetsys_file *File = assetsys_get_file(AssetSys, Result);
                 File->Name = mstr_init((char*)Filename, FilenameLen);
                 File->HashedName = hash_bytes((void*)Filename, FilenameLen);
+                File->Win32FileInfo = FileInfo;
                 
                 assetsys_file_init_recurse_directory(AssetSys, Result, Path);
             }
@@ -591,6 +690,7 @@ file_internal assetsys_file_id assetsys_file_init(assetsys *AssetSys, const char
                 assetsys_file *File = assetsys_get_file(AssetSys, Result);
                 File->Name = mstr_init((char*)Filename, FilenameLen);
                 File->HashedName = hash_bytes((void*)Filename, FilenameLen);
+                File->Win32FileInfo = FileInfo;
             }
         }
     }
@@ -611,6 +711,7 @@ file_internal assetsys_file_id assetsys_file_init(assetsys *AssetSys, const char
                 assetsys_file *File = assetsys_get_file(AssetSys, Result);
                 File->Name = mstr_init((char*)Filename, FilenameLen);
                 File->HashedName = hash_bytes((void*)Filename, FilenameLen);
+                File->Win32FileInfo = FileInfo;
                 
                 assetsys_file_init_recurse_directory(AssetSys, Result, Filename);
             }
@@ -621,6 +722,7 @@ file_internal assetsys_file_id assetsys_file_init(assetsys *AssetSys, const char
                 assetsys_file *File = assetsys_get_file(AssetSys, Result);
                 File->Name = mstr_init((char*)Filename, FilenameLen);
                 File->HashedName = hash_bytes((void*)Filename, FilenameLen);
+                File->Win32FileInfo = FileInfo;
             }
         }
     }
@@ -704,6 +806,7 @@ file_internal void assetsys_build_comparator_list(comparator_list *List, const c
     u32 Count = 1;
     char *pch;
     
+    
     // how many directories are there?
     pch = strchr(Filepath, '/');
     
@@ -728,7 +831,6 @@ file_internal void assetsys_build_comparator_list(comparator_list *List, const c
         Offset += pch - Offset + 1;
         pch = strchr(pch + 1, '/');
     }
-    
     List->Comparators[List->Idx] = hash_bytes(Offset, strlen(Filepath) - (Offset - Filepath));
     List->Idx = 0;
 }
@@ -925,13 +1027,50 @@ file_id assetsys_open(assetsys *AssetSys, const char *Filepath, bool IsRelative,
     return Result;
 }
 
-file_id assetsys_load(assetsys *AssetSys, const char *Filepath, bool IsRelative, const char *MountName)
+file_error assetsys_load(assetsys *AssetSys, const char *Filepath, bool IsRelative, const char *MountName,
+                         void *Buffer, u64 BufferSize)
 {
-    file_id Result = assetsys_open(Core->AssetSys, Filepath, IsRelative, MountName, FileMode_Read);
+    file_error Result = File_Success;
     
     // TODO(Dustin): Load the file (or part of it) into memory
+    file_id Fid = assetsys_open(AssetSys, Filepath, IsRelative, MountName, FileMode_Read);
     
+    file_info *File = AssetSys->OpenFiles + Fid;
+    assetsys_read(AssetSys, Fid, File->Size, Buffer, BufferSize);
     
+    assetsys_close(AssetSys, Fid);
+    
+    return Result;
+}
+
+file_error assetsys_read(assetsys *AssetSys, file_id Fid, u64 ReadSize, void *Buffer, u64 BufferSize)
+{
+    file_error Result = File_Success;
+    file_info *File = AssetSys->OpenFiles + Fid;
+    
+    if (ReadSize > BufferSize) Result = File_BufferTooSmall;
+    else
+    {
+        DWORD BytesRead;
+        BOOL err = ReadFile(File->Handle,
+                            Buffer,
+                            ReadSize,
+                            &BytesRead,
+                            NULL);
+        
+        if (err == 0)
+        {
+            mprinte("Unable to read file!\n");
+            Result = File_UnableToRead;
+        }
+    }
+    
+    return Result;
+}
+
+file_error assetsys_fread(assetsys *AssetSys, file_id Fid, const char *Fmt, va_list Args, void *Buffer, u64 BufferSize)
+{
+    file_error Result = File_Success;
     return Result;
 }
 
@@ -948,7 +1087,6 @@ void assetsys_close(assetsys *AssetSys, file_id Fid)
     FileInfo->Fid          = assetsys_file_id_invalid;
     
     File->FileInfo = file_id_invalid;
-    
     
     u32 MaskIndex = Fid / 64;
     u32 BitIndex = Fid % 64;
@@ -977,12 +1115,60 @@ file_id file_open(const char *Filepath, bool IsRelative, const char *MountName, 
     return assetsys_open(Core->AssetSys, Filepath, IsRelative, MountName, Mode);
 }
 
-file_id file_load(const char *Filepath, bool IsRelative, const char *MountName)
+file_error file_load(const char *Filepath, bool IsRelative, const char *MountName,
+                     void *Buffer, u64 Size)
 {
-    return assetsys_load(Core->AssetSys, Filepath, IsRelative, MountName);
+    return assetsys_load(Core->AssetSys, Filepath, IsRelative, MountName, Buffer, Size);
 }
 
 void file_close(file_id Fid)
 {
     assetsys_close(Core->AssetSys, Fid);
+}
+
+u64 file_get_fsize(const char *Filename, const char *MountName)
+{
+    u64 Result = 0;
+    
+    assetsys *AssetSys = Core->AssetSys;
+    u128 MountNameHash = hash_bytes((void*)MountName, strlen(MountName)); 
+    
+    assetsys_mount_point *Mount = NULL;
+    for (u32 i = 0; i < AssetSys->MountedFilesCount; ++i)
+    {
+        if (compare_hash(MountNameHash, AssetSys->MountedFiles[i].Name))
+        {
+            Mount = AssetSys->MountedFiles + i;
+            break;
+        }
+    }
+    
+    if (Mount)
+    {
+        
+        comparator_list CompList = {0};
+        assetsys_build_comparator_list(&CompList, Filename);
+        
+        assetsys_file_id Fid = assetsys_find_fid(AssetSys, Mount->File, &CompList);
+        
+        assetsys_file *File = assetsys_get_file(AssetSys, Fid);
+        
+        Result = ((u64)File->Win32FileInfo.nFileSizeHigh << 32) | ((u64)File->Win32FileInfo.nFileSizeLow);
+    }
+    else
+    {
+        mprinte("Unable to find mount name \"%s\" when getting the file size!\n", MountName);
+    }
+    
+    return Result;
+}
+
+u64 file_get_size(file_id Fid)
+{
+    u64 Result = 0;
+    file_info *File = Core->AssetSys->OpenFiles + Fid;
+    
+    if (File->Handle != INVALID_HANDLE_VALUE) Result = File->Size;
+    
+    return Result;
 }

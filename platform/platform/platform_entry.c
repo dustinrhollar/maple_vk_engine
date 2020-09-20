@@ -8,10 +8,8 @@
 #include <Tchar.h>
 #include <strsafe.h>
 
-#include "platform/win32/asset_sys_win32.h"
-
 #include "win32/platform_win32.c"
-#include "platform/win32/asset_sys_win32.c"
+#include "platform/win32/assetsys_win32.c"
 #include "platform/globals.c"
 
 #elif defined(linux) || defined(__unix__)

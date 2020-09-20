@@ -55,26 +55,6 @@ typedef struct library_code
 
 file_global library_code LibraryCode;
 
-typedef struct file
-{
-    HANDLE Handle;
-    FILE   *cFile; // HACK(Dustin): Please remove at earliest convience
-    
-    void  *Memory;
-    u64    FileSize;
-    u32    Index; // HACK(Dustin): backpointer to quickly access the original index
-    
-    // writing info
-    u64    Offset;          // determine if a file write needs to occur
-    u64    NextWriteOffset; // When a file write occurs, seek to this offset
-} file;
-
-#define MAX_OPEN_FILES 32
-#define FILE_WRITE_SIZE _KB(4)
-file_global file OpenFiles[MAX_OPEN_FILES];
-// bitfield for open files. 1 = open, 0 = closed
-file_global u32 OpenFileBitField = 0;
-
 platform    *PlatformApi;
 
 file_internal void SetFullscreen(bool fullscreen);
@@ -372,6 +352,8 @@ mstr Win32GetExeFilepath()
     return result;
 }
 
+#if 0
+
 file_t PlatformFindAvailableFileHandle()
 {
     file_t Result = NULL;
@@ -482,15 +464,8 @@ file_t PlatformLoadFile(char *Filename, bool Append)
         
         if (err == 0)
         {
-            // NOTE(Dustin): Note that 0 can be returned if the
-            // read operating is occuring asynchronously
-            DisplayError(TEXT("ReadFile"));
-            CloseHandle(Result->Handle);
-            
-            BIT_TOGGLE_0(OpenFileBitField, Result->Index);
-            Result = NULL;
-            
-            return Result;
+            mprinte("Unable to read file!\n");
+            Result = File_UnableToRead;
         }
 #endif // cutofff for reading file directly into memory
         
@@ -729,8 +704,6 @@ void PlatformFileSeek(file_t File, u64 Offset, seek_type SeekStart)
         RealOffset = File->Offset + Offset;
     }
 }
-
-#if 0
 
 
 // "Save" the current offset into a file. This is particularly useful
@@ -1384,15 +1357,11 @@ window_rect PlatformGetClientWindowRect()
     return Result;
 }
 
-#if 0
-
-void PlatformGetClientWindow(platform_window *Window)
+void PlatformGetClientWindow(platform_window **Window)
 {
-    HWND *Win32Window = (HWND*)Window;
-    Win32Window = &ClientWindow;
+    HWND **Win32Window = (HWND**)Window;
+    *Win32Window = &ClientWindow;
 }
-
-#endif
 
 file_internal void MapleShutdown()
 {
@@ -1469,22 +1438,31 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     mprint("\n\n");
     file_print_directory_tree("shaders");
     
-    file_id Fid = file_open("simple_tri.vert", true, "shaders", FileMode_Read);
+    //file_id Fid = file_open("simple_tri.vert", true, "shaders", FileMode_Read);
     file_id NewFid = file_open("new_file_test.txt", true, "root", FileMode_Write);
-    
-    file_close(Fid);
     file_close(NewFid);
+    
+    void *Buffer = 0;
+    u64 BufferSize = 0;
+    
+    file_load("simple_tri.vert", true, "shaders", Buffer, BufferSize);
     
     PlatformApi = (platform*)memory_alloc(Core->Memory, sizeof(platform));
     PlatformApi->Memory          = Core->Memory;
-    PlatformApi->open_file       = &PlatformOpenFile;
-    PlatformApi->load_file       = &PlatformLoadFile;
-    PlatformApi->close_file      = &PlatformCloseFile;
-    PlatformApi->flush_file      = &PlatformFlushFile;
-    PlatformApi->write_file      = &PlatformWriteFile;
-    PlatformApi->get_file_buffer = &PlatformGetFileBuffer;
-    PlatformApi->get_file_size   = &PlatformGetFileSize;
+    PlatformApi->open_file       = &file_open;
+    PlatformApi->load_file       = &file_load;
+    PlatformApi->close_file      = &file_close;
+    PlatformApi->file_get_size   = &file_get_size;
+    PlatformApi->file_get_fsize  = &file_get_fsize;
+    //PlatformApi->flush_file      = &PlatformFlushFile;
+    //PlatformApi->write_file      = &PlatformWriteFile;
+    //PlatformApi->get_file_buffer = &PlatformGetFileBuffer;
     PlatformApi->mprint          = &mprint;
+    PlatformApi->mprinte         = &mprinte;
+    PlatformApi->get_client_window_dimensions = &PlatformGetClientWindowDimensions;
+    PlatformApi->get_client_window = &PlatformGetClientWindow;
+    PlatformApi->request_memory = PlatformRequestMemory;
+    PlatformApi->release_memory = PlatformReleaseMemory;
     
     //~ Load game code
     
@@ -1495,12 +1473,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     {
         graphics_create_info Info = {};
-        Info.Window = (window_t)&ClientWindow;
+        Info.Window   = (window_t)&ClientWindow;
+        Info.Platform = PlatformApi;
         Graphics.initialize_graphics(&Info);
     }
-    
-    world PolygonalWorld;
-    world_init(&PolygonalWorld);
     
     vec3 DefaultPosition = {0, 40, -10};
     
@@ -1555,7 +1531,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         }
         
         FrameParams.Input = GlobalPerFrameInput;
-        FrameParams.World = &PolygonalWorld;
         
         FrameParams.GameStageEndTime     = PlatformGetWallClock();
         FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
@@ -1564,7 +1539,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         
         {
             // Issue some interesting frame commands :)
-            Game.voxel_entry(&FrameParams);
+            //Game.voxel_entry(&FrameParams);
         }
         
         //Graphics.execute_command_list(PolygonalWorld.CommandList);
@@ -1630,11 +1605,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         LastFrameTime = PlatformGetWallClock();
     }
     
-    //MstringFree(&GameDllName);
-    
     Graphics.wait_for_last_frame();
-    world_free(&PolygonalWorld);
-    
     MapleShutdown();
     
     return (0);
