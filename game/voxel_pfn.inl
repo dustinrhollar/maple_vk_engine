@@ -1,9 +1,0 @@
-
-#if !defined(VOXEL_EXPORTED_FUNCTION)
-#define GRAPHICS_EXPORTED_FUNCTION( fun )
-#endif
-
-VOXEL_EXPORTED_FUNCTION( voxel_entry )
-VOXEL_EXPORTED_FUNCTION( voxel_shutdown )
-
-#undef VOXEL_EXPORTED_FUNCTION

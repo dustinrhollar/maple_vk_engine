@@ -191,9 +191,11 @@ file_internal void Win32LoadGraphicsCode(const char *GraphicsDllName)
         PlatformFatalError("Could not load the graphics dll!");
     }
     
+    Graphics = (graphics_api*)memory_alloc(Core->Memory, sizeof(graphics_api));
+    
 #define GRAPHICS_EXPORTED_FUNCTION(fun)                                     \
-    if (!(Graphics.fun = (PFN_##fun)GetProcAddress(GraphicsDll, #fun))) {            \
-                          PlatformFatalError("Could not load exported function: %s\n", #fun); \
+    if (!(Graphics->fun = (PFN_##fun)GetProcAddress(GraphicsDll, #fun))) {            \
+                           PlatformFatalError("Could not load exported function: %s\n", #fun); \
 }
 
 #include "../../../graphics/graphics_functions.inl"
@@ -210,9 +212,9 @@ file_internal void Win32LoadGameCode(const char *GameDllName)
     
     CopyFile(GameDllName, mstr_to_cstr(&GameDllCopy), FALSE);
     
-    HMODULE VoxelDll = LoadLibrary(mstr_to_cstr(&GameDllCopy));
+    HMODULE GameDll = LoadLibrary(mstr_to_cstr(&GameDllCopy));
     
-    if (VoxelDll)
+    if (GameDll)
     {
     }
     else
@@ -220,14 +222,16 @@ file_internal void Win32LoadGameCode(const char *GameDllName)
         PlatformFatalError("Could not load the graphics dll!");
     }
     
-#define VOXEL_EXPORTED_FUNCTION(fun)                                     \
-    if (!(Game.fun = (PFN_##fun)GetProcAddress(VoxelDll, #fun))) {            \
-                      PlatformFatalError("Could not load exported function: %s\n", #fun); \
+    Game = (game_api*)memory_alloc(Core->Memory, sizeof(game_api));
+    
+#define GAME_EXPORTED_FUNCTION(fun)                                     \
+    if (!(Game->fun = (PFN_##fun)GetProcAddress(GameDll, #fun))) {            \
+                       PlatformFatalError("Could not load exported function: %s\n", #fun); \
 }
 
-#include "../../../game/voxel_pfn.inl"
+#include "../../../game/game_pfn.inl"
 
-LibraryCode.GameHandle = VoxelDll;
+LibraryCode.GameHandle = GameDll;
 }
 
 
@@ -237,8 +241,8 @@ void Win32UnloadGameCode()
         FreeLibrary(LibraryCode.GameHandle);
     LibraryCode.GameHandle = 0;
     
-#define VOXEL_EXPORTED_FUNCTION(fun) Game.fun = NULL;
-#include "../../../game/voxel_pfn.inl"
+#define GAME_EXPORTED_FUNCTION(fun) Game->fun = NULL;
+#include "../../../game/game_pfn.inl"
     
 }
 
@@ -1365,8 +1369,7 @@ void PlatformGetClientWindow(platform_window **Window)
 
 file_internal void MapleShutdown()
 {
-    Game.voxel_shutdown();
-    Graphics.shutdown_graphics();
+    Graphics->shutdown_graphics();
     globals_free();
 }
 
@@ -1454,9 +1457,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     PlatformApi->close_file      = &file_close;
     PlatformApi->file_get_size   = &file_get_size;
     PlatformApi->file_get_fsize  = &file_get_fsize;
-    //PlatformApi->flush_file      = &PlatformFlushFile;
-    //PlatformApi->write_file      = &PlatformWriteFile;
-    //PlatformApi->get_file_buffer = &PlatformGetFileBuffer;
     PlatformApi->mprint          = &mprint;
     PlatformApi->mprinte         = &mprinte;
     PlatformApi->get_client_window_dimensions = &PlatformGetClientWindowDimensions;
@@ -1468,14 +1468,14 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     
     Win32LoadGraphicsCode("");
     
-    const char *GameDllName = "maple_voxel.dll";
+    const char *GameDllName = "maple_game.dll";
     Win32LoadGameCode(GameDllName);
     
     {
         graphics_create_info Info = {};
         Info.Window   = (window_t)&ClientWindow;
         Info.Platform = PlatformApi;
-        Graphics.initialize_graphics(&Info);
+        Graphics->initialize_graphics(&Info);
     }
     
     vec3 DefaultPosition = {0, 40, -10};
@@ -1500,7 +1500,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         
         frame_params FrameParams = {0};
         FrameParams.Frame    = FrameCount;
-        FrameParams.Graphics = &Graphics;
+        FrameParams.Graphics = Graphics;
         FrameParams.Platform = PlatformApi;
         FrameParams.Camera   = &PlayerCamera;
         
@@ -1516,7 +1516,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
             
             if (CompareFileTime(&DllWriteTime, &LibraryCode.GameDllLastWriteTime) != 0)
             {
-                Game.voxel_shutdown();
                 Win32UnloadGameCode();
                 Win32LoadGameCode(GameDllName);
             }
@@ -1535,7 +1534,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         FrameParams.GameStageEndTime     = PlatformGetWallClock();
         FrameParams.RenderStageStartTime = FrameParams.GameStageEndTime;
         
-        Graphics.begin_frame();
+        Graphics->begin_frame();
         
         {
             // Issue some interesting frame commands :)
@@ -1545,7 +1544,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         //Graphics.execute_command_list(PolygonalWorld.CommandList);
         
         end_frame_cmd EndFrame = {};
-        Graphics.end_frame(&EndFrame);
+        Graphics->end_frame(&EndFrame);
         
         FrameParams.RenderStageEndTime = PlatformGetWallClock();
         
@@ -1605,7 +1604,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         LastFrameTime = PlatformGetWallClock();
     }
     
-    Graphics.wait_for_last_frame();
+    Graphics->wait_for_last_frame();
     MapleShutdown();
     
     return (0);
@@ -1716,9 +1715,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     case VK_F5:    GlobalPerFrameInput.KeyPress |= Key_F5;    break;
                     
                     case '0': GlobalPerFrameInput.KeyPress |= Key_0;          break;
-                    case '1': Graphics.set_render_mode(RenderMode_Solid);     break;
-                    case '2': Graphics.set_render_mode(RenderMode_Wireframe); break;
-                    case '3': Graphics.set_render_mode(RenderMode_NormalVis); break;
+                    case '1': Graphics->set_render_mode(RenderMode_Solid);     break;
+                    case '2': Graphics->set_render_mode(RenderMode_Wireframe); break;
+                    case '3': Graphics->set_render_mode(RenderMode_NormalVis); break;
                     
                     case VK_SPACE:
                     {

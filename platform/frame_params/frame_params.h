@@ -26,7 +26,6 @@ typedef struct frame_params
     //~ Scene
     
     struct camera          *Camera;
-    struct world           *World;
     
 } frame_params;
 

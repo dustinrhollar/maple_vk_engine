@@ -16,13 +16,13 @@ extern "C" {
     typedef struct game_api
     {
         
-#define VOXEL_EXPORTED_FUNCTION(fn) PFN_##fn fn;
-#include "../game/voxel_pfn.inl"
+#define GAME_EXPORTED_FUNCTION(fn) PFN_##fn fn;
+#include "../game/game_pfn.inl"
         
     } game_api;
     
-    extern graphics_api Graphics;
-    extern game_api Game;
+    extern graphics_api *Graphics;
+    extern game_api     *Game;
     
 #ifdef __cplusplus
 }

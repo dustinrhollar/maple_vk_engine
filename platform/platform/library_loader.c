@@ -3,8 +3,8 @@
 extern "C" {
 #endif
     
-    graphics_api Graphics;
-    game_api Game;
+    graphics_api *Graphics;
+    game_api     *Game;
     
 #ifdef __cplusplus
 }

@@ -29,10 +29,10 @@ SET VK_DEFS=/DVK_USE_PLATFORM_WIN32_KHR /DVK_NO_PROTOTYPES /DGRAPHICS_DLL_EXPORT
 SET GM_CFLAGS=-std=c99 -g -D_DEBUG -Wno-microsoft-include
 SET GM_INC=
 SET GM_LIB=
-SET GM_INPUT=%HOST_DIR%\game\voxel_unity.c
-SET GM_OUTPUT=maple_voxel.dll
+SET GM_INPUT=%HOST_DIR%\game\game_unity.c
+SET GM_OUTPUT=maple_game.dll
 SET GM_EXPORTS=
-SET GM_DEFS=-DVOXEL_DLL_EXPORT
+SET GM_DEFS=-DGAME_DLL_EXPORT
 
 IF NOT EXIST build\data\terrain\ (
     1>NUL MKDIR build\data\terrain\

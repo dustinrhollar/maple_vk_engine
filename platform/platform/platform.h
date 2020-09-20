@@ -229,6 +229,6 @@ typedef struct platform
     
 } platform;
 
-extern platform *PlatformApi;
+extern platform *Platform;
 
 #endif //MAPLE_PLATFORM_PLATFORM_H

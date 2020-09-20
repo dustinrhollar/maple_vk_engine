@@ -1,11 +1,6 @@
 
- graphics_api Graphics;
-platform    *PlatformApi;
-
-file_internal void write_some_stuff(terrain *Terrain)
-{
-    terrain_write(Terrain);
-}
+ graphics_api *Graphics;
+platform     *Platform;
 
 file_internal void rotate_camera_about_x(camera *Camera, r32 angle)
 {
@@ -40,7 +35,7 @@ file_internal void rotate_camera_about_y(camera *Camera, r32 angle)
     Camera->Front = vec3_norm(result.xyz);
 }
 
-file_internal void process_user_input(input *Input, camera *Camera, terrain *Terrain)
+file_internal void process_user_input(input *Input, camera *Camera)
 {
     
     // HACK(Dustin): hardcoded time-step. need a better solution
@@ -110,28 +105,15 @@ file_internal void process_user_input(input *Input, camera *Camera, terrain *Ter
     
     Camera->Right = vec3_norm(vec3_cross(Camera->Front, Camera->WorldUp));
     Camera->Up    = vec3_norm(vec3_cross(Camera->Right, Camera->Front));
-    
-    // World updates and whatnot
-    if (Input->KeyPress & Key_F1)
-    {
-        
-        terrain_update(Terrain);
-    }
-    
-    if (Input->KeyPress & Key_0)
-    {
-        write_some_stuff(Terrain);
-    }
 }
 
-VOXEL_ENTRY(voxel_entry)
+GAME_ENTRY(game_entry)
 {
     // This is probably an expensive copy, but for now let it happen
-    Graphics = *FrameInfo->Graphics;
-    PlatformApi = FrameInfo->Platform;
-    world *World = FrameInfo->World;
+    Graphics  = FrameInfo->Graphics;
+    Platform  = FrameInfo->Platform;
     
-    process_user_input(&FrameInfo->Input, FrameInfo->Camera, &FrameInfo->World->Terrain);
+    process_user_input(&FrameInfo->Input, FrameInfo->Camera);
     
     mat4 LookAt = look_at(FrameInfo->Camera->Position, 
                           vec3_add(FrameInfo->Camera->Position, FrameInfo->Camera->Front), 
@@ -140,11 +122,5 @@ VOXEL_ENTRY(voxel_entry)
     mat4 Projection = perspective_projection(90.0f, (r32)1920/(r32)1080, 0.1f, 1000.f);
     Projection.data[1][1] *= -1;
     
-    Graphics.cmd_set_camera(World->CommandList, Projection, LookAt);
-    terrain_draw(World->CommandList, &World->Terrain);
-}
-
-VOXEL_SHUTDOWN(voxel_shutdown)
-{
-    terrain_shutdown();
+    //Graphics->cmd_set_camera(World->CommandList, Projection, LookAt);
 }

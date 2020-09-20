@@ -54,17 +54,12 @@
 
 #include "../graphics/maple_graphics.h"
 
-#include "../game/voxel_pfn.h"
+#include "../game/game_pfn.h"
 #include "platform/library_loader.h"
-
-//~ World Creator thingy
-
-#include "world/polygonal_world.h"
 
 //-------------------------------------------------------------------------------------------------------------------//
 // SOURCE
 //-------------------------------------------------------------------------------------------------------------------//
 
 #include "mm/memory.c"
-#include "world/polygonal_world.c"
 #include "platform/platform_entry.c"
