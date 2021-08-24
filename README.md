@@ -1,4 +1,4 @@
-# Maple Engine
+# Maple Vulkan Graphics Engine
 
 An in-development game engine that uses Vulkan for backend rendering. 
 
